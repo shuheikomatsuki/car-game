@@ -44,11 +44,12 @@
 | `C` | Y | カメラ切替（三人称 近／遠・運転席・助手席・車内カメラ） |
 | `N` | BACK | マップ切替（小さな街／教習所コース） |
 | `P` | - | 車の切替（普通車 108km/h／軽自動車 86km/h／スポーツカー 198km/h） |
+| `O` | | みんなで走る（オンライン。部屋コードか招待リンクで参加） |
 | `R` | START | スタート地点に戻る |
 | `M` | | サウンド・ハルの声 ON/OFF |
 | `H` | | 操作説明の表示切替 |
 
-URL に `?map=1` を付けると教習所コース、`?assist` を付けると指示モードから始まる。`?car=sport`（`standard`／`kei`／`sport`）で開始時の車を選べる。`?debug` を付けると開発者ツールから `window.__game` で状態を触れる。
+URL に `?map=1` を付けると教習所コース、`?assist` を付けると指示モードから始まる。`?car=sport`（`standard`／`kei`／`sport`）で開始時の車を選べる。`?room=ABCD` は招待リンクで、開くと参加画面が出る。`?debug` を付けると開発者ツールから `window.__game` で状態を触れる。
 
 ## 開発
 
@@ -61,13 +62,36 @@ npm test           # 単体テスト（Vitest）
 npm run build      # 型チェック + 本番ビルド（dist/）
 ```
 
+### オンライン（マルチプレイ）
+
+クライアント権威方式: 各プレイヤーが自分の車を計算して 20 回/秒で位置を送り、サーバー（Cloudflare Workers + Durable Objects）は部屋ごとに中継するだけ。他の人の車は 0.1 秒前の位置を補間して表示し、自分の物理ワールドには動かない車体として置く（ぶつかると自分の車だけが押し返される）。
+
+手元で試すとき:
+
+```sh
+npm run server:dev                      # http://127.0.0.1:8787 でサーバーを起動
+npm run dev                             # 別のターミナルで
+# http://localhost:5173/?server=http://127.0.0.1:8787 を2つのウィンドウで開き、O キーで同じ部屋コードに参加
+```
+
+公開の設定（初回のみ）:
+
+1. Cloudflare のダッシュボードで「Workers & Pages」を一度開き、`workers.dev` のサブドメインが作られていることを確認する。
+2. 右上のアイコン → My Profile → API Tokens → Create Token → テンプレート「Edit Cloudflare Workers」でトークンを作る。
+3. アカウント ID を控える（ダッシュボードのアカウントのホーム、または Workers & Pages の画面の右側に表示）。
+4. GitHub のリポジトリ → Settings → Secrets and variables → Actions の **Secrets** に `CLOUDFLARE_API_TOKEN` と `CLOUDFLARE_ACCOUNT_ID` を登録する。
+5. main の CI（Actions → 最新の main の実行 → Re-run all jobs）を実行すると `deploy-server` ジョブがサーバーを公開し、ログに `https://car-game-server.<サブドメイン>.workers.dev` が出る。
+6. 同じ画面の **Variables** に `SERVER_URL` としてその URL を登録し、もう一度 CI を実行すると、ゲーム側にサーバーの URL が組み込まれる。
+
 ### 構成
 
 | ディレクトリ | 役割 |
 |---|---|
+| `server/` | マルチプレイの中継サーバー（Cloudflare Workers + Durable Objects） |
+| `src/net/` | 通信内容の定義、WebSocket 接続、受信した車の補間 |
 | `src/core/` | 固定タイムステップのゲームループ、キーボード・ゲームパッド入力 |
 | `src/face/` | 顔写真の切り抜き・テクスチャ作成・ブラウザ内保存 |
-| `src/game/` | マップ1つ分（物理ワールド・車・描画物）の生成と破棄 |
+| `src/game/` | マップ1つ分（物理ワールド・車・描画物）の生成と破棄、他のプレイヤーの車 |
 | `src/audio/` | Web Audio API で合成する効果音（エンジン・スキール・衝突） |
 | `src/ai/` | キャラクター運転: 指示の解析、経路計画、運転制御、性格（苦手さ）、セリフ |
 | `src/voice/` | 音声認識（指示の聞き取り）と音声合成（セリフの読み上げ） |
