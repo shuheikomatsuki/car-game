@@ -10,8 +10,14 @@ export class Hud {
   private readonly speed = el('speed-value');
   private readonly gear = el('gear');
   private readonly cameraName = el('camera-name');
+  private readonly mapName = el('map-name');
+  private readonly soundState = el('sound-state');
+  private readonly gamepadState = el('gamepad-state');
   private readonly help = el('help');
+  private readonly toastEl = el('toast');
+  private toastTimer: number | undefined;
   private lastSpeed = -1;
+  private gamepadConnected: boolean | null = null;
 
   update(car: CarSnapshot): void {
     const kmh = Math.round(Math.abs(car.forwardSpeed) * 3.6);
@@ -26,8 +32,31 @@ export class Hud {
     this.cameraName.textContent = `（${name}）`;
   }
 
+  setMapName(name: string): void {
+    this.mapName.textContent = name;
+  }
+
+  setMuted(muted: boolean): void {
+    this.soundState.textContent = muted ? '（OFF）' : '（ON）';
+  }
+
+  setGamepadConnected(connected: boolean): void {
+    if (connected === this.gamepadConnected) return;
+    if (this.gamepadConnected !== null) this.toast(connected ? 'ゲームパッド接続' : 'ゲームパッド切断');
+    this.gamepadConnected = connected;
+    this.gamepadState.classList.toggle('hidden', !connected);
+  }
+
   toggleHelp(): void {
     this.help.classList.toggle('hidden');
+  }
+
+  /** 画面中央上に短いメッセージを出す */
+  toast(message: string): void {
+    this.toastEl.textContent = message;
+    this.toastEl.classList.add('visible');
+    window.clearTimeout(this.toastTimer);
+    this.toastTimer = window.setTimeout(() => this.toastEl.classList.remove('visible'), 1800);
   }
 }
 

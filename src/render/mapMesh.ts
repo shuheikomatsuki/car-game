@@ -1,8 +1,9 @@
 import * as THREE from 'three';
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
-import type { MapObstacles } from '../map/obstacles';
+import type { BoxObstacle, MapObstacles } from '../map/obstacles';
 import { type ParsedMap, type Tile, DIR_OFFSET, roadShape, tileCenter } from '../map/tilemap';
 import { CONE_HALF_SIZE } from '../sim/physics';
+import { SignFactory } from './signs';
 
 const COLORS = {
   grass: 0x7fb069,
@@ -17,6 +18,8 @@ const COLORS = {
   cone: 0xff7a1a,
   buildings: [0xe8d8c3, 0xc9d6df, 0xf0c5a8, 0xd9d2e9],
   roof: 0x6b6f78,
+  guardrail: 0xe6e8ea,
+  guardrailPost: 0x8c9196,
 };
 
 const ROAD_Y = 0.01;
@@ -170,10 +173,17 @@ export function buildMapMesh(map: ParsedMap, obstacles: MapObstacles): THREE.Gro
     new THREE.MeshLambertMaterial({ color: COLORS.wall }),
     new THREE.MeshLambertMaterial({ color: COLORS.outerWall }),
   ];
+  const railMat = new THREE.MeshLambertMaterial({ color: COLORS.guardrail });
+  const postMat = new THREE.MeshLambertMaterial({ color: COLORS.guardrailPost });
   for (const b of obstacles.boxes) {
+    if (b.kind === 'guardrail') {
+      group.add(createGuardrail(b, railMat, postMat));
+      continue;
+    }
     const mat = b.kind === 'building' ? buildingMats[b.variant % buildingMats.length] : wallMats[b.variant];
     const mesh = new THREE.Mesh(new THREE.BoxGeometry(b.hx * 2, b.hy * 2, b.hz * 2), mat);
     mesh.position.set(b.x, b.y, b.z);
+    mesh.rotation.y = b.yaw ?? 0;
     mesh.castShadow = true;
     mesh.receiveShadow = true;
     group.add(mesh);
@@ -200,7 +210,29 @@ export function buildMapMesh(map: ParsedMap, obstacles: MapObstacles): THREE.Gro
     group.add(leaves);
   }
 
+  const signs = new SignFactory();
+  for (const sign of obstacles.signs) group.add(signs.create(sign));
+
   return group;
+}
+
+/** ガードレール: 衝突体は箱だが、見た目は帯状のレールと支柱にする */
+function createGuardrail(b: BoxObstacle, railMat: THREE.Material, postMat: THREE.Material): THREE.Group {
+  const g = new THREE.Group();
+  g.position.set(b.x, 0, b.z);
+  g.rotation.y = b.yaw ?? 0;
+  const top = b.hy * 2;
+  const rail = new THREE.Mesh(new THREE.BoxGeometry(0.08, 0.32, b.hz * 2), railMat);
+  rail.position.y = top - 0.22;
+  rail.castShadow = true;
+  g.add(rail);
+  for (const z of [-b.hz * 0.85, b.hz * 0.85]) {
+    const post = new THREE.Mesh(new THREE.CylinderGeometry(0.06, 0.06, top, 6), postMat);
+    post.position.set(-0.08, top / 2, z);
+    post.castShadow = true;
+    g.add(post);
+  }
+  return g;
 }
 
 /** コーン（動く小物）のメッシュ。位置は毎フレーム物理から同期する */

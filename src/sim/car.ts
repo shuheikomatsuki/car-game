@@ -29,6 +29,8 @@ export interface CarSnapshot {
   yaw: number;
   /** 前後方向の速度 [m/s] */
   forwardSpeed: number;
+  /** 左右方向の速度 [m/s]（横滑り） */
+  lateralSpeed: number;
   /** 舵角 [rad] */
   steerAngle: number;
   /** タイヤの回転角 [rad] */
@@ -45,6 +47,8 @@ export class Car {
   params: VehicleParams;
   private steerAngle = 0;
   private wheelSpin = 0;
+  /** 直前のステップで剛体に指示した水平速度（衝突の強さを測るため） */
+  private commanded = { x: 0, z: 0 };
 
   constructor(
     private readonly physics: PhysicsWorld,
@@ -81,6 +85,7 @@ export class Car {
     this.body.setLinvel({ x: 0, y: 0, z: 0 }, true);
     this.body.setAngvel({ x: 0, y: 0, z: 0 }, true);
     this.steerAngle = 0;
+    this.commanded = { x: 0, z: 0 };
   }
 
   /** 物理ステップの前に呼ぶ */
@@ -106,15 +111,21 @@ export class Car {
     this.steerAngle = next.steerAngle;
     this.wheelSpin += (next.forwardSpeed / CAR_DIMENSIONS.wheelRadius) * dt;
 
-    this.body.setLinvel(
-      {
-        x: fx * next.forwardSpeed + lx * next.lateralSpeed,
-        y: vel.y,
-        z: fz * next.forwardSpeed + lz * next.lateralSpeed,
-      },
-      true,
-    );
+    this.commanded = {
+      x: fx * next.forwardSpeed + lx * next.lateralSpeed,
+      z: fz * next.forwardSpeed + lz * next.lateralSpeed,
+    };
+    this.body.setLinvel({ x: this.commanded.x, y: vel.y, z: this.commanded.z }, true);
     this.body.setAngvel({ x: 0, y: next.yawRate, z: 0 }, true);
+  }
+
+  /**
+   * 物理ステップの後に呼ぶ。指示した速度と実際の速度の差から衝突の強さ [m/s] を返す。
+   * 壁に押し付けているだけなら小さく、勢いよくぶつかると大きくなる。
+   */
+  measureImpact(): number {
+    const v = this.body.linvel();
+    return Math.hypot(this.commanded.x - v.x, this.commanded.z - v.z);
   }
 
   /** 物理ステップ後の実際の状態（衝突で止まっていれば速度は 0 になる） */
@@ -128,6 +139,7 @@ export class Car {
       z: t.z,
       yaw,
       forwardSpeed: v.x * Math.sin(yaw) + v.z * Math.cos(yaw),
+      lateralSpeed: v.x * Math.cos(yaw) - v.z * Math.sin(yaw),
       steerAngle: this.steerAngle,
       wheelSpin: this.wheelSpin,
     };

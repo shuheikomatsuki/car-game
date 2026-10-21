@@ -89,3 +89,12 @@ describe('stepVehicle', () => {
     expect(Math.abs(s.lateralSpeed)).toBeLessThan(0.01);
   });
 });
+
+describe('steering feel', () => {
+  it('turns the wheel more gently at high speed', () => {
+    const slow = stepVehicle({ ...REST, forwardSpeed: 3 }, { ...NEUTRAL_INPUT, steer: 1 }, P, DT);
+    const fast = stepVehicle({ ...REST, forwardSpeed: 28 }, { ...NEUTRAL_INPUT, steer: 1 }, P, DT);
+    expect(fast.steerAngle).toBeLessThan(slow.steerAngle);
+    expect(fast.steerAngle).toBeGreaterThan(0);
+  });
+});

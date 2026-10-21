@@ -143,7 +143,9 @@ export function stepVehicle(
   // --- ハンドル ---
   const limit = steerLimitAt(v, p);
   const targetSteer = steer * limit;
-  const rate = steer === 0 ? p.steerReturnRate : p.steerRate;
+  // 高速では舵角の上限が小さいので、切る速さも合わせて落とす（キーボードでも急に曲がりすぎない）
+  const rateScale = Math.max(0.35, limit / p.maxSteerAngle);
+  const rate = (steer === 0 ? p.steerReturnRate : p.steerRate) * rateScale;
   let steerAngle = approach(state.steerAngle, targetSteer, rate * dt);
   steerAngle = clamp(steerAngle, -limit, limit);
 

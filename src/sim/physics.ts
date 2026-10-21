@@ -16,6 +16,7 @@ export interface ConeBody {
 }
 
 export const CONE_HALF_SIZE = { radius: 0.25, height: 0.4 };
+export const SIGN_POLE = { radius: 0.08, height: 2.6 };
 
 export interface PhysicsWorld {
   rapier: Rapier;
@@ -32,7 +33,12 @@ export function createPhysicsWorld(rapier: Rapier, obstacles: MapObstacles): Phy
   world.createCollider(rapier.ColliderDesc.cuboid(2000, 0.5, 2000), ground);
 
   for (const b of obstacles.boxes) {
-    const body = world.createRigidBody(rapier.RigidBodyDesc.fixed().setTranslation(b.x, b.y, b.z));
+    const yaw = b.yaw ?? 0;
+    const body = world.createRigidBody(
+      rapier.RigidBodyDesc.fixed()
+        .setTranslation(b.x, b.y, b.z)
+        .setRotation({ x: 0, y: Math.sin(yaw / 2), z: 0, w: Math.cos(yaw / 2) }),
+    );
     world.createCollider(rapier.ColliderDesc.cuboid(b.hx, b.hy, b.hz).setFriction(0.1), body);
   }
 
@@ -41,6 +47,13 @@ export function createPhysicsWorld(rapier: Rapier, obstacles: MapObstacles): Phy
       rapier.RigidBodyDesc.fixed().setTranslation(t.x, t.height / 2, t.z),
     );
     world.createCollider(rapier.ColliderDesc.cylinder(t.height / 2, t.trunkRadius), body);
+  }
+
+  for (const sign of obstacles.signs) {
+    const body = world.createRigidBody(
+      rapier.RigidBodyDesc.fixed().setTranslation(sign.x, SIGN_POLE.height / 2, sign.z),
+    );
+    world.createCollider(rapier.ColliderDesc.cylinder(SIGN_POLE.height / 2, SIGN_POLE.radius), body);
   }
 
   const cones = obstacles.cones.map((c) => {
