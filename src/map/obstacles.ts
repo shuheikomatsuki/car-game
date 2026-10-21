@@ -1,11 +1,11 @@
-import { type ParsedMap, tileCenter } from './tilemap';
+import { type ParsedMap, type SignType, DIR_YAW, roadShape, tileCenter } from './tilemap';
 
 /**
  * マップから障害物の配置を求める。物理（衝突体）と描画（メッシュ）の両方がこの結果を使う。
  */
 
 export interface BoxObstacle {
-  kind: 'building' | 'wall';
+  kind: 'building' | 'wall' | 'guardrail';
   /** 中心座標 */
   x: number;
   y: number;
@@ -14,6 +14,8 @@ export interface BoxObstacle {
   hx: number;
   hy: number;
   hz: number;
+  /** Y軸回りの回転 [rad]（省略時は 0） */
+  yaw?: number;
   /** 見た目用の色番号 */
   variant: number;
 }
@@ -30,10 +32,18 @@ export interface ConeProp {
   z: number;
 }
 
+export interface SignObstacle {
+  x: number;
+  z: number;
+  yaw: number;
+  type: SignType;
+}
+
 export interface MapObstacles {
   boxes: BoxObstacle[];
   trees: TreeObstacle[];
   cones: ConeProp[];
+  signs: SignObstacle[];
 }
 
 /** タイル座標から決まる 0..1 の疑似乱数（見た目のばらつき用、毎回同じ結果になる） */
@@ -46,13 +56,17 @@ export function tileHash(col: number, row: number, salt = 0): number {
 
 const WALL_HEIGHT = 1.2;
 const WALL_THICKNESS = 1;
+const GUARDRAIL_SEGMENTS = 6;
+const GUARDRAIL_HEIGHT = 0.8;
 
 export function buildObstacles(map: ParsedMap): MapObstacles {
-  const { tileSize } = map.def;
+  const { tileSize, roadWidth } = map.def;
   const half = tileSize / 2;
+  const rw = roadWidth / 2;
   const boxes: BoxObstacle[] = [];
   const trees: TreeObstacle[] = [];
   const cones: ConeProp[] = [];
+  const signs: SignObstacle[] = [];
 
   for (const tile of map.tiles) {
     const { x, z } = tileCenter(map, tile.col, tile.row);
@@ -85,6 +99,24 @@ export function buildObstacles(map: ParsedMap): MapObstacles {
     }
   }
 
+  if (map.def.guardrails) {
+    for (const tile of map.tiles) {
+      if (tile.kind !== 'road' || roadShape(tile) !== 'curve') continue;
+      boxes.push(...curveGuardrail(map, tile.col, tile.row, tile.connections, half + rw + 0.8));
+    }
+  }
+
+  for (const sign of map.def.signs ?? []) {
+    const { x, z } = tileCenter(map, sign.col, sign.row);
+    const d = rw + 1.2;
+    signs.push({
+      x: x + (sign.corner.includes('E') ? d : -d),
+      z: z + (sign.corner.includes('S') ? d : -d),
+      yaw: DIR_YAW[sign.facing],
+      type: sign.type,
+    });
+  }
+
   // マップ外周の壁
   const minX = -half;
   const maxX = (map.cols - 1) * tileSize + half;
@@ -103,5 +135,46 @@ export function buildObstacles(map: ParsedMap): MapObstacles {
     { kind: 'wall', x: maxX + t, y: hy, z: cz, hx: t, hy, hz: d, variant: 1 },
   );
 
-  return { boxes, trees, cones };
+  return { boxes, trees, cones, signs };
+}
+
+/** カーブの外周に沿って、短い直線のガードレールを並べる */
+function curveGuardrail(
+  map: ParsedMap,
+  col: number,
+  row: number,
+  connections: string[],
+  radius: number,
+): BoxObstacle[] {
+  const half = map.def.tileSize / 2;
+  const { x, z } = tileCenter(map, col, row);
+  // 円弧の中心はタイルの角（つながっている2方向の間）
+  const sx = connections.includes('E') ? 1 : -1;
+  const sz = connections.includes('S') ? 1 : -1;
+  const cx = x + sx * half;
+  const cz = z + sz * half;
+  const step = Math.PI / 2 / GUARDRAIL_SEGMENTS;
+  const halfLength = radius * Math.sin(step / 2);
+  const result: BoxObstacle[] = [];
+  for (let i = 0; i < GUARDRAIL_SEGMENTS; i++) {
+    const phi = (i + 0.5) * step;
+    // 角から見て (-sx, 0) 方向から (0, -sz) 方向へ回る
+    const dx = -sx * Math.cos(phi);
+    const dz = -sz * Math.sin(phi);
+    const tx = sx * Math.sin(phi);
+    const tz = -sz * Math.cos(phi);
+    const r = radius * Math.cos(step / 2);
+    result.push({
+      kind: 'guardrail',
+      x: cx + dx * r,
+      y: GUARDRAIL_HEIGHT / 2,
+      z: cz + dz * r,
+      hx: 0.15,
+      hy: GUARDRAIL_HEIGHT / 2,
+      hz: halfLength,
+      yaw: Math.atan2(tx, tz),
+      variant: 0,
+    });
+  }
+  return result;
 }

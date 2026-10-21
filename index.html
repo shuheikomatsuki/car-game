@@ -13,12 +13,16 @@
       <div id="gear">D</div>
     </div>
     <div id="help">
+      <div class="map"><span id="map-name"></span></div>
       <div><kbd>W</kbd>/<kbd>↑</kbd> アクセル</div>
       <div><kbd>S</kbd>/<kbd>↓</kbd> ブレーキ・後退</div>
       <div><kbd>A</kbd><kbd>D</kbd>/<kbd>←</kbd><kbd>→</kbd> ハンドル</div>
       <div><kbd>C</kbd> カメラ切替 <span id="camera-name"></span></div>
-      <div><kbd>R</kbd> リセット　<kbd>H</kbd> ヘルプ表示</div>
+      <div><kbd>N</kbd> マップ切替　<kbd>R</kbd> リセット</div>
+      <div><kbd>M</kbd> サウンド <span id="sound-state"></span>　<kbd>H</kbd> ヘルプ表示</div>
+      <div id="gamepad-state" class="hidden">🎮 ゲームパッド: 左スティック / RT / LT・Y カメラ・START リセット・BACK マップ</div>
     </div>
+    <div id="toast"></div>
     <div id="loading">Loading...</div>
     <script type="module" src="/src/main.ts"></script>
   </body>

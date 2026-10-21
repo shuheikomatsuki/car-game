@@ -35,3 +35,77 @@ export class KeyboardInput {
     };
   }
 }
+
+/** ゲームパッドの値として無視する小さな傾き */
+const STICK_DEADZONE = 0.12;
+
+function applyDeadzone(v: number): number {
+  if (Math.abs(v) < STICK_DEADZONE) return 0; // -0 も 0 にそろえる
+  return (Math.sign(v) * (Math.abs(v) - STICK_DEADZONE)) / (1 - STICK_DEADZONE);
+}
+
+/** ゲームパッドのボタン番号（Standard Gamepad レイアウト） */
+export const PAD_BUTTON = {
+  /** A / × */
+  south: 0,
+  /** Y / △ */
+  north: 3,
+  leftTrigger: 6,
+  rightTrigger: 7,
+  /** Back / Select */
+  select: 8,
+  /** Start / Options */
+  start: 9,
+} as const;
+
+/**
+ * Standard レイアウトのゲームパッド状態を運転入力に変換する。
+ * 左スティック = ハンドル、右トリガー（または A）= アクセル、左トリガー = ブレーキ。
+ */
+export function gamepadToDriverInput(axes: readonly number[], buttons: readonly number[]): DriverInput {
+  const button = (i: number) => buttons[i] ?? 0;
+  return {
+    throttle: Math.max(button(PAD_BUTTON.rightTrigger), button(PAD_BUTTON.south)),
+    brake: button(PAD_BUTTON.leftTrigger),
+    // スティックは右が正、ハンドル入力は左が正なので反転する
+    steer: applyDeadzone(-(axes[0] ?? 0)),
+  };
+}
+
+/** 接続中のゲームパッドを読む。ボタンの押した瞬間は onButton で受け取る */
+export class GamepadInput {
+  private readonly prevButtons = new Map<number, boolean>();
+  private readonly actions = new Map<number, () => void>();
+  private connected = false;
+
+  onButton(index: number, handler: () => void): void {
+    this.actions.set(index, handler);
+  }
+
+  /** 毎ステップ呼ぶ。ゲームパッドが無ければ null */
+  read(): DriverInput | null {
+    const pad = navigator.getGamepads?.().find((p) => p?.connected && p.mapping === 'standard');
+    this.connected = !!pad;
+    if (!pad) return null;
+    const values = pad.buttons.map((b) => b.value);
+    pad.buttons.forEach((b, i) => {
+      if (b.pressed && !this.prevButtons.get(i)) this.actions.get(i)?.();
+      this.prevButtons.set(i, b.pressed);
+    });
+    return gamepadToDriverInput(pad.axes, values);
+  }
+
+  get isConnected(): boolean {
+    return this.connected;
+  }
+}
+
+/** キーボードとゲームパッドの入力を合成する（強いほうを採用） */
+export function mergeInputs(a: DriverInput, b: DriverInput | null): DriverInput {
+  if (!b) return a;
+  return {
+    throttle: Math.max(a.throttle, b.throttle),
+    brake: Math.max(a.brake, b.brake),
+    steer: Math.abs(a.steer) >= Math.abs(b.steer) ? a.steer : b.steer,
+  };
+}

@@ -40,6 +40,18 @@ export interface Tile {
   cones: boolean;
 }
 
+export type SignType = 'stop' | 'speed30' | 'speed40';
+
+/** 道路標識。タイルの四隅のどこに立て、どの方向を向けるかで指定する */
+export interface SignPlacement {
+  col: number;
+  row: number;
+  type: SignType;
+  corner: 'NE' | 'NW' | 'SE' | 'SW';
+  /** 標識の面が向く方向（その方向から来る車に見える） */
+  facing: Direction;
+}
+
 export interface MapDefinition {
   name: string;
   tileSize: number;
@@ -52,6 +64,9 @@ export interface MapDefinition {
    */
   layout: string[];
   start: { col: number; row: number; heading: Direction };
+  /** カーブの外側にガードレールを置くか */
+  guardrails?: boolean;
+  signs?: SignPlacement[];
 }
 
 export interface ParsedMap {
@@ -95,6 +110,12 @@ export function parseMap(def: MapDefinition): ParsedMap {
         const { dc, dr } = DIR_OFFSET[d];
         return tileAt(tile.col + dc, tile.row + dr)?.kind === 'road';
       });
+    }
+  }
+
+  for (const sign of def.signs ?? []) {
+    if (!tileAt(sign.col, sign.row)) {
+      throw new Error(`Sign at (${sign.col}, ${sign.row}) is outside the map`);
     }
   }
 
