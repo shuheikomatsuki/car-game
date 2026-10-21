@@ -10,9 +10,12 @@ const DRIVING_KEYS = new Set([...THROTTLE_KEYS, ...BRAKE_KEYS, ...LEFT_KEYS, ...
 export class KeyboardInput {
   private readonly pressed = new Set<string>();
   private readonly actions = new Map<string, () => void>();
+  /** false の間はキーを無視する（入力欄のある画面を開いているときなど） */
+  private enabledValue = true;
 
   constructor(target: Window = window) {
     target.addEventListener('keydown', (e) => {
+      if (!this.enabledValue) return;
       if (DRIVING_KEYS.has(e.code)) e.preventDefault();
       if (!e.repeat) this.actions.get(e.code)?.();
       this.pressed.add(e.code);
@@ -20,6 +23,11 @@ export class KeyboardInput {
     target.addEventListener('keyup', (e) => this.pressed.delete(e.code));
     // ウィンドウ外にフォーカスが移ったらキーを離したことにする
     target.addEventListener('blur', () => this.pressed.clear());
+  }
+
+  set enabled(on: boolean) {
+    this.enabledValue = on;
+    if (!on) this.pressed.clear();
   }
 
   onAction(code: string, handler: () => void): void {
