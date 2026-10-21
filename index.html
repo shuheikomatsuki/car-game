@@ -1,0 +1,25 @@
+<!doctype html>
+<html lang="ja">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Car Game</title>
+    <link rel="stylesheet" href="/src/ui/style.css" />
+  </head>
+  <body>
+    <div id="app"></div>
+    <div id="hud">
+      <div id="speed"><span id="speed-value">0</span><span class="unit">km/h</span></div>
+      <div id="gear">D</div>
+    </div>
+    <div id="help">
+      <div><kbd>W</kbd>/<kbd>↑</kbd> アクセル</div>
+      <div><kbd>S</kbd>/<kbd>↓</kbd> ブレーキ・後退</div>
+      <div><kbd>A</kbd><kbd>D</kbd>/<kbd>←</kbd><kbd>→</kbd> ハンドル</div>
+      <div><kbd>C</kbd> カメラ切替 <span id="camera-name"></span></div>
+      <div><kbd>R</kbd> リセット　<kbd>H</kbd> ヘルプ表示</div>
+    </div>
+    <div id="loading">Loading...</div>
+    <script type="module" src="/src/main.ts"></script>
+  </body>
+</html>

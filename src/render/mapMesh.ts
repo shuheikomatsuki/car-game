@@ -1,0 +1,215 @@
+import * as THREE from 'three';
+import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
+import type { MapObstacles } from '../map/obstacles';
+import { type ParsedMap, type Tile, DIR_OFFSET, roadShape, tileCenter } from '../map/tilemap';
+import { CONE_HALF_SIZE } from '../sim/physics';
+
+const COLORS = {
+  grass: 0x7fb069,
+  outside: 0x5f8a4f,
+  road: 0x4a4e57,
+  line: 0xf2f2f2,
+  centerLine: 0xf2c94c,
+  wall: 0xb8b8b0,
+  outerWall: 0x8d8d86,
+  trunk: 0x7a5236,
+  leaves: 0x3f8f4a,
+  cone: 0xff7a1a,
+  buildings: [0xe8d8c3, 0xc9d6df, 0xf0c5a8, 0xd9d2e9],
+  roof: 0x6b6f78,
+};
+
+const ROAD_Y = 0.01;
+const LINE_Y = 0.02;
+
+/** XZ 平面上の長方形（y は高さ） */
+function flatRect(cx: number, cz: number, sx: number, sz: number, y: number): THREE.BufferGeometry {
+  const g = new THREE.PlaneGeometry(sx, sz);
+  g.rotateX(-Math.PI / 2);
+  g.translate(cx, y, cz);
+  return g;
+}
+
+/** 角 (cornerX, cornerZ) を中心に、タイル内側へ向かう 1/4 円弧の帯 */
+function flatArc(
+  cornerX: number,
+  cornerZ: number,
+  sx: number,
+  sz: number,
+  inner: number,
+  outer: number,
+  y: number,
+): THREE.BufferGeometry {
+  // RingGeometry は XY 平面。rotateX(-90°) で (x, y) → (x, 0, -y) になるので、
+  // XZ 上の方向 (a, b) は XY 上の角度 atan2(-b, a) に対応する
+  const diagonal = Math.atan2(sz, -sx);
+  const g = new THREE.RingGeometry(inner, outer, 24, 1, diagonal - Math.PI / 4, Math.PI / 2);
+  g.rotateX(-Math.PI / 2);
+  g.translate(cornerX, y, cornerZ);
+  return g;
+}
+
+function buildRoadGeometry(map: ParsedMap) {
+  const { tileSize, roadWidth } = map.def;
+  const half = tileSize / 2;
+  const rw = roadWidth / 2;
+  const road: THREE.BufferGeometry[] = [];
+  const edgeLines: THREE.BufferGeometry[] = [];
+  const centerLines: THREE.BufferGeometry[] = [];
+  const lineW = 0.18;
+  const edgeInset = 0.5;
+
+  const addTile = (tile: Tile) => {
+    const { x, z } = tileCenter(map, tile.col, tile.row);
+    const shape = roadShape(tile);
+
+    if (shape === 'curve') {
+      const sx = tile.connections.includes('E') ? 1 : -1;
+      const sz = tile.connections.includes('S') ? 1 : -1;
+      const cx = x + sx * half;
+      const cz = z + sz * half;
+      road.push(flatArc(cx, cz, sx, sz, half - rw, half + rw, ROAD_Y));
+      const inner = half - rw + edgeInset;
+      const outer = half + rw - edgeInset;
+      edgeLines.push(flatArc(cx, cz, sx, sz, inner - lineW / 2, inner + lineW / 2, LINE_Y));
+      edgeLines.push(flatArc(cx, cz, sx, sz, outer - lineW / 2, outer + lineW / 2, LINE_Y));
+      centerLines.push(flatArc(cx, cz, sx, sz, half - lineW / 2, half + lineW / 2, LINE_Y));
+      return;
+    }
+
+    // 中央の正方形 + つながっている方向への腕
+    road.push(flatRect(x, z, roadWidth, roadWidth, ROAD_Y));
+    const armLen = half - rw;
+    for (const d of tile.connections) {
+      const { dc, dr } = DIR_OFFSET[d];
+      const ax = x + dc * (rw + armLen / 2);
+      const az = z + dr * (rw + armLen / 2);
+      road.push(flatRect(ax, az, dc ? armLen : roadWidth, dr ? armLen : roadWidth, ROAD_Y));
+    }
+
+    if (shape === 'straight') {
+      const alongX = tile.connections.includes('E');
+      const edge = rw - edgeInset;
+      for (const s of [-1, 1]) {
+        edgeLines.push(
+          alongX
+            ? flatRect(x, z + s * edge, tileSize, lineW, LINE_Y)
+            : flatRect(x + s * edge, z, lineW, tileSize, LINE_Y),
+        );
+      }
+      // 破線のセンターライン
+      for (const offset of [-half / 2, half / 2]) {
+        centerLines.push(
+          alongX
+            ? flatRect(x + offset, z, 4, lineW, LINE_Y)
+            : flatRect(x, z + offset, lineW, 4, LINE_Y),
+        );
+      }
+    }
+  };
+
+  for (const tile of map.tiles) if (tile.kind === 'road') addTile(tile);
+
+  return {
+    road: mergeGeometries(road),
+    edgeLines: edgeLines.length ? mergeGeometries(edgeLines) : null,
+    centerLines: centerLines.length ? mergeGeometries(centerLines) : null,
+  };
+}
+
+export function buildMapMesh(map: ParsedMap, obstacles: MapObstacles): THREE.Group {
+  const group = new THREE.Group();
+  const { tileSize } = map.def;
+  const half = tileSize / 2;
+  const width = map.cols * tileSize;
+  const depth = map.rows * tileSize;
+  const centerX = width / 2 - half;
+  const centerZ = depth / 2 - half;
+
+  // 外側の地面と、マップ内の草地
+  const outside = new THREE.Mesh(
+    new THREE.PlaneGeometry(2000, 2000).rotateX(-Math.PI / 2),
+    new THREE.MeshLambertMaterial({ color: COLORS.outside }),
+  );
+  outside.position.set(centerX, -0.02, centerZ);
+  outside.receiveShadow = true;
+  group.add(outside);
+
+  const grass = new THREE.Mesh(
+    flatRect(centerX, centerZ, width, depth, 0),
+    new THREE.MeshLambertMaterial({ color: COLORS.grass }),
+  );
+  grass.receiveShadow = true;
+  group.add(grass);
+
+  // 道路と白線
+  const roads = buildRoadGeometry(map);
+  // 草地・道路・白線は高さの差が小さいので、ポリゴンオフセットで手前に描いてちらつきを防ぐ
+  const layer = (n: number) => ({ polygonOffset: true, polygonOffsetFactor: -n, polygonOffsetUnits: -n });
+  const roadMesh = new THREE.Mesh(
+    roads.road,
+    new THREE.MeshLambertMaterial({ color: COLORS.road, ...layer(1) }),
+  );
+  roadMesh.receiveShadow = true;
+  group.add(roadMesh);
+  if (roads.edgeLines) {
+    group.add(
+      new THREE.Mesh(roads.edgeLines, new THREE.MeshBasicMaterial({ color: COLORS.line, ...layer(2) })),
+    );
+  }
+  if (roads.centerLines) {
+    group.add(
+      new THREE.Mesh(roads.centerLines, new THREE.MeshBasicMaterial({ color: COLORS.centerLine, ...layer(2) })),
+    );
+  }
+
+  // 建物・壁
+  const roofMat = new THREE.MeshLambertMaterial({ color: COLORS.roof });
+  const buildingMats = COLORS.buildings.map((c) => new THREE.MeshLambertMaterial({ color: c }));
+  const wallMats = [
+    new THREE.MeshLambertMaterial({ color: COLORS.wall }),
+    new THREE.MeshLambertMaterial({ color: COLORS.outerWall }),
+  ];
+  for (const b of obstacles.boxes) {
+    const mat = b.kind === 'building' ? buildingMats[b.variant % buildingMats.length] : wallMats[b.variant];
+    const mesh = new THREE.Mesh(new THREE.BoxGeometry(b.hx * 2, b.hy * 2, b.hz * 2), mat);
+    mesh.position.set(b.x, b.y, b.z);
+    mesh.castShadow = true;
+    mesh.receiveShadow = true;
+    group.add(mesh);
+    if (b.kind === 'building') {
+      const roof = new THREE.Mesh(new THREE.BoxGeometry(b.hx * 2 + 0.4, 0.4, b.hz * 2 + 0.4), roofMat);
+      roof.position.set(b.x, b.y + b.hy + 0.2, b.z);
+      roof.castShadow = true;
+      group.add(roof);
+    }
+  }
+
+  // 木
+  const trunkMat = new THREE.MeshLambertMaterial({ color: COLORS.trunk });
+  const leavesMat = new THREE.MeshLambertMaterial({ color: COLORS.leaves, flatShading: true });
+  for (const t of obstacles.trees) {
+    const trunkH = t.height * 0.4;
+    const trunk = new THREE.Mesh(new THREE.CylinderGeometry(t.trunkRadius, t.trunkRadius, trunkH, 8), trunkMat);
+    trunk.position.set(t.x, trunkH / 2, t.z);
+    trunk.castShadow = true;
+    group.add(trunk);
+    const leaves = new THREE.Mesh(new THREE.ConeGeometry(t.height * 0.35, t.height * 0.7, 8), leavesMat);
+    leaves.position.set(t.x, trunkH + t.height * 0.3, t.z);
+    leaves.castShadow = true;
+    group.add(leaves);
+  }
+
+  return group;
+}
+
+/** コーン（動く小物）のメッシュ。位置は毎フレーム物理から同期する */
+export function createConeMesh(): THREE.Mesh {
+  const { radius, height } = CONE_HALF_SIZE;
+  const mesh = new THREE.Mesh(
+    new THREE.ConeGeometry(radius, height * 2, 12),
+    new THREE.MeshLambertMaterial({ color: COLORS.cone }),
+  );
+  mesh.castShadow = true;
+  return mesh;
+}
