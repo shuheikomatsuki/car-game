@@ -2,14 +2,19 @@ import * as THREE from 'three';
 import type { CarSnapshot } from '../sim/car';
 import { CABIN } from './carMesh';
 
+export type CameraModeId = 'chaseNear' | 'chaseFar' | 'driver' | 'passenger';
+
 type CameraMode =
-  | { kind: 'chase'; name: string; distance: number; height: number }
-  | { kind: 'cabin'; name: string; eye: THREE.Vector3 };
+  | { id: CameraModeId; kind: 'chase'; name: string; distance: number; height: number }
+  /** lookYaw: 正面からどれだけ視線をずらすか [rad]（負で右） */
+  | { id: CameraModeId; kind: 'cabin'; name: string; eye: THREE.Vector3; lookYaw: number };
 
 const MODES: CameraMode[] = [
-  { kind: 'chase', name: '三人称（近）', distance: 7, height: 2.6 },
-  { kind: 'chase', name: '三人称（遠）', distance: 13, height: 5.5 },
-  { kind: 'cabin', name: '運転席', eye: CABIN.driverEye },
+  { id: 'chaseNear', kind: 'chase', name: '三人称（近）', distance: 7, height: 2.6 },
+  { id: 'chaseFar', kind: 'chase', name: '三人称（遠）', distance: 13, height: 5.5 },
+  { id: 'driver', kind: 'cabin', name: '運転席', eye: CABIN.driverEye, lookYaw: 0 },
+  // 助手席からは運転席（右側）のキャラクターが視界に入るよう、少し右を向く
+  { id: 'passenger', kind: 'cabin', name: '助手席', eye: CABIN.passengerEye, lookYaw: -0.5 },
 ];
 
 const CHASE_FOV = 65;
@@ -32,8 +37,17 @@ export class CameraRig {
     return MODES[this.modeIndex].name;
   }
 
+  get modeId(): CameraModeId {
+    return MODES[this.modeIndex].id;
+  }
+
   cycle(): void {
     this.modeIndex = (this.modeIndex + 1) % MODES.length;
+    this.initialized = false;
+  }
+
+  select(id: CameraModeId): void {
+    this.modeIndex = MODES.findIndex((m) => m.id === id);
     this.initialized = false;
   }
 
@@ -75,7 +89,9 @@ export class CameraRig {
       // 車体ローカル座標の目の位置をワールド座標へ（前方 +Z、左 +X）
       const { x: ex, y: ey, z: ez } = mode.eye;
       this.position.set(car.x + ex * fz + ez * fx, car.y + ey, car.z - ex * fx + ez * fz);
-      this.lookAt.set(this.position.x + fx * 10, this.position.y - 0.7, this.position.z + fz * 10);
+      const lx = Math.sin(car.yaw + mode.lookYaw);
+      const lz = Math.cos(car.yaw + mode.lookYaw);
+      this.lookAt.set(this.position.x + lx * 10, this.position.y - 0.7, this.position.z + lz * 10);
       fov = CABIN_FOV + Math.min(speed, 30) * 0.15;
       near = 0.05;
     }
