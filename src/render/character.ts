@@ -2,6 +2,27 @@ import * as THREE from 'three';
 import type { Mood } from '../ai/dialogue';
 import { CABIN, SEAT_Y } from './carMesh';
 
+const HEAD_RADIUS = 0.1;
+/** 後ろ髪の傾き（顔写真のときは額が見えるよう後ろへ下げる） */
+const HAIR_TILT = -0.5;
+const HAIR_TILT_WITH_PHOTO = -1.1;
+
+/**
+ * 頭の前半分を覆う球面。写真を正面から投影するように UV を付ける
+ * （正面から見ると写真どおり、横に回るほど引き伸ばされる）。
+ */
+function createFaceCap(radius: number): THREE.BufferGeometry {
+  // phi 0〜π が +Z（顔の正面）側の半球
+  const geo = new THREE.SphereGeometry(radius, 40, 30, 0, Math.PI);
+  const pos = geo.getAttribute('position');
+  const uv = geo.getAttribute('uv');
+  for (let i = 0; i < pos.count; i++) {
+    // 正面から見て右（-X）が画像の右になる
+    uv.setXY(i, 0.5 - pos.getX(i) / (2 * radius), 0.5 + pos.getY(i) / (2 * radius));
+  }
+  return geo;
+}
+
 /** 肩からハンドルへ下向きに伸ばす腕の角度 */
 const ARM_PITCH = 0.4;
 
@@ -13,6 +34,9 @@ export class CharacterMesh {
   readonly root = new THREE.Group();
   private readonly head = new THREE.Group();
   private readonly arms: THREE.Group[] = [];
+  private readonly eyes: THREE.Mesh[] = [];
+  private readonly hairBack: THREE.Mesh;
+  private readonly faceCap: THREE.Mesh<THREE.BufferGeometry, THREE.MeshLambertMaterial>;
   private mood: Mood = 'neutral';
   private talkingUntil = 0;
   private time = 0;
@@ -30,12 +54,17 @@ export class CharacterMesh {
     this.root.add(torso);
 
     this.head.position.set(0, 0.34, 0);
-    const face = new THREE.Mesh(new THREE.SphereGeometry(0.1, 16, 12), skin);
+    const face = new THREE.Mesh(new THREE.SphereGeometry(HEAD_RADIUS, 16, 12), skin);
     this.head.add(face);
+    // 顔写真を貼る面（写真が無いときは隠す）
+    this.faceCap = new THREE.Mesh(createFaceCap(HEAD_RADIUS * 1.004), new THREE.MeshLambertMaterial());
+    this.faceCap.visible = false;
+    this.head.add(this.faceCap);
     // 髪: 頭頂から後ろを覆う半球 + 後ろ髪
     const back = new THREE.Mesh(new THREE.SphereGeometry(0.113, 16, 12, 0, Math.PI * 2, 0, Math.PI * 0.62), hair);
-    back.rotation.x = -0.5;
+    back.rotation.x = HAIR_TILT;
     this.head.add(back);
+    this.hairBack = back;
     const tail = new THREE.Mesh(new THREE.BoxGeometry(0.16, 0.2, 0.06), hair);
     tail.position.set(0, -0.08, -0.1);
     this.head.add(tail);
@@ -43,6 +72,7 @@ export class CharacterMesh {
       const e = new THREE.Mesh(new THREE.SphereGeometry(0.014, 8, 6), eye);
       e.position.set(s * 0.036, 0.01, 0.092);
       this.head.add(e);
+      this.eyes.push(e);
     }
     this.root.add(this.head);
 
@@ -62,6 +92,32 @@ export class CharacterMesh {
     }
   }
 
+  /** 顔写真（composeFaceTexture で作ったもの）を貼る。null で元の顔に戻す */
+  setFace(image: HTMLCanvasElement | HTMLImageElement | null): void {
+    const material = this.faceCap.material;
+    material.map?.dispose();
+    material.map = null;
+    if (image) {
+      const texture = new THREE.Texture(image);
+      texture.colorSpace = THREE.SRGBColorSpace;
+      texture.anisotropy = 4;
+      texture.needsUpdate = true;
+      material.map = texture;
+      // 車内の暗さで顔がつぶれないよう、少しだけ自ら光らせる
+      material.emissiveMap = texture;
+      material.emissive.setRGB(1, 1, 1);
+      material.emissiveIntensity = 0.3;
+    } else {
+      material.emissiveMap = null;
+      material.emissive.setRGB(0, 0, 0);
+    }
+    material.needsUpdate = true;
+    const has = image !== null;
+    this.faceCap.visible = has;
+    for (const e of this.eyes) e.visible = !has;
+    this.hairBack.rotation.x = has ? HAIR_TILT_WITH_PHOTO : HAIR_TILT;
+  }
+
   setMood(mood: Mood, talkSeconds: number): void {
     this.mood = mood;
     this.talkingUntil = this.time + talkSeconds;
@@ -71,7 +127,7 @@ export class CharacterMesh {
     this.time += dt;
     const talking = this.time < this.talkingUntil;
     // 話している間は助手席（+X 側）を少し向く
-    const targetYaw = talking && this.mood !== 'panic' ? 0.5 : 0;
+    const targetYaw = talking && this.mood !== 'panic' ? 0.8 : 0;
     this.head.rotation.y += (targetYaw - this.head.rotation.y) * Math.min(1, dt * 6);
     const shake = this.mood === 'panic' && talking ? Math.sin(this.time * 40) * 0.08 : 0;
     const bob = this.mood === 'happy' && talking ? Math.sin(this.time * 10) * 0.05 : 0;

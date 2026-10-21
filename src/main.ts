@@ -3,6 +3,8 @@ import { CHARACTER_NAME, Dialogue, type DialogueTrigger } from './ai/dialogue';
 import { CharacterDriver } from './ai/driver';
 import { PERSONALITIES, createRng } from './ai/personality';
 import { SoundSystem } from './audio/sound';
+import { FaceEditor } from './face/editor';
+import { loadFace, saveFace } from './face/store';
 import { GamepadInput, KeyboardInput, PAD_BUTTON, mergeInputs } from './core/input';
 import { FixedStepLoop } from './core/loop';
 import { Level } from './game/level';
@@ -139,7 +141,9 @@ async function main() {
     hud.setMode(on, on ? `${CHARACTER_NAME}に指示` : '自分で運転');
     driver = createDriver();
     resetCar();
-    cameraRig.select(on ? 'passenger' : 'chaseNear');
+    if (on || cameraRig.modeId === 'passenger' || cameraRig.modeId === 'faceCam') {
+      cameraRig.select(on ? 'passenger' : 'chaseNear');
+    }
     hud.setCameraName(cameraRig.modeName);
     if (on) {
       updateAssistStatus();
@@ -172,7 +176,7 @@ async function main() {
     if (assist) updateAssistStatus();
   };
   const cycleCamera = () => {
-    cameraRig.cycle();
+    cameraRig.cycle(assist ? [] : ['faceCam']);
     hud.setCameraName(cameraRig.modeName);
   };
   const toggleMute = () => {
@@ -190,6 +194,34 @@ async function main() {
     updateAssistStatus();
   };
 
+  // --- 顔写真 ---
+  const savedFace = loadFace();
+  if (savedFace) {
+    const img = new Image();
+    img.onload = () => character.setFace(img);
+    img.src = savedFace;
+  }
+  const faceEditor = new FaceEditor({
+    onApply: (texture) => {
+      character.setFace(texture);
+      const saved = saveFace(texture ? texture.toDataURL('image/jpeg', 0.9) : null);
+      if (texture && !saved) hud.toast('このブラウザでは保存できないため、ページを閉じるまでの間だけ使います');
+      else hud.toast(texture ? '顔写真を設定しました' : '顔写真をやめました');
+    },
+    onOpenChange: (open) => {
+      keyboard.enabled = !open;
+      // 貼った顔を確認しやすいよう、顔を映す視点にする
+      if (open && assist) {
+        cameraRig.select('faceCam');
+        hud.setCameraName(cameraRig.modeName);
+      }
+    },
+  });
+  const openFaceEditor = () => assist && faceEditor.open();
+  const faceButton = document.getElementById('face-button')!;
+  faceButton.addEventListener('mousedown', (e) => e.preventDefault());
+  faceButton.addEventListener('click', openFaceEditor);
+
   const keyboard = new KeyboardInput();
   keyboard.onAction('KeyR', resetCar);
   keyboard.onAction('KeyC', cycleCamera);
@@ -200,6 +232,7 @@ async function main() {
   keyboard.onAction('KeyQ', () => setAssist(!assist));
   keyboard.onAction('KeyV', () => assist && voiceIn.toggle());
   keyboard.onAction('KeyK', cyclePersonality);
+  keyboard.onAction('KeyF', openFaceEditor);
   for (const b of COMMAND_BUTTONS) keyboard.onAction(`Digit${b.key}`, () => giveCommand(b.command));
 
   const gamepad = new GamepadInput();
@@ -267,7 +300,7 @@ async function main() {
   // ?debug を付けるとブラウザの開発者ツールや自動テストから状態を触れる
   if (params.has('debug')) {
     Object.assign(window, {
-      __game: { getLevel: () => level, getDriver: () => driver, cameraRig, sound, giveCommand, setAssist },
+      __game: { getLevel: () => level, getDriver: () => driver, faceEditor, cameraRig, sound, giveCommand, setAssist },
     });
   }
 

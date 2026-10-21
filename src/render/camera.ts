@@ -2,12 +2,12 @@ import * as THREE from 'three';
 import type { CarSnapshot } from '../sim/car';
 import { CABIN } from './carMesh';
 
-export type CameraModeId = 'chaseNear' | 'chaseFar' | 'driver' | 'passenger';
+export type CameraModeId = 'chaseNear' | 'chaseFar' | 'driver' | 'passenger' | 'faceCam';
 
 type CameraMode =
   | { id: CameraModeId; kind: 'chase'; name: string; distance: number; height: number }
-  /** lookYaw: 正面からどれだけ視線をずらすか [rad]（負で右） */
-  | { id: CameraModeId; kind: 'cabin'; name: string; eye: THREE.Vector3; lookYaw: number };
+  /** lookYaw: 正面からどれだけ視線をずらすか [rad]（負で右）。lookDrop: 10m 先で視線をどれだけ下げるか [m] */
+  | { id: CameraModeId; kind: 'cabin'; name: string; eye: THREE.Vector3; lookYaw: number; lookDrop?: number; fov?: number };
 
 const MODES: CameraMode[] = [
   { id: 'chaseNear', kind: 'chase', name: '三人称（近）', distance: 7, height: 2.6 },
@@ -15,6 +15,16 @@ const MODES: CameraMode[] = [
   { id: 'driver', kind: 'cabin', name: '運転席', eye: CABIN.driverEye, lookYaw: 0 },
   // 助手席からは運転席（右側）のキャラクターが視界に入るよう、少し右を向く
   { id: 'passenger', kind: 'cabin', name: '助手席', eye: CABIN.passengerEye, lookYaw: -0.5 },
+  // フロントガラスの上から運転席のキャラクターの顔を映す
+  {
+    id: 'faceCam',
+    kind: 'cabin',
+    name: '車内カメラ',
+    eye: new THREE.Vector3(CABIN.driverEye.x + 0.08, CABIN.driverEye.y + 0.02, CABIN.driverEye.z + 0.62),
+    lookYaw: Math.PI - 0.08,
+    lookDrop: 0.6,
+    fov: 58,
+  },
 ];
 
 const CHASE_FOV = 65;
@@ -41,8 +51,11 @@ export class CameraRig {
     return MODES[this.modeIndex].id;
   }
 
-  cycle(): void {
-    this.modeIndex = (this.modeIndex + 1) % MODES.length;
+  /** 次の視点へ。skip に含まれる視点は飛ばす（キャラクターがいないときの車内カメラなど） */
+  cycle(skip: readonly CameraModeId[] = []): void {
+    do {
+      this.modeIndex = (this.modeIndex + 1) % MODES.length;
+    } while (skip.includes(MODES[this.modeIndex].id));
     this.initialized = false;
   }
 
@@ -91,8 +104,8 @@ export class CameraRig {
       this.position.set(car.x + ex * fz + ez * fx, car.y + ey, car.z - ex * fx + ez * fz);
       const lx = Math.sin(car.yaw + mode.lookYaw);
       const lz = Math.cos(car.yaw + mode.lookYaw);
-      this.lookAt.set(this.position.x + lx * 10, this.position.y - 0.7, this.position.z + lz * 10);
-      fov = CABIN_FOV + Math.min(speed, 30) * 0.15;
+      this.lookAt.set(this.position.x + lx * 10, this.position.y - (mode.lookDrop ?? 0.7), this.position.z + lz * 10);
+      fov = (mode.fov ?? CABIN_FOV) + Math.min(speed, 30) * 0.15;
       near = 0.05;
     }
 
