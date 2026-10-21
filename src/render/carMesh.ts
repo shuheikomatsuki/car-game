@@ -46,9 +46,11 @@ export class CarMesh {
   private readonly frontPivots: THREE.Group[] = [];
   private readonly wheels: THREE.Mesh[] = [];
   private readonly steeringWheel = new THREE.Group();
+  private readonly paint: THREE.MeshLambertMaterial;
 
   constructor(color = 0xd94141) {
     const paint = new THREE.MeshLambertMaterial({ color });
+    this.paint = paint;
     const dark = new THREE.MeshLambertMaterial({ color: 0x1d1d1f });
     const trim = new THREE.MeshLambertMaterial({ color: 0x2b2d31 });
     this.buildBody(paint, dark);
@@ -213,6 +215,22 @@ export class CarMesh {
         if (z === frontAxle) this.frontPivots.push(pivot);
       }
     }
+  }
+
+  setColor(color: number): void {
+    this.paint.color.setHex(color);
+  }
+
+  dispose(): void {
+    this.root.removeFromParent();
+    const materials = new Set<THREE.Material>();
+    this.root.traverse((obj) => {
+      if (obj instanceof THREE.Mesh) {
+        obj.geometry.dispose();
+        for (const m of Array.isArray(obj.material) ? obj.material : [obj.material]) materials.add(m);
+      }
+    });
+    for (const m of materials) m.dispose();
   }
 
   update(s: CarSnapshot): void {

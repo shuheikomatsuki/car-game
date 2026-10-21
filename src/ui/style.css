@@ -242,7 +242,8 @@ body.mode-assist .manual-only {
   margin: 0 0 0 6px;
 }
 
-#face-editor {
+#face-editor,
+#online {
   position: fixed;
   inset: 0;
   display: grid;
@@ -251,11 +252,12 @@ body.mode-assist .manual-only {
   z-index: 10;
 }
 
-#face-editor.hidden {
+#face-editor.hidden,
+#online.hidden {
   display: none;
 }
 
-.face-panel {
+.dialog-panel {
   width: min(440px, calc(100vw - 32px));
   padding: 16px 20px;
   border-radius: 12px;
@@ -264,23 +266,23 @@ body.mode-assist .manual-only {
   user-select: none;
 }
 
-.face-panel h2 {
+.dialog-panel h2 {
   margin: 0 0 6px;
   font-size: 17px;
 }
 
-.face-panel .note {
+.dialog-panel .note {
   margin: 6px 0;
   font-size: 12px;
   line-height: 1.6;
   opacity: 0.85;
 }
 
-.face-panel .eye {
+.dialog-panel .eye {
   color: #78c8ff;
 }
 
-.face-panel .mouth {
+.dialog-panel .mouth {
   color: #ff96b4;
 }
 
@@ -320,18 +322,18 @@ body.mode-assist .manual-only {
   width: 100%;
 }
 
-.face-buttons {
+.dialog-buttons {
   display: flex;
   flex-wrap: wrap;
   gap: 8px;
   margin-top: 8px;
 }
 
-.face-buttons .spacer {
+.dialog-buttons .spacer {
   flex: 1;
 }
 
-.face-buttons button,
+.dialog-buttons button,
 .face-file {
   font: inherit;
   font-size: 13px;
@@ -343,16 +345,95 @@ body.mode-assist .manual-only {
   cursor: pointer;
 }
 
-.face-buttons button:disabled {
+.dialog-buttons button:disabled {
   opacity: 0.4;
   cursor: default;
 }
 
-.face-buttons .primary {
+.dialog-buttons .primary {
   border-color: #6aa8ff;
   background: #2f5fa8;
 }
 
 .face-file input {
   display: none;
+}
+
+.dialog-panel .field {
+  display: block;
+  margin: 10px 0;
+  font-size: 13px;
+}
+
+.dialog-panel .row {
+  display: flex;
+  gap: 6px;
+}
+
+.dialog-panel input[type='text'] {
+  display: block;
+  width: 100%;
+  margin-top: 4px;
+  padding: 6px 8px;
+  font: inherit;
+  font-size: 14px;
+  color: #fff;
+  border: 1px solid rgba(255, 255, 255, 0.25);
+  border-radius: 6px;
+  background: rgba(0, 0, 0, 0.35);
+  user-select: text;
+}
+
+.dialog-panel .row input {
+  flex: 1;
+  min-width: 0;
+}
+
+.dialog-panel .row button {
+  margin-top: 4px;
+  font: inherit;
+  font-size: 13px;
+  color: #fff;
+  padding: 0 10px;
+  border: 1px solid rgba(255, 255, 255, 0.25);
+  border-radius: 6px;
+  background: rgba(40, 46, 58, 0.9);
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+#online-room {
+  letter-spacing: 0.3em;
+  text-transform: uppercase;
+  font-weight: 700;
+}
+
+#online-status:empty {
+  display: none;
+}
+
+.dialog-buttons .hidden {
+  display: none;
+}
+
+#net-status {
+  position: fixed;
+  right: 16px;
+  top: 16px;
+  max-width: 280px;
+  padding: 8px 12px;
+  border-radius: 8px;
+  background: rgba(0, 0, 0, 0.45);
+  font-size: 13px;
+  line-height: 1.6;
+  pointer-events: none;
+}
+
+#net-status.hidden {
+  display: none;
+}
+
+#net-status .code {
+  font-weight: 700;
+  letter-spacing: 0.15em;
 }

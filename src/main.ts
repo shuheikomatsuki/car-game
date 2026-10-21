@@ -8,7 +8,10 @@ import { loadFace, saveFace } from './face/store';
 import { GamepadInput, KeyboardInput, PAD_BUTTON, mergeInputs } from './core/input';
 import { FixedStepLoop } from './core/loop';
 import { Level } from './game/level';
+import { PLAYER_COLORS, RemoteCars, carStateOf } from './game/remoteCars';
 import { MAPS } from './map/maps';
+import { NetClient } from './net/client';
+import { isRoomCode, normalizeRoomCode } from './net/protocol';
 import { CameraRig } from './render/camera';
 import { CarMesh } from './render/carMesh';
 import { CharacterMesh } from './render/character';
@@ -18,6 +21,7 @@ import { loadRapier } from './sim/physics';
 import { NEUTRAL_INPUT, VEHICLE_PRESETS } from './sim/vehicle';
 import { AssistPanel, commandLabel } from './ui/assistPanel';
 import { Hud, hideLoading, showError } from './ui/hud';
+import { OnlinePanel } from './ui/onlinePanel';
 import { VoiceInput } from './voice/recognition';
 import { VoiceOutput } from './voice/speech';
 
@@ -25,6 +29,8 @@ import { VoiceOutput } from './voice/speech';
 const IMPACT_THRESHOLD = 2.5;
 /** キャラクターが黙っている時間がこれを超えたら、何か話す [s] */
 const IDLE_CHAT_SECONDS = 25;
+/** 自分の車の状態を送る間隔（物理ステップ数。60Hz / 3 = 20Hz） */
+const SEND_EVERY_STEPS = 3;
 
 /** 2つのスナップショットの間を補間する（描画を物理ステップより滑らかにするため） */
 function lerpSnapshot(a: CarSnapshot, b: CarSnapshot, t: number): CarSnapshot {
@@ -127,11 +133,16 @@ async function main() {
     );
   };
 
+  const remoteCars = new RemoteCars(view.scene);
+  remoteCars.attachLevel(level);
+
   const resetCar = () => {
     level.car.reset(assist ? level.laneSpawn : level.spawn);
     prev = curr = level.car.snapshot();
     driver.reset();
     cameraRig.snap();
+    // スタート地点で他の車と重なっても弾き飛ばされないように
+    remoteCars.ghost(performance.now());
   };
 
   const setAssist = (on: boolean) => {
@@ -154,16 +165,23 @@ async function main() {
     }
   };
 
-  const nextMap = () => {
+  const loadMap = (index: number, message = `マップ: ${MAPS[index].name}`) => {
     level.dispose();
-    mapIndex = (mapIndex + 1) % MAPS.length;
+    mapIndex = index;
     level = new Level(rapier, MAPS[mapIndex]);
     level.car.params = { ...vehicle().params };
     view.scene.add(level.group);
+    remoteCars.attachLevel(level);
     driver = createDriver();
     resetCar();
     hud.setMapName(level.def.name);
-    hud.toast(`マップ: ${level.def.name}`);
+    hud.toast(message);
+    net.updateJoin({ map: mapIndex });
+  };
+  const nextMap = () => {
+    loadMap((mapIndex + 1) % MAPS.length);
+    // 同じ部屋の全員のマップも切り替える
+    net.send({ t: 'map', map: mapIndex });
   };
   const cycleCar = () => {
     carIndex = (carIndex + 1) % VEHICLE_PRESETS.length;
@@ -172,6 +190,8 @@ async function main() {
     driver = createDriver();
     resetCar();
     hud.setCarName(vehicle().label);
+    net.send({ t: 'profile', car: vehicle().id });
+    net.updateJoin({ car: vehicle().id });
     hud.toast(`車: ${vehicle().label}（最高 ${Math.round(vehicle().params.maxForwardSpeed * 3.6)}km/h）`);
     if (assist) updateAssistStatus();
   };
@@ -222,7 +242,92 @@ async function main() {
   faceButton.addEventListener('mousedown', (e) => e.preventDefault());
   faceButton.addEventListener('click', openFaceEditor);
 
+  // --- オンライン ---
+  const serverUrl: string = params.get('server') ?? import.meta.env.VITE_SERVER_URL ?? '';
+  const netStatus = document.getElementById('net-status')!;
+  let roomCode = '';
+  const nameOf = (id: number) => remoteCars.list.find((p) => p.id === id)?.name ?? '誰か';
+  const refreshNetStatus = () => {
+    const online = net.status !== 'offline' && net.status !== 'error';
+    netStatus.classList.toggle('hidden', !online);
+    if (!online) return;
+    const state = net.status === 'online' ? '' : '（接続中…）';
+    const names = remoteCars.list.map((p) => p.name).join('、');
+    netStatus.innerHTML = `🌐 部屋 <span class="code">${roomCode}</span>${state}<br>${
+      names ? `一緒に走っている人: ${escapeHtml(names)}` : '他の人を待っています'
+    }`;
+  };
+  const net: NetClient = new NetClient({
+    onStatus: (status, detail) => {
+      if (status === 'offline' || status === 'error') {
+        remoteCars.clear();
+        carMesh.setColor(PLAYER_COLORS[0]);
+      }
+      if (status === 'reconnecting') remoteCars.clear();
+      onlinePanel.setConnected(status === 'online' || status === 'connecting' || status === 'reconnecting');
+      onlinePanel.setStatus(
+        detail ??
+          (status === 'online'
+            ? `部屋 ${roomCode} に参加しています`
+            : status === 'connecting' || status === 'reconnecting'
+              ? '接続しています…'
+              : ''),
+      );
+      if (detail) hud.toast(detail);
+      refreshNetStatus();
+    },
+    onMessage: (m) => {
+      const now = performance.now();
+      switch (m.t) {
+        case 'welcome':
+          remoteCars.clear();
+          for (const p of m.players) remoteCars.add(p);
+          carMesh.setColor(PLAYER_COLORS[m.color % PLAYER_COLORS.length]);
+          if (m.map !== mapIndex && m.map >= 0 && m.map < MAPS.length) loadMap(m.map, `部屋のマップ「${MAPS[m.map].name}」に移動しました`);
+          hud.toast(`部屋 ${roomCode} に参加しました`);
+          onlinePanel.close();
+          break;
+        case 'join':
+          remoteCars.add(m.player);
+          hud.toast(`${m.player.name} が来ました`);
+          break;
+        case 'leave':
+          hud.toast(`${nameOf(m.id)} が抜けました`);
+          remoteCars.remove(m.id);
+          break;
+        case 'profile':
+          remoteCars.update(m.player);
+          break;
+        case 'state':
+          remoteCars.pushState(m.id, m.time, m.s, now);
+          break;
+        case 'map':
+          if (m.map >= 0 && m.map < MAPS.length && m.map !== mapIndex) {
+            loadMap(m.map, `${nameOf(m.by)} がマップを「${MAPS[m.map].name}」に変えました`);
+          }
+          break;
+      }
+      refreshNetStatus();
+    },
+  });
+  const onlinePanel = new OnlinePanel(
+    {
+      onJoin: (name, room) => {
+        roomCode = room;
+        net.connect(serverUrl, room, { name, car: vehicle().id, map: mapIndex });
+      },
+      onLeave: () => {
+        net.disconnect();
+        hud.toast('部屋から退出しました');
+      },
+      onOpenChange: (open) => (keyboard.enabled = !open),
+    },
+    serverUrl !== '',
+  );
+  let stepCount = 0;
+
   const keyboard = new KeyboardInput();
+  keyboard.onAction('KeyO', () => onlinePanel.open());
   keyboard.onAction('KeyR', resetCar);
   keyboard.onAction('KeyC', cycleCamera);
   keyboard.onAction('KeyN', nextMap);
@@ -262,6 +367,7 @@ async function main() {
       } else {
         input = mergeInputs(keyboard.read(), pad);
       }
+      remoteCars.step(performance.now());
       level.physics.world.timestep = dt;
       level.car.applyInput(input, dt);
       level.physics.world.step();
@@ -277,6 +383,9 @@ async function main() {
       curr = level.car.snapshot();
       // マップ外に落ちた場合の保険
       if (curr.y < -5) resetCar();
+      if (net.isOnline && ++stepCount % SEND_EVERY_STEPS === 0) {
+        net.send({ t: 'state', time: performance.now(), s: carStateOf(curr) });
+      }
 
       if (assist) {
         for (const e of driver.drainEvents()) speak(e);
@@ -286,6 +395,7 @@ async function main() {
     (alpha, frameDt) => {
       const s = lerpSnapshot(prev, curr, alpha);
       carMesh.update(s);
+      remoteCars.render(performance.now());
       character.update(frameDt, s.steerAngle);
       level.syncProps();
       cameraRig.update(s, frameDt);
@@ -300,12 +410,23 @@ async function main() {
   // ?debug を付けるとブラウザの開発者ツールや自動テストから状態を触れる
   if (params.has('debug')) {
     Object.assign(window, {
-      __game: { getLevel: () => level, getDriver: () => driver, faceEditor, cameraRig, sound, giveCommand, setAssist },
+      __game: { getLevel: () => level, getDriver: () => driver, faceEditor, net, remoteCars, onlinePanel, cameraRig, sound, giveCommand, setAssist },
     });
   }
 
   hideLoading();
   loop.start();
+
+  // 招待リンク（?room=XXXX）から開いたら、参加画面を出す
+  const invited = normalizeRoomCode(params.get('room') ?? '');
+  if (isRoomCode(invited)) {
+    onlinePanel.presetRoom(invited);
+    onlinePanel.open();
+  }
+}
+
+function escapeHtml(s: string): string {
+  return s.replace(/[&<>"']/g, (c) => `&#${c.charCodeAt(0)};`);
 }
 
 main().catch((err) => {

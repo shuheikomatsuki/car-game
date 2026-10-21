@@ -20,6 +20,7 @@
       <div><kbd>Q</kbd> モード切替（自分で運転／ハルに指示）</div>
       <div><kbd>C</kbd> カメラ切替 <span id="camera-name"></span></div>
       <div><kbd>N</kbd> マップ切替　<kbd>P</kbd> 車の切替　<kbd>R</kbd> リセット</div>
+      <div><kbd>O</kbd> みんなで走る（オンライン）</div>
       <div><kbd>M</kbd> サウンド <span id="sound-state"></span>　<kbd>H</kbd> ヘルプ表示</div>
       <div id="gamepad-state" class="hidden">🎮 ゲームパッド: 左スティック / RT / LT・Y カメラ・START リセット・BACK マップ</div>
     </div>
@@ -34,7 +35,7 @@
       </div>
     </div>
     <div id="face-editor" class="hidden" role="dialog" aria-label="顔写真">
-      <div class="face-panel">
+      <div class="dialog-panel">
         <h2>キャラクターの顔写真</h2>
         <p class="note">写真はこのブラウザの中だけで処理・保存され、どこにも送信されません。</p>
         <div class="face-crop">
@@ -43,7 +44,7 @@
         </div>
         <p class="note">ドラッグで移動、ホイールかスライダーで拡大。点線の枠に顔を、<span class="eye">青い線</span>に目を、<span class="mouth">赤い線</span>に口を合わせます。</p>
         <input id="face-zoom" type="range" min="0" value="0" aria-label="拡大" />
-        <div class="face-buttons">
+        <div class="dialog-buttons">
           <label class="face-file">写真を選ぶ<input id="face-file" type="file" accept="image/*" /></label>
           <button id="face-clear">顔写真をやめる</button>
           <span class="spacer"></span>
@@ -52,6 +53,27 @@
         </div>
       </div>
     </div>
+    <div id="online" class="hidden" role="dialog" aria-label="みんなで走る">
+      <div class="dialog-panel">
+        <h2>みんなで走る（オンライン）</h2>
+        <p class="note">同じ部屋コードを入れた人と、同じマップを一緒に走れます（最大8人）。送るのは名前・車の種類・車の位置だけです。</p>
+        <label class="field">名前<input id="online-name" type="text" placeholder="ゲスト" autocomplete="nickname" /></label>
+        <label class="field">部屋コード
+          <span class="row"><input id="online-room" type="text" autocomplete="off" spellcheck="false" /><button id="online-new" type="button">新しく作る</button></span>
+        </label>
+        <label class="field">招待リンク（友だちに送る）
+          <span class="row"><input id="online-link" type="text" readonly /><button id="online-copy" type="button">コピー</button></span>
+        </label>
+        <p id="online-status" class="note"></p>
+        <div class="dialog-buttons">
+          <button id="online-leave" class="hidden">退出する</button>
+          <span class="spacer"></span>
+          <button id="online-close">閉じる</button>
+          <button id="online-join" class="primary">参加する</button>
+        </div>
+      </div>
+    </div>
+    <div id="net-status" class="hidden"></div>
     <div id="toast"></div>
     <div id="loading">Loading...</div>
     <script type="module" src="/src/main.ts"></script>
