@@ -13,7 +13,7 @@ import { CharacterMesh } from './render/character';
 import { GameScene } from './render/scene';
 import type { CarSnapshot } from './sim/car';
 import { loadRapier } from './sim/physics';
-import { NEUTRAL_INPUT } from './sim/vehicle';
+import { NEUTRAL_INPUT, VEHICLE_PRESETS } from './sim/vehicle';
 import { AssistPanel, commandLabel } from './ui/assistPanel';
 import { Hud, hideLoading, showError } from './ui/hud';
 import { VoiceInput } from './voice/recognition';
@@ -57,7 +57,11 @@ async function main() {
   // ?map=1 のように開始マップを指定できる
   const requested = Number(params.get('map'));
   let mapIndex = Number.isInteger(requested) && requested >= 0 && requested < MAPS.length ? requested : 0;
+  // ?car=sport のように開始時の車を指定できる
+  let carIndex = Math.max(0, VEHICLE_PRESETS.findIndex((v) => v.id === params.get('car')));
+  const vehicle = () => VEHICLE_PRESETS[carIndex];
   let level = new Level(rapier, MAPS[mapIndex]);
+  level.car.params = { ...vehicle().params };
   view.scene.add(level.group);
   let prev = level.car.snapshot();
   let curr = prev;
@@ -68,7 +72,7 @@ async function main() {
   let personalityIndex = 0;
   const rng = createRng(Date.now());
   const dialogue = new Dialogue(rng);
-  const createDriver = () => new CharacterDriver(level.map, PERSONALITIES[personalityIndex], rng);
+  const createDriver = () => new CharacterDriver(level.map, PERSONALITIES[personalityIndex], rng, vehicle().params);
   let driver = createDriver();
   let lastLinePriority = 0;
   let lastLineAt = 0;
@@ -150,11 +154,22 @@ async function main() {
     level.dispose();
     mapIndex = (mapIndex + 1) % MAPS.length;
     level = new Level(rapier, MAPS[mapIndex]);
+    level.car.params = { ...vehicle().params };
     view.scene.add(level.group);
     driver = createDriver();
     resetCar();
     hud.setMapName(level.def.name);
     hud.toast(`マップ: ${level.def.name}`);
+  };
+  const cycleCar = () => {
+    carIndex = (carIndex + 1) % VEHICLE_PRESETS.length;
+    level.car.params = { ...vehicle().params };
+    // キャラクターも新しい車の性能（ハンドルの効き・最高速）に合わせて運転し直す
+    driver = createDriver();
+    resetCar();
+    hud.setCarName(vehicle().label);
+    hud.toast(`車: ${vehicle().label}（最高 ${Math.round(vehicle().params.maxForwardSpeed * 3.6)}km/h）`);
+    if (assist) updateAssistStatus();
   };
   const cycleCamera = () => {
     cameraRig.cycle();
@@ -179,6 +194,7 @@ async function main() {
   keyboard.onAction('KeyR', resetCar);
   keyboard.onAction('KeyC', cycleCamera);
   keyboard.onAction('KeyN', nextMap);
+  keyboard.onAction('KeyP', cycleCar);
   keyboard.onAction('KeyM', toggleMute);
   keyboard.onAction('KeyH', () => hud.toggleHelp());
   keyboard.onAction('KeyQ', () => setAssist(!assist));
@@ -198,6 +214,7 @@ async function main() {
 
   hud.setCameraName(cameraRig.modeName);
   hud.setMapName(level.def.name);
+  hud.setCarName(vehicle().label);
   hud.setMuted(sound.isMuted);
   voiceOut.enabled = !sound.isMuted;
   setAssist(assist);

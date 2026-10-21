@@ -65,6 +65,36 @@ export const DEFAULT_VEHICLE_PARAMS: Readonly<VehicleParams> = {
   lateralGrip: 8,
 };
 
+export interface VehiclePreset {
+  id: string;
+  label: string;
+  params: Readonly<VehicleParams>;
+}
+
+/** 選べる車（P キーで切り替え） */
+export const VEHICLE_PRESETS: readonly VehiclePreset[] = [
+  { id: 'standard', label: '普通車', params: DEFAULT_VEHICLE_PARAMS },
+  {
+    id: 'kei',
+    label: '軽自動車',
+    params: { ...DEFAULT_VEHICLE_PARAMS, maxForwardSpeed: 24, engineAccel: 7, brakeDecel: 14, wheelBase: 2.4, maxLateralAccel: 12 },
+  },
+  {
+    id: 'sport',
+    label: 'スポーツカー',
+    params: {
+      ...DEFAULT_VEHICLE_PARAMS,
+      maxForwardSpeed: 55,
+      engineAccel: 17,
+      brakeDecel: 22,
+      dragCoef: 0.0008,
+      steerRate: 2.6,
+      maxLateralAccel: 18,
+      lateralGrip: 10,
+    },
+  },
+];
+
 export interface VehicleState {
   /** 前後方向の速度 [m/s]（前進が正） */
   forwardSpeed: number;

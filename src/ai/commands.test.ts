@@ -3,6 +3,9 @@ import { type Command, isEmergency, parseCommand } from './commands';
 
 const cases: [string, Command | null][] = [
   ['発進して', 'start'],
+  ['発信して', 'start'],
+  ['発振して', 'start'],
+  ['発車して', 'start'],
   ['しゅっぱつ！', 'start'],
   ['よし、行って', 'start'],
   ['もう少しスピードを上げて', 'faster'],
