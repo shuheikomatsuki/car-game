@@ -4,7 +4,8 @@ import { CAR_DIMENSIONS, type CarSnapshot } from '../sim/car';
 /** 車内の座標（車体ローカル、前方 +Z・左 +X）。右ハンドルなので運転席は -X 側 */
 export const CABIN = {
   driverEye: new THREE.Vector3(-0.4, 1.26, -0.2),
-  passengerEye: new THREE.Vector3(0.4, 1.26, -0.2),
+  // 助手席の視点は背もたれ寄りにして、運転席のキャラクターが視界に入るようにする
+  passengerEye: new THREE.Vector3(0.38, 1.24, -0.38),
 };
 
 /** ハンドルの回転量 / 前輪の舵角（見た目用の比率） */
@@ -12,6 +13,8 @@ const STEERING_RATIO = 6;
 
 /** ボディ上面の高さ */
 const BELT_Y = CAR_DIMENSIONS.wheelRadius + 0.475;
+/** 座面の高さ */
+export const SEAT_Y = BELT_Y + 0.11;
 const ROOF_Y = 1.42;
 /** 窓の形（側面から見た z, y）。後ろ下 → 前下 → 前上 → 後ろ上 */
 const WINDOW_PROFILE: [number, number][] = [
@@ -163,7 +166,7 @@ export class CarMesh {
 
     for (const x of [CABIN.driverEye.x, CABIN.passengerEye.x]) {
       const cushion = new THREE.Mesh(new THREE.BoxGeometry(0.5, 0.12, 0.5), seatMat);
-      cushion.position.set(x, BELT_Y + 0.05, -0.2);
+      cushion.position.set(x, SEAT_Y - 0.06, -0.2);
       this.root.add(cushion);
       const back = new THREE.Mesh(new THREE.BoxGeometry(0.5, 0.6, 0.1), seatMat);
       back.position.set(x, BELT_Y + 0.35, -0.5);

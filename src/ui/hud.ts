@@ -11,6 +11,7 @@ export class Hud {
   private readonly gear = el('gear');
   private readonly cameraName = el('camera-name');
   private readonly mapName = el('map-name');
+  private readonly modeName = el('mode-name');
   private readonly soundState = el('sound-state');
   private readonly gamepadState = el('gamepad-state');
   private readonly help = el('help');
@@ -34,6 +35,12 @@ export class Hud {
 
   setMapName(name: string): void {
     this.mapName.textContent = name;
+  }
+
+  setMode(assist: boolean, label: string): void {
+    this.modeName.textContent = label;
+    document.body.classList.toggle('mode-assist', assist);
+    document.body.classList.toggle('mode-manual', !assist);
   }
 
   setMuted(muted: boolean): void {
