@@ -13,7 +13,7 @@ import { RoutePlanner, type Turn } from './navigation';
 import { type Personality, randomBetween } from './personality';
 
 /** 選べる巡航速度 [km/h] */
-export const SPEED_LEVELS_KMH = [12, 20, 30, 40];
+export const SPEED_LEVELS_KMH = [12, 20, 30, 40, 50, 60];
 const DEFAULT_SPEED_LEVEL = 1;
 /** 計画上の減速度 [m/s^2]（実際のブレーキ性能より十分小さくして余裕を持たせる） */
 const PLAN_DECEL = 2.5;
@@ -161,7 +161,7 @@ export class CharacterDriver {
     let target = 0;
     if (this.stateValue === 'driving') {
       const horizon = Math.max(30, (v * v) / (2 * PLAN_DECEL) + 10);
-      target = Math.min(this.speedKmh / 3.6, this.planner.safeSpeed(horizon, PLAN_DECEL));
+      target = Math.min(this.speedKmh / 3.6, this.params.maxForwardSpeed * 0.9, this.planner.safeSpeed(horizon, PLAN_DECEL));
 
       // 止まりきれる距離の少し先まで、経路上の点に向けて障害物を探す。
       // 一度止まったら少し余裕を持たせて、近づく→止まる→動くを繰り返さないようにする

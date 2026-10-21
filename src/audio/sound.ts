@@ -4,7 +4,7 @@
  */
 
 /** 疑似的なギアの切り替わり速度 [m/s] */
-const GEAR_SHIFT_SPEEDS = [0, 7, 14, 21, 28];
+const GEAR_SHIFT_SPEEDS = [0, 7, 14, 21, 28, 38, 48];
 
 export interface EngineTone {
   gear: number;

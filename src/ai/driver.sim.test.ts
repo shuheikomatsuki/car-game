@@ -3,6 +3,7 @@ import { SCHOOL_MAP, TOWN_MAP } from '../map/maps';
 import { buildObstacles } from '../map/obstacles';
 import { DIR_YAW, type MapDefinition, parseMap, tileCenter } from '../map/tilemap';
 import { Car } from '../sim/car';
+import { VEHICLE_PRESETS, type VehicleParams } from '../sim/vehicle';
 import { type Rapier, createPhysicsWorld, loadRapier } from '../sim/physics';
 import { createObstacleSensor } from '../sim/sensors';
 import type { Command } from './commands';
@@ -21,14 +22,14 @@ beforeAll(async () => {
   rapier = await loadRapier();
 });
 
-function createSim(def: MapDefinition, personality: Personality = EASY, seed = 1) {
+function createSim(def: MapDefinition, personality: Personality = EASY, seed = 1, params?: VehicleParams) {
   const map = parseMap(def);
   const physics = createPhysicsWorld(rapier, buildObstacles(map));
   const spawn = { ...tileCenter(map, def.start.col, def.start.row), yaw: DIR_YAW[def.start.heading] };
   // 左車線から出発
   spawn.z -= 3;
-  const car = new Car(physics, spawn);
-  const driver = new CharacterDriver(map, personality, createRng(seed));
+  const car = new Car(physics, spawn, params);
+  const driver = new CharacterDriver(map, personality, createRng(seed), params);
   const sense = createObstacleSensor(physics, car);
   const events: DriverEvent[] = [];
   let distance = 0;
@@ -130,6 +131,26 @@ describe('CharacterDriver on the physics world', () => {
       expect(sim.offRoadSteps, `seed ${seed}`).toBe(0);
       expect(sim.distance, `seed ${seed}`).toBeGreaterThan(300);
     }
+  });
+
+  it('drives at top speed in the sports car without leaving the road', () => {
+    const sport = VEHICLE_PRESETS.find((v) => v.id === 'sport')!.params;
+    const sim = createSim(SCHOOL_NO_CONES, EASY, 1, sport);
+    sim.say('start');
+    for (let i = 0; i < 4; i++) sim.say('faster');
+    let top = 0;
+    for (let t = 0; t < 120; t++) {
+      sim.run(1, (e) => {
+        if (e.type === 'askDirection') sim.say('turnLeft');
+      });
+      top = Math.max(top, sim.car.snapshot().forwardSpeed * 3.6);
+    }
+    expect(sim.driver.speedKmh).toBe(60);
+    // 直線では実際に普通の巡航（40km/h）より速く走る
+    expect(top).toBeGreaterThan(45);
+    expect(sim.maxImpact).toBeLessThan(2.5);
+    expect(sim.offRoadSteps).toBe(0);
+    expect(sim.distance).toBeGreaterThan(700);
   });
 
   it('stops for cones in the lane and pushes through slowly when told to start again', () => {
