@@ -14,10 +14,12 @@
   },
   "dependencies": {
     "@dimforge/rapier3d-compat": "^0.21.0",
+    "@mediapipe/tasks-vision": "0.10.21",
     "three": "^0.186.1"
   },
   "devDependencies": {
     "@cloudflare/workers-types": "^5.20261021.1",
+    "@types/node": "22.18.0",
     "@types/three": "^0.186.0",
     "typescript": "^7.0.2",
     "vite": "^8.3.5",

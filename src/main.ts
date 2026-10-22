@@ -4,7 +4,8 @@ import { CharacterDriver } from './ai/driver';
 import { PERSONALITIES, createRng } from './ai/personality';
 import { SoundSystem } from './audio/sound';
 import { FaceEditor } from './face/editor';
-import { loadFace, saveFace } from './face/store';
+import { buildFaceMesh, decodeFacePoints, encodeFacePoints, type FacePoints } from './face/shape';
+import { loadFace, loadFaceShape, saveFace, saveFaceShape } from './face/store';
 import { GamepadInput, KeyboardInput, PAD_BUTTON, mergeInputs } from './core/input';
 import { FixedStepLoop } from './core/loop';
 import { Level } from './game/level';
@@ -14,7 +15,7 @@ import { NetClient } from './net/client';
 import { isRoomCode, normalizeRoomCode } from './net/protocol';
 import { CameraRig } from './render/camera';
 import { CarMesh } from './render/carMesh';
-import { CharacterMesh } from './render/character';
+import { CharacterMesh, HEAD_RADIUS } from './render/character';
 import { GameScene } from './render/scene';
 import type { CarSnapshot } from './sim/car';
 import { loadRapier } from './sim/physics';
@@ -217,18 +218,35 @@ async function main() {
   };
 
   // --- 顔写真 ---
+  // 顔の立体を作るのに使う三角形の表は MediaPipe の中にあるので、必要になったときだけ読み込む
+  const applyFaceShape = async (points: FacePoints | null) => {
+    if (!points) {
+      character.setFaceShape(null);
+      return;
+    }
+    try {
+      const { faceTriangles } = await import('./face/landmarks');
+      character.setFaceShape(buildFaceMesh(points, faceTriangles(), HEAD_RADIUS));
+    } catch {
+      character.setFaceShape(null);
+    }
+  };
   const savedFace = loadFace();
   if (savedFace) {
     const img = new Image();
     img.onload = () => character.setFace(img);
     img.src = savedFace;
+    void applyFaceShape(decodeFacePoints(loadFaceShape()));
   }
   const faceEditor = new FaceEditor({
-    onApply: (texture) => {
+    onApply: (texture, points) => {
       character.setFace(texture);
+      void applyFaceShape(points);
       const saved = saveFace(texture ? texture.toDataURL('image/jpeg', 0.9) : null);
+      saveFaceShape(points ? encodeFacePoints(points) : null);
       if (texture && !saved) hud.toast('このブラウザでは保存できないため、ページを閉じるまでの間だけ使います');
-      else hud.toast(texture ? '顔写真を設定しました' : '顔写真をやめました');
+      else if (texture && !points) hud.toast('顔の形を読み取れなかったので、写真をそのまま貼りました');
+      else hud.toast(texture ? '顔写真を立体の顔にしました' : '顔写真をやめました');
     },
     onOpenChange: (open) => {
       keyboard.enabled = !open;
