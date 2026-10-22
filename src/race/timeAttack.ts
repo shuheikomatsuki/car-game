@@ -61,6 +61,18 @@ export class TimeAttack {
     return this.wrongWay;
   }
 
+  /**
+   * 順位を決めるための、スタートラインからコースに沿って進んだ距離 [m]（周回分を含む）。
+   * スタート前（ラインの手前）は負になる
+   */
+  distance(x: number, z: number): number {
+    const s = this.course.project(x, z).s;
+    if (!this.course.closed) return s;
+    // 周回はスタートのタイルに入った時点で数えるので、同じ位置で update した後なら s と食い違わない
+    const lapsDone = this.laps.length - (this.started ? 0 : 1);
+    return lapsDone * this.course.length + s;
+  }
+
   /** 車を動かしてよいか（カウントダウン中は止めておく） */
   get canDrive(): boolean {
     return this.phase !== 'countdown';

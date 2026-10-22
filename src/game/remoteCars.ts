@@ -19,7 +19,8 @@ interface RemotePlayer {
   body: RAPIER.RigidBody | null;
 }
 
-function createLabel(name: string): THREE.Sprite {
+/** 車の上に出す名札 */
+export function createLabel(name: string): THREE.Sprite {
   const canvas = document.createElement('canvas');
   canvas.width = 256;
   canvas.height = 64;

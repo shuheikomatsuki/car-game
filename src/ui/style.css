@@ -785,6 +785,16 @@ body.touch .dialog-panel input[type='text'] {
   opacity: 0.85;
 }
 
+#race-pos {
+  font-size: 22px;
+  font-weight: bold;
+  color: #ffd75e;
+}
+
+#race-pos:empty {
+  display: none;
+}
+
 #race-time {
   font-size: 28px;
   font-weight: bold;
@@ -793,6 +803,10 @@ body.touch .dialog-panel input[type='text'] {
 #race-best {
   font-size: 12px;
   opacity: 0.8;
+}
+
+#race-best:empty {
+  display: none;
 }
 
 #race-split {
@@ -995,6 +1009,33 @@ body.racing #toast {
 
 #race-result kbd {
   margin-left: 6px;
+}
+
+#race-result .standings td {
+  padding: 3px 4px;
+}
+
+#race-result .standings td:first-child {
+  width: 1.5em;
+  font-weight: bold;
+}
+
+#race-result .standings td:nth-child(2) {
+  text-align: left;
+}
+
+#race-result .standings tr.me {
+  background: rgba(255, 215, 94, 0.18);
+  font-weight: bold;
+}
+
+#race-result .standings .dot {
+  display: inline-block;
+  width: 10px;
+  height: 10px;
+  margin-right: 6px;
+  border-radius: 50%;
+  vertical-align: middle;
 }
 
 /* 横向きのスマホでは結果を小さめに */

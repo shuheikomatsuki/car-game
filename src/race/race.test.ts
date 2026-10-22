@@ -5,6 +5,7 @@ import { buildCourse } from './course';
 import { GhostRecorder, ghostPoseAt } from './ghost';
 import { mergeRecord, parseRecord } from './records';
 import { COUNTDOWN_SECONDS, TimeAttack, formatTime } from './timeAttack';
+import { rankEntrants } from '../game/npcRace';
 
 const course = buildCourse(parseMap(CIRCUIT_MAP));
 const size = CIRCUIT_MAP.tileSize;
@@ -228,5 +229,53 @@ describe('records', () => {
   it('formats times', () => {
     expect(formatTime(83.456)).toBe('1:23.46');
     expect(formatTime(5.1)).toBe('0:05.10');
+  });
+});
+
+describe('race standings', () => {
+  const tileAt = (i: number) => course.tiles[i % course.tiles.length];
+  const at = (t: TimeAttack, i: number) => {
+    const tile = tileAt(i);
+    t.update(0.05, { x: tile.col * size, z: tile.row * size, vx: 0, vz: 0 });
+    return { x: tile.col * size, z: tile.row * size };
+  };
+
+  it('measures the distance along the course, including laps', () => {
+    const t = new TimeAttack(course, 3);
+    for (let i = 0; i < 70; i++) t.update(0.05, { ...course.gridSpot(6), vx: 0, vz: 0 });
+    expect(t.distance(course.gridSpot(6).x, course.gridSpot(6).z)).toBeCloseTo(-6);
+    let pos = { x: 0, z: 0 };
+    for (let i = 0; i <= course.tiles.length + 2; i++) pos = at(t, i);
+    expect(t.laps).toHaveLength(1);
+    // 2周目の3枚目の中心
+    expect(t.distance(pos.x, pos.z)).toBeGreaterThan(course.length);
+    expect(t.distance(pos.x, pos.z)).toBeLessThan(course.length + 3 * size);
+  });
+
+  it('ranks finished racers by time, then the rest by distance', () => {
+    const a = new TimeAttack(course, 1);
+    const b = new TimeAttack(course, 1);
+    const c = new TimeAttack(course, 1);
+    for (const t of [a, b, c]) for (let i = 0; i < 70; i++) t.update(0.05, { ...course.gridSpot(6), vx: 0, vz: 0 });
+    const n = course.tiles.length;
+    // a と c はゴール（c のほうが速い）、b は半分まで
+    let pa = { x: 0, z: 0 };
+    let pb = { x: 0, z: 0 };
+    let pc = { x: 0, z: 0 };
+    for (let i = 0; i <= n; i++) pc = at(c, i);
+    for (let i = 0; i <= n; i++) {
+      // a は1枚に2ステップかける（c より遅い）
+      at(a, i);
+      pa = at(a, i);
+      if (i <= n / 2) pb = at(b, i);
+    }
+    const ranked = rankEntrants([
+      { name: 'a', color: 0, isPlayer: true, timer: a, ...pa },
+      { name: 'b', color: 0, isPlayer: false, timer: b, ...pb },
+      { name: 'c', color: 0, isPlayer: false, timer: c, ...pc },
+    ]);
+    expect(ranked.map((r) => r.name)).toEqual(['c', 'a', 'b']);
+    expect(ranked[2].total).toBeNull();
+    expect(ranked[0].total).toBeLessThan(ranked[1].total!);
   });
 });
