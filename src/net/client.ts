@@ -16,6 +16,15 @@ export interface JoinOptions {
 /** 切れたときに再接続を試す回数と間隔 [ms] */
 const RETRY_DELAYS = [1000, 2000, 4000, 8000];
 
+/** 再接続しても直らないエラーの説明（これを受け取ったらつなぎ直さない） */
+const ERROR_DETAILS: Partial<Record<Extract<ServerMessage, { t: 'error' }>['reason'], string>> = {
+  full: '部屋が満員です',
+  version: 'ゲームのバージョンが違います。ページを再読み込みしてください',
+  idle: 'しばらく車が動いていなかったので、部屋から外れました',
+  origin: 'このページからはサーバーに接続できません',
+  region: '日本国外からは接続できません',
+};
+
 /** サーバーの URL（https://…）から部屋の WebSocket の URL を作る */
 export function roomSocketUrl(server: string, room: string): string {
   const url = new URL(server);
@@ -103,12 +112,7 @@ export class NetClient {
         this.retries = 0;
         this.setStatus('online');
       } else if (message.t === 'error') {
-        const detail =
-          message.reason === 'full'
-            ? '部屋が満員です'
-            : message.reason === 'version'
-              ? 'ゲームのバージョンが違います。ページを再読み込みしてください'
-              : undefined;
+        const detail = ERROR_DETAILS[message.reason];
         if (detail) {
           this.target = null;
           this.setStatus('error', detail);

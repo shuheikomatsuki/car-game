@@ -1,9 +1,19 @@
 import { describe, expect, it } from 'vitest';
 import { MAX_PLAYERS, PROTOCOL_VERSION, type ServerMessage } from '../../src/net/protocol';
-import { type Connection, type RoomStore, handleClose, handleMessage } from './room';
+import {
+  type Connection,
+  HELLO_TIMEOUT_MS,
+  IDLE_TIMEOUT_MS,
+  type RoomStore,
+  closeIdle,
+  handleClose,
+  handleMessage,
+  newActivity,
+} from './room';
 
 class FakeConnection implements Connection {
   info: Connection['info'] = null;
+  activity = newActivity(0);
   inbox: ServerMessage[] = [];
   closed: string | null = null;
   send(m: ServerMessage) {
@@ -26,14 +36,15 @@ function createRoom() {
     all.push(c);
     return c;
   };
-  const send = (c: FakeConnection, m: object) => handleMessage(c, all, JSON.stringify(m), store);
+  const clock = { now: 0 };
+  const send = (c: FakeConnection, m: object) => handleMessage(c, all, JSON.stringify(m), store, clock.now);
   const hello = (c: FakeConnection, name: string, mapIndex = 0) =>
     send(c, { t: 'hello', v: PROTOCOL_VERSION, name, car: 'standard', map: mapIndex });
   const disconnect = (c: FakeConnection) => {
     handleClose(c, all);
     all.splice(all.indexOf(c), 1);
   };
-  return { all, store, connect, send, hello, disconnect };
+  return { all, store, clock, connect, send, hello, disconnect };
 }
 
 describe('room relay', () => {
@@ -121,5 +132,50 @@ describe('room relay', () => {
     const b = room.connect();
     room.send(b, { t: 'hello', v: PROTOCOL_VERSION, name: '   ', car: 'x', map: 0 });
     expect(b.info?.name).toBe('ゲスト');
+  });
+});
+
+describe('idle connections', () => {
+  const state = (x: number) => ({ t: 'state', time: 0, s: [x, 0, 0, 0, 0, 0] });
+
+  it('drops connections that never say hello', () => {
+    const room = createRoom();
+    const a = room.connect();
+    expect(closeIdle(room.all, HELLO_TIMEOUT_MS - 1)).toBe(1);
+    expect(a.closed).toBeNull();
+    expect(closeIdle(room.all, HELLO_TIMEOUT_MS)).toBe(0);
+    expect(a.closed).toBe('noHello');
+  });
+
+  it('drops players whose car has not moved, and tells the others', () => {
+    const room = createRoom();
+    const a = room.connect();
+    const b = room.connect();
+    room.hello(a, 'あや');
+    room.hello(b, 'ぼく');
+    room.send(a, state(0));
+    room.send(b, state(0));
+
+    // a は運転し続け、b は止まったまま位置を送り続ける
+    for (let t = 1; t <= 10; t++) {
+      room.clock.now = (IDLE_TIMEOUT_MS / 10) * t;
+      room.send(a, state(t * 5));
+      room.send(b, state(0.1));
+    }
+    a.take();
+    expect(closeIdle(room.all, room.clock.now)).toBe(1);
+    expect(a.closed).toBeNull();
+    expect(b.closed).toBe('idle');
+    expect(b.take().at(-1)).toEqual({ t: 'error', reason: 'idle' });
+    expect(a.take()).toEqual([{ t: 'leave', id: 2 }]);
+  });
+
+  it('counts changing the car or the map as activity', () => {
+    const room = createRoom();
+    const a = room.connect();
+    room.hello(a, 'あや');
+    room.clock.now = IDLE_TIMEOUT_MS - 1;
+    room.send(a, { t: 'profile', car: 'sport' });
+    expect(closeIdle(room.all, IDLE_TIMEOUT_MS + 1)).toBe(1);
   });
 });

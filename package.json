@@ -9,7 +9,7 @@
     "preview": "vite preview",
     "test": "vitest run",
     "typecheck": "tsc --noEmit && tsc -p server",
-    "server:dev": "wrangler dev -c server/wrangler.jsonc",
+    "server:dev": "wrangler dev -c server/wrangler.jsonc --var ALLOWED_COUNTRIES:*",
     "server:deploy": "wrangler deploy -c server/wrangler.jsonc"
   },
   "dependencies": {
