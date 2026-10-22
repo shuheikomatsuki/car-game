@@ -68,8 +68,8 @@ function buildLine(course: Course, at: { x: number; z: number; yaw: number }, te
 }
 
 /** 自己ベストの走りを再生する、半透明の車 */
-export function createGhostMesh(): CarMesh {
-  const mesh = new CarMesh(0x7fd4ff);
+export function createGhostMesh(color = 0x7fd4ff): CarMesh {
+  const mesh = new CarMesh(color);
   const materials = new Map<THREE.Material, THREE.Material>();
   mesh.root.traverse((obj) => {
     if (!(obj instanceof THREE.Mesh)) return;

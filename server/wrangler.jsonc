@@ -4,10 +4,17 @@
   "main": "src/index.ts",
   "compatibility_date": "2026-10-01",
   "durable_objects": {
-    "bindings": [{ "name": "ROOM", "class_name": "Room" }]
+    "bindings": [
+      { "name": "ROOM", "class_name": "Room" },
+      { "name": "BOARD", "class_name": "Leaderboard" }
+    ]
   },
   // 無料プランでは SQLite 版の Durable Object を使う
-  "migrations": [{ "tag": "v1", "new_sqlite_classes": ["Room"] }],
+  "migrations": [
+    { "tag": "v1", "new_sqlite_classes": ["Room"] },
+    // タイムアタックのランキング（コースと車の組み合わせごとに1つ）
+    { "tag": "v2", "new_sqlite_classes": ["Leaderboard"] }
+  ],
   // 接続を受け付けるページと国（カンマ区切り、"*" で制限なし）。localhost のページは常に通す
   "vars": {
     "ALLOWED_ORIGINS": "https://shuheikomatsuki.github.io",

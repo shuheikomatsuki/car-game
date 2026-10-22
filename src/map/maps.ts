@@ -2,6 +2,7 @@ import type { MapDefinition } from './tilemap';
 
 /** 最初の練習用の小さな街 */
 export const TOWN_MAP: MapDefinition = {
+  id: 'town',
   name: '小さな街',
   tileSize: 20,
   roadWidth: 12,
@@ -27,6 +28,7 @@ export const TOWN_MAP: MapDefinition = {
 
 /** 教習所のような練習コース。外周、S字・クランク風の連続カーブ、内側の交差点 */
 export const SCHOOL_MAP: MapDefinition = {
+  id: 'school',
   name: '教習所コース',
   tileSize: 20,
   roadWidth: 12,
@@ -58,6 +60,7 @@ export const SCHOOL_MAP: MapDefinition = {
  * 速度を出せるよう、タイルを大きく（カーブの半径 20m）、道幅を広くしている。
  */
 export const CIRCUIT_MAP: MapDefinition = {
+  id: 'circuit',
   name: 'サーキット',
   tileSize: 40,
   roadWidth: 16,
@@ -81,6 +84,7 @@ export const CIRCUIT_MAP: MapDefinition = {
 
 /** 短い直線とコーナーが続く周回コース。カーブの半径は 15m と小さめ */
 export const TECHNICAL_MAP: MapDefinition = {
+  id: 'technical',
   name: 'テクニカルコース',
   tileSize: 30,
   roadWidth: 14,
@@ -127,6 +131,7 @@ const PASS_ELEVATION = { from: { col: 2, row: 14 }, rise: 150 };
 
 /** ふもとから頂上まで上る一本道。坂で車が重くなる */
 export const HILLCLIMB_MAP: MapDefinition = {
+  id: 'hillclimb',
   name: '峠（ヒルクライム）',
   tileSize: 30,
   roadWidth: 11,
@@ -139,6 +144,7 @@ export const HILLCLIMB_MAP: MapDefinition = {
 
 /** 同じ峠を頂上から下る。スピードが乗るので早めのブレーキが大事 */
 export const DOWNHILL_MAP: MapDefinition = {
+  id: 'downhill',
   name: '峠（ダウンヒル）',
   tileSize: 30,
   roadWidth: 11,

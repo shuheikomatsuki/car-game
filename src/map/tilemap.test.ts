@@ -4,6 +4,7 @@ import { buildObstacles } from './obstacles';
 import { type MapDefinition, parseMap, roadShape } from './tilemap';
 
 const tiny = (layout: string[]): MapDefinition => ({
+  id: 'test',
   name: 'test',
   tileSize: 20,
   roadWidth: 12,
@@ -68,5 +69,13 @@ describe('parseMap', () => {
       const dist = Math.hypot(r.x - (col + sx / 2) * tileSize, r.z - (row + sz / 2) * tileSize);
       expect(dist).toBeGreaterThan(tileSize / 2 + roadWidth / 2);
     }
+  });
+});
+
+describe('map ids', () => {
+  it('are unique and usable as leaderboard keys', () => {
+    const ids = MAPS.map((m) => m.id);
+    expect(new Set(ids).size).toBe(ids.length);
+    for (const id of ids) expect(id).toMatch(/^[a-z0-9-]{1,32}$/);
   });
 });

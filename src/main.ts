@@ -4,10 +4,13 @@ import { FixedStepLoop } from './core/loop';
 import { FallRecovery } from './game/fall';
 import { Level } from './game/level';
 import { NpcField, rankEntrants, velocityOf } from './game/npcRace';
-import { PLAYER_COLORS, RemoteCars, carStateOf } from './game/remoteCars';
+import { PLAYER_COLORS, RemoteCars, carStateOf, createLabel } from './game/remoteCars';
 import { MAPS } from './map/maps';
+import type { MapDefinition } from './map/tilemap';
 import { NetClient } from './net/client';
-import { GhostRecorder, ghostPoseAt } from './race/ghost';
+import type { SubmitResult } from './net/leaderboard';
+import { LeaderboardClient, myEntryId, playerId, uploadedTotal } from './net/leaderboardClient';
+import { type GhostData, type GhostPose, GhostRecorder, ghostPoseAt } from './race/ghost';
 import { NPC_LEVELS } from './race/npcDriver';
 import { type RaceRecord, loadRecord, mergeRecord, saveRecord } from './race/records';
 import { TimeAttack, formatTime } from './race/timeAttack';
@@ -20,7 +23,8 @@ import type { CarSnapshot } from './sim/car';
 import { loadRapier } from './sim/physics';
 import { NEUTRAL_INPUT, VEHICLE_PRESETS } from './sim/vehicle';
 import { Hud, hideLoading, showError } from './ui/hud';
-import { OnlinePanel } from './ui/onlinePanel';
+import { OnlinePanel, loadPlayerName } from './ui/onlinePanel';
+import { RankingPanel } from './ui/rankingPanel';
 import { Minimap } from './ui/minimap';
 import { RaceHud } from './ui/raceHud';
 import { canRequestFullscreen, enterFullscreen, isFullscreen, isStandalone, needsHomeScreenForFullscreen } from './ui/fullscreen';
@@ -49,6 +53,8 @@ function lerpSnapshot(a: CarSnapshot, b: CarSnapshot, t: number): CarSnapshot {
 async function main() {
   const rapier = await loadRapier();
   const params = new URLSearchParams(location.search);
+  // オンライン用のサーバー（みんなで走る・ランキング）
+  const serverUrl: string = params.get('server') ?? import.meta.env.VITE_SERVER_URL ?? '';
 
   const view = new GameScene(document.getElementById('app')!);
   const carMesh = new CarMesh();
@@ -92,11 +98,35 @@ async function main() {
   const ghostMesh = createGhostMesh();
   ghostMesh.root.visible = false;
   view.scene.add(ghostMesh.root);
+  /** ランキングから選んだ人のゴースト（オレンジ色で一緒に走る） */
+  let rival: { name: string; total: number; ghost: GhostData } | null = null;
+  const rivalMesh = createGhostMesh(0xffa040);
+  rivalMesh.root.visible = false;
+  view.scene.add(rivalMesh.root);
+  let rivalLabel: ReturnType<typeof createLabel> | null = null;
+  const setRival = (r: typeof rival) => {
+    rival = r;
+    if (rivalLabel) {
+      rivalMesh.root.remove(rivalLabel);
+      rivalLabel.material.map?.dispose();
+      rivalLabel.material.dispose();
+      rivalLabel = null;
+    }
+    if (r) {
+      rivalLabel = createLabel(r.name);
+      rivalMesh.root.add(rivalLabel);
+    }
+    rivalMesh.root.visible = false;
+  };
+  /** ゴーストの位置を、描画用の車の状態にする */
+  const ghostSnapshot = (p: GhostPose): CarSnapshot =>
+    level.ground({ x: p.x, y: 0.05, z: p.z, yaw: p.yaw, forwardSpeed: 0, lateralSpeed: 0, steerAngle: 0, wheelSpin: 0 });
   const raceMapIndex = MAPS.findIndex((m) => m.race);
   const minimap = new Minimap(document.getElementById('minimap')!);
   const raceHud = new RaceHud({
     onRetry: () => race && startRace(raceMode),
     onQuit: () => stopRace(),
+    onRanking: () => openRanking(),
   });
 
   const placeCar = (spawn: { x: number; z: number; yaw: number }) => {
@@ -121,6 +151,7 @@ async function main() {
    */
   function startRace(mode: 'timeAttack' | 'npc') {
     raceMode = mode;
+    if (mode === 'npc') setRival(null);
     if (!level.course) {
       loadMap(raceMapIndex);
       // 同じ部屋の全員もサーキットへ
@@ -160,11 +191,13 @@ async function main() {
     raceHud.show(false);
     minimap.setCourse(null);
     ghostMesh.root.visible = false;
+    rivalMesh.root.visible = false;
   }
 
   function stopRace() {
     if (!race) return;
     clearRace();
+    setRival(null);
     hud.setMode('自分で運転');
     resetCar();
     touch.refresh();
@@ -205,6 +238,7 @@ async function main() {
         case 'finish': {
           if (raceMode === 'npc') {
             raceHud.showStandings(standings(), r.totalLaps);
+            raceHud.showRankingButton(false);
             raceHud.setWarning({ wrongWay: false, offCourse: false });
             sound.beep(true);
             break;
@@ -224,6 +258,7 @@ async function main() {
           });
           raceHud.setWarning({ wrongWay: false, offCourse: false });
           sound.beep(true);
+          reportToRanking(merged.newTotal);
           break;
         }
         case 'wrongWay':
@@ -240,6 +275,8 @@ async function main() {
     // NPC の車は古いマップの物理ワールドにいるので先に片付ける（レース中ならこの後で並び直す）
     npcField?.dispose();
     npcField = null;
+    // ランキングの人のゴーストは、そのコースでだけ一緒に走る
+    setRival(null);
     level.dispose();
     mapIndex = index;
     level = new Level(rapier, MAPS[mapIndex]);
@@ -265,15 +302,86 @@ async function main() {
     // 同じ部屋の全員のマップも切り替える
     net.send({ t: 'map', map: mapIndex });
   };
-  const cycleCar = () => {
-    carIndex = (carIndex + 1) % VEHICLE_PRESETS.length;
+  const selectCar = (index: number) => {
+    carIndex = index;
     level.car.params = { ...vehicle().params };
-    resetCar();
+    // ランキングの人のゴーストは、同じ車のときだけ一緒に走る
+    setRival(null);
     hud.setCarName(vehicle().label);
     net.send({ t: 'profile', car: vehicle().id });
     net.updateJoin({ car: vehicle().id });
+  };
+  const cycleCar = () => {
+    selectCar((carIndex + 1) % VEHICLE_PRESETS.length);
+    resetCar();
     hud.toast(`車: ${vehicle().label}（最高 ${Math.round(vehicle().params.maxForwardSpeed * 3.6)}km/h）`);
   };
+
+  // --- ランキング ---
+  const board = serverUrl ? new LeaderboardClient(serverUrl) : null;
+  const raceMaps = MAPS.filter((m) => m.race);
+  /** まだランキングに送っていない自己ベストを送る（名前を入れていなければ送らない） */
+  async function uploadBest(def: MapDefinition, car: string): Promise<SubmitResult | null> {
+    const name = loadPlayerName().trim();
+    const record = loadRecord(def.name, car);
+    if (!board || !name || !record || record.ghost.length === 0 || uploadedTotal(def.id, car) === record.total) return null;
+    return board.submit(def.id, car, { player: playerId(), name, total: record.total, laps: record.laps, ghost: record.ghost });
+  }
+  /** タイムアタックでゴールしたら、自己ベストをランキングに送って順位を結果に出す */
+  function reportToRanking(newBest: boolean) {
+    raceHud.showRankingButton(board !== null);
+    if (!board) return;
+    if (!loadPlayerName().trim()) {
+      raceHud.setResultNote('名前を入れると、自己ベストがランキングに載ります（ランキングの画面で入力）');
+      return;
+    }
+    if (!newBest) return;
+    raceHud.setResultNote('ランキングに送っています…');
+    uploadBest(level.def, vehicle().id).then(
+      (r) => r && raceHud.setResultNote(r.rank !== null ? `ランキング ${r.rank}位` : `ランキングの上位には入りませんでした`),
+      () => raceHud.setResultNote('ランキングに送れませんでした（通信エラー）'),
+    );
+  }
+  /** ランキングで選んだ人のゴーストと、そのコース・車でタイムアタックする */
+  function raceAgainst(course: string, car: string, r: NonNullable<typeof rival>) {
+    const map = MAPS.findIndex((m) => m.id === course);
+    const vehicleIndex = VEHICLE_PRESETS.findIndex((v) => v.id === car);
+    if (vehicleIndex >= 0 && vehicleIndex !== carIndex) selectCar(vehicleIndex);
+    if (map >= 0 && map !== mapIndex) {
+      loadMap(map);
+      net.send({ t: 'map', map: mapIndex });
+    }
+    startRace('timeAttack');
+    setRival(r);
+    hud.toast(`${r.name} さんのゴーストと対戦（${formatTime(r.total)}）`);
+  }
+  const rankingPanel = new RankingPanel(
+    raceMaps.map((m) => ({ id: m.id, label: m.name })),
+    VEHICLE_PRESETS.map((v) => ({ id: v.id, label: v.label })),
+    {
+      load: async (course, car) => {
+        const def = MAPS.find((m) => m.id === course);
+        // 前に走った自己ベストも、名前を入れた後なら送る
+        if (def) await uploadBest(def, car).catch(() => null);
+        return { entries: await board!.list(course, car), mine: myEntryId(course, car) };
+      },
+      onRace: async (course, car, entry) => {
+        const ghost = await board!.ghost(course, car, entry.id);
+        raceAgainst(course, car, { name: entry.name, total: entry.total, ghost });
+      },
+      onOpenChange: (open) => {
+        keyboard.enabled = !open;
+        touch.enabled = !open;
+      },
+    },
+  );
+  function openRanking() {
+    if (!board) {
+      hud.toast('このサイトにはオンライン用のサーバーがまだ設定されていません');
+      return;
+    }
+    rankingPanel.open(level.def.race ? level.def.id : raceMaps[0].id, vehicle().id);
+  }
   const cycleCamera = () => {
     cameraRig.cycle();
     hud.setCameraName(cameraRig.modeName);
@@ -283,7 +391,6 @@ async function main() {
     hud.setMuted(muted);
   };
   // --- オンライン ---
-  const serverUrl: string = params.get('server') ?? import.meta.env.VITE_SERVER_URL ?? '';
   const netStatus = document.getElementById('net-status')!;
   let roomCode = '';
   const nameOf = (id: number) => remoteCars.list.find((p) => p.id === id)?.name ?? '誰か';
@@ -371,6 +478,7 @@ async function main() {
 
   const keyboard = new KeyboardInput();
   keyboard.onAction('KeyO', () => onlinePanel.open());
+  keyboard.onAction('KeyL', openRanking);
   keyboard.onAction('KeyR', resetCar);
   keyboard.onAction('KeyT', () => toggleRace('timeAttack'));
   keyboard.onAction('KeyY', () => toggleRace('npc'));
@@ -410,6 +518,7 @@ async function main() {
         run: () => void enterFullscreen(),
         visible: () => canRequestFullscreen() && !isFullscreen() && !isStandalone(),
       },
+      { label: () => 'ランキング（ゴーストと対戦）', run: openRanking, visible: () => board !== null },
       { label: () => 'みんなで走る', run: () => onlinePanel.open() },
       { label: () => (race ? 'コースを切り替える' : 'マップを切り替える'), run: nextMap },
       { label: () => '車を切り替える', run: cycleCar },
@@ -511,7 +620,10 @@ async function main() {
         const list = npcField ? standings() : null;
         const rank = list ? { list, index: list.findIndex((e) => e.isPlayer) } : null;
         ghostMesh.root.visible = pose !== null;
-        if (pose) ghostMesh.update(level.ground({ x: pose.x, y: 0.05, z: pose.z, yaw: pose.yaw, forwardSpeed: 0, lateralSpeed: 0, steerAngle: 0, wheelSpin: 0 }));
+        if (pose) ghostMesh.update(ghostSnapshot(pose));
+        const rivalPose = rival && raceMode === 'timeAttack' ? ghostPoseAt(rival.ghost, Math.max(0, race.time)) : null;
+        rivalMesh.root.visible = rivalPose !== null;
+        if (rivalPose) rivalMesh.update(ghostSnapshot(rivalPose));
         raceHud.update({
           lap: race.lap,
           totalLaps: race.totalLaps,
@@ -522,12 +634,14 @@ async function main() {
           refLaps: best?.laps,
           finished: race.phase === 'finished',
           position: rank ? { rank: rank.index + 1, total: rank.list.length } : undefined,
+          rival: rival && raceMode === 'timeAttack' ? { name: rival.name, total: rival.total } : undefined,
         });
         // ゴールした後も、まだ走っている NPC がゴールするたびに順位表を更新する
         if (rank && race.phase === 'finished') raceHud.showStandings(rank.list, race.totalLaps);
         const hex = (c: number) => `#${c.toString(16).padStart(6, '0')}`;
         minimap.draw([
           ...(pose ? [{ x: pose.x, z: pose.z, color: '#7fd4ff' }] : []),
+          ...(rivalPose ? [{ x: rivalPose.x, z: rivalPose.z, color: '#ffa040' }] : []),
           ...(npcField?.npcs.map((n) => ({ x: n.curr.x, z: n.curr.z, color: hex(n.color) })) ?? []),
           { x: s.x, z: s.z, yaw: s.yaw, color: '#ff5a4f', size: 5 },
         ]);
@@ -544,7 +658,7 @@ async function main() {
   // ?debug を付けるとブラウザの開発者ツールや自動テストから状態を触れる
   if (params.has('debug')) {
     Object.assign(window, {
-      __game: { getLevel: () => level, getRace: () => race, getNpcs: () => npcField, startTimeAttack: () => startRace('timeAttack'), startNpcRace: () => startRace('npc'), stopRace, net, remoteCars, touch, onlinePanel, cameraRig, sound },
+      __game: { getLevel: () => level, getRace: () => race, getNpcs: () => npcField, startTimeAttack: () => startRace('timeAttack'), startNpcRace: () => startRace('npc'), stopRace, openRanking, rankingPanel, net, remoteCars, touch, onlinePanel, cameraRig, sound },
     });
   }
 

@@ -8,6 +8,23 @@ function el<T extends HTMLElement = HTMLElement>(id: string): T {
 
 const NAME_KEY = 'car-game:name';
 
+/** みんなで走るときとランキングで使う名前（このブラウザに保存） */
+export function loadPlayerName(): string {
+  try {
+    return localStorage.getItem(NAME_KEY) ?? '';
+  } catch {
+    return '';
+  }
+}
+
+export function savePlayerName(name: string): void {
+  try {
+    localStorage.setItem(NAME_KEY, name);
+  } catch {
+    // 保存できない環境
+  }
+}
+
 export interface OnlinePanelHandlers {
   onJoin: (name: string, room: string) => void;
   onLeave: () => void;
@@ -32,11 +49,7 @@ export class OnlinePanel {
   ) {
     this.name.maxLength = MAX_NAME_LENGTH;
     this.room.maxLength = ROOM_CODE_LENGTH;
-    try {
-      this.name.value = localStorage.getItem(NAME_KEY) ?? '';
-    } catch {
-      // 保存できない環境
-    }
+    this.name.value = loadPlayerName();
     this.room.value = randomRoomCode();
     this.room.addEventListener('input', () => {
       this.room.value = normalizeRoomCode(this.room.value).slice(0, ROOM_CODE_LENGTH);
@@ -81,6 +94,8 @@ export class OnlinePanel {
 
   open(): void {
     this.openValue = true;
+    // ランキングの画面で名前を変えているかもしれない
+    this.name.value = loadPlayerName();
     this.root.classList.remove('hidden');
     this.refresh();
     this.handlers.onOpenChange(true);
@@ -106,11 +121,7 @@ export class OnlinePanel {
   private submit(): void {
     if (this.join.disabled) return;
     const name = this.name.value.trim();
-    try {
-      localStorage.setItem(NAME_KEY, name);
-    } catch {
-      // 保存できない環境
-    }
+    savePlayerName(name);
     this.handlers.onJoin(name, this.room.value);
   }
 
