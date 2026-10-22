@@ -12,5 +12,7 @@ describe('RIVALS', () => {
       expect(NPC_LEVELS.some((l) => l.id === r.level)).toBe(true);
     }
     expect(new Set(RIVALS.map((r) => r.id)).size).toBe(RIVALS.length);
+    // 得意なコースはライバルごとに別々
+    expect(new Set(RIVALS.map((r) => r.course)).size).toBe(RIVALS.length);
   });
 });

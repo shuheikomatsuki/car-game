@@ -25,7 +25,7 @@ import { createGhostMesh } from './render/raceMesh';
 import { GameScene } from './render/scene';
 import type { CarSnapshot, Spawn } from './sim/car';
 import { loadRapier } from './sim/physics';
-import { NEUTRAL_INPUT, VEHICLE_PRESETS } from './sim/vehicle';
+import { NEUTRAL_INPUT, VEHICLE_PRESETS, topSpeedOf } from './sim/vehicle';
 import { Hud, hideLoading, showError } from './ui/hud';
 import { OnlinePanel, loadPlayerName } from './ui/onlinePanel';
 import { ALL_CARS, RankingPanel } from './ui/rankingPanel';
@@ -484,7 +484,7 @@ async function main() {
   const cycleCar = () => {
     selectCar((carIndex + 1) % VEHICLE_PRESETS.length);
     resetCar();
-    hud.toast(`車: ${vehicle().label}（最高 ${Math.round(vehicle().params.maxForwardSpeed * 3.6)}km/h）`);
+    hud.toast(`車: ${vehicle().label}（最高 ${Math.round(topSpeedOf(vehicle().params) * 3.6)}km/h）`);
   };
 
   // --- ランキング ---
@@ -763,7 +763,7 @@ async function main() {
     title: '自分の車',
     groups: [
       {
-        choices: () => VEHICLE_PRESETS.map((v) => ({ id: v.id, label: v.label, note: `最高 ${Math.round(v.params.maxForwardSpeed * 3.6)}km/h` })),
+        choices: () => VEHICLE_PRESETS.map((v) => ({ id: v.id, label: v.label, note: `最高 ${Math.round(topSpeedOf(v.params) * 3.6)}km/h` })),
         selected: () => draft.car,
         select: (id) => (draft.car = id),
         detail: () => draftCar().description,

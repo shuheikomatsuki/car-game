@@ -1,6 +1,7 @@
 import { ordinal } from '../ui/raceHud';
 import { describe, expect, it } from 'vitest';
-import { CIRCUIT_MAP, DOWNHILL_MAP, HILLCLIMB_MAP, SCHOOL_MAP, TECHNICAL_MAP } from '../map/maps';
+import { SCHOOL_MAP } from '../map/maps';
+import { CIRCUIT_MAP, DOWNHILL_MAP, HILLCLIMB_MAP, TECHNICAL_MAP } from '../map/testMaps';
 import { parseMap } from '../map/tilemap';
 import { buildCourse } from './course';
 import { GhostRecorder, ghostPoseAt } from './ghost';

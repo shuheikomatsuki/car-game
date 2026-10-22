@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { buildCourse } from '../race/course';
 import { Car } from '../sim/car';
 import { createPhysicsWorld, loadRapier } from '../sim/physics';
-import { HILLCLIMB_MAP, CIRCUIT_MAP } from './maps';
+import { CIRCUIT_MAP, HILLCLIMB_MAP } from './testMaps';
 import { buildObstacles } from './obstacles';
 import { buildTerrain, elevationProfile, profileHeight } from './terrain';
 import { parseMap } from './tilemap';

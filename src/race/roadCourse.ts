@@ -12,6 +12,8 @@ const TURN_SEARCH = 60;
 const ON_COURSE_MARGIN = 8;
 /** 進む向きと逆向きのコースの点に投影しないよう、距離の2乗に足す量 */
 const WRONG_WAY_PENALTY = 2500;
+/** 向きで選ぶ候補にする、いちばん近い点からの距離の幅 [m]（重なる道路・立体交差の道幅くらい） */
+const OVERLAP = 12;
 /** 往復でない一本道のコースで、道路の終わりの手前に残す止まるための区間 [m] */
 const RUN_OUT = 50;
 
@@ -96,9 +98,16 @@ export function buildRoadCourse(map: ParsedMap, road: RoadModel): RoadCourse {
     const u = s + s0;
     return closed ? ((u % L) + L) % L : Math.min(total, Math.max(0, u));
   };
+  /** 道路の上の距離。となりの点の間は補間する（丸めると坂の高さが 1m ごとの段差になり、車が跳ね続ける） */
   const roadAt = (u: number) => {
-    const rs = roadOf[wrap(Math.round(u / du))];
-    return rs < 0 ? L : rs;
+    const f = u / du;
+    const i0 = closed ? Math.floor(f) : Math.min(n - 2, Math.max(0, Math.floor(f)));
+    const t = Math.min(1, Math.max(0, f - i0));
+    const a = roadOf[wrap(i0)];
+    const b = roadOf[wrap(i0 + 1)];
+    if (a < 0 || b < 0) return L;
+    // 周回の継ぎ目では次の点の距離が 0 に戻る
+    return closed && b < a ? a + (b + L - a) * t : a + (b - a) * t;
   };
 
   // 区間の番号: 周回は一周を checkpoints 個に、往復は U ターンの輪を長さ 0 に縮めて、ゴールがちょうど区切りに来るよう並べる
@@ -132,10 +141,16 @@ export function buildRoadCourse(map: ParsedMap, road: RoadModel): RoadCourse {
       if (candidates.length === 0) for (let i = 0; i < n; i++) candidates.push(i);
     }
     const dir = hint?.dir;
+    // 進む向きで選ぶのは、いちばん近い点と同じくらい近い点（重なる道路）の中だけ。押し戻されて後ろへ動いた
+    // ときに、向きの合う遠くの点へ飛んでいかないように
+    let nearest = Infinity;
+    for (const i of candidates) nearest = Math.min(nearest, Math.hypot(x - xs[i], z - zs[i]));
+    const reach = (nearest + OVERLAP) ** 2;
     let best = candidates[0];
     let bestCost = Infinity;
     for (const i of candidates) {
       let cost = (x - xs[i]) ** 2 + (z - zs[i]) ** 2;
+      if (cost > reach) continue;
       if (dir && Math.sin(yaws[i]) * dir.x + Math.cos(yaws[i]) * dir.z < -0.2) cost += WRONG_WAY_PENALTY;
       if (cost < bestCost) {
         bestCost = cost;

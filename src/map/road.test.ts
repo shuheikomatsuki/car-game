@@ -1,6 +1,18 @@
 import { describe, expect, it } from 'vitest';
 import { HAPPOGAHARA_MAP, SHUTOKO_MAP } from './maps';
-import { FLAG_BRIDGE, FLAG_TUNNEL, LAYER_LOWER, LAYER_UPPER, type RoadModel, type RoadSpec, buildRoad, bumpHeight } from './road';
+import {
+  FLAG_BRIDGE,
+  FLAG_TUNNEL,
+  LAYER_LOWER,
+  LAYER_UPPER,
+  ROAD_ORIGIN,
+  type RoadModel,
+  type RoadSpec,
+  buildRoad,
+  bumpHeight,
+  closeLoop,
+  reverseRoad,
+} from './road';
 import { buildRoadObstacles } from './roadObstacles';
 
 const spec = (pieces: RoadSpec['pieces'], extra: Partial<RoadSpec> = {}): RoadSpec => ({ scenery: 'touge', width: 8, start: 0, pieces, ...extra });
@@ -54,6 +66,30 @@ describe('road from straights and arcs', () => {
     expect(Math.hypot(a.x - b.x, a.z - b.z)).toBeLessThan(0.01);
     expect(Math.cos(b.yaw - a.yaw)).toBeCloseTo(-1, 5);
     expect(road.turnaround!.length).toBeCloseTo((7 * Math.PI * 11) / 3, 3);
+  });
+
+  it('closes a circuit with a straight, an arc and a straight', () => {
+    const right = { arc: { radius: 40, turn: -90 } };
+    // 東へ 300m、南へ 200m、西へ 400m 進んで北を向いたところから閉じる
+    const pieces = closeLoop(ROAD_ORIGIN, [{ straight: 300 }, right, { straight: 200 }, right, { straight: 400 }, right], 40, -1);
+    expect(pieces.slice(6)).toEqual([{ straight: expect.closeTo(200, 3) }, { arc: { radius: 40, turn: expect.closeTo(-90, 3) } }, { straight: expect.closeTo(100, 3) }]);
+    expect(() => buildRoad(spec(pieces, { closed: true }))).not.toThrow();
+    // 曲がる向きが逆では閉じられない
+    expect(() => closeLoop(ROAD_ORIGIN, [{ straight: 300 }, { arc: { radius: 40, turn: -90 } }], 50, 1)).toThrow();
+  });
+
+  it('reverses a road: the same shape and heights, driven from the other end', () => {
+    const up = spec([{ straight: 100 }, { arc: { radius: 40, turn: 90 }, h: 20 }, { straight: 80 }, { arc: { radius: 30, turn: -120 } }, { straight: 60, h: 50 }]);
+    const a = buildRoad(up);
+    const b = buildRoad(reverseRoad(up, 10));
+    expect(b.length).toBeCloseTo(a.length, 5);
+    expect(b.spec.start).toBe(10);
+    for (let s = 0; s <= a.length; s += 7) {
+      const i = a.indexAt(s);
+      const j = b.indexAt(a.length - s);
+      expect(Math.hypot(a.x[i] - b.x[j], a.z[i] - b.z[j])).toBeLessThan(1.5);
+      expect(b.heightAt(a.length - s)).toBeCloseTo(a.heightAt(s), 1);
+    }
   });
 
   it('makes the bumpy section wavy and the rest flat', () => {

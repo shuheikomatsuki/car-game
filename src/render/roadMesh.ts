@@ -11,6 +11,7 @@ import {
   type RoadModel,
   bumpHeight,
 } from '../map/road';
+import { makeWallBlocked, wallGap, walledAt } from '../map/roadObstacles';
 import type { RoadGround } from '../map/roadTerrain';
 import { COLORS, mergeMixed, terrainGeometry } from './mapMesh';
 
@@ -94,6 +95,7 @@ function sweep(road: RoadModel, idx: number[], profile: readonly [number, number
 export function buildRoadMesh(road: RoadModel, obstacles: MapObstacles, ground: RoadGround | null): THREE.Group {
   const group = new THREE.Group();
   const highway = road.spec.scenery === 'highway';
+  const circuit = road.spec.scenery === 'circuit';
   const lowY = highway ? (road.spec.highway?.ground ?? -14) : 0;
   const layer = (n: number) => ({ polygonOffset: true, polygonOffsetFactor: -n, polygonOffsetUnits: -n });
   const add = (g: THREE.BufferGeometry, mat: THREE.Material, shadow = true) => {
@@ -129,6 +131,19 @@ export function buildRoadMesh(road: RoadModel, obstacles: MapObstacles, ground: 
       return g;
     });
     if (water.length) add(mergeGeometries(water), new THREE.MeshPhongMaterial({ color: COLORS.water, shininess: 40, specular: 0x30485a }), false);
+  } else if (circuit) {
+    // サーキットは平らな芝生
+    let cx = 0;
+    let cz = 0;
+    for (let i = 0; i < road.count; i++) {
+      cx += road.x[i] / road.count;
+      cz += road.z[i] / road.count;
+    }
+    // 大きな1枚の面だと奥行きの精度が足りず、近くで路面の上に透けて見えるので、細かく分けて少し下げる
+    const lawn = new THREE.Mesh(new THREE.PlaneGeometry(4000, 4000, 80, 80).rotateX(-Math.PI / 2), new THREE.MeshLambertMaterial({ color: COLORS.grass }));
+    lawn.position.set(cx, -0.08, cz);
+    lawn.receiveShadow = true;
+    group.add(lawn);
   } else {
     group.add(buildCity(road, lowY));
   }
@@ -193,7 +208,7 @@ export function buildRoadMesh(road: RoadModel, obstacles: MapObstacles, ground: 
   const edgeLines: number[] = [];
   const centerLines: number[] = [];
   const lineW = 0.15;
-  const lanes = highway ? (road.spec.highway?.lanes ?? 2) : 2;
+  const lanes = highway ? (road.spec.highway?.lanes ?? 2) : circuit ? 1 : 2;
   {
     const strip = (out: number[], idx: number[], u: number) =>
       sweep(road, idx, [[u - lineW / 2, 0.035], [u + lineW / 2, 0.035]], out, lift);
@@ -283,17 +298,23 @@ export function buildRoadMesh(road: RoadModel, obstacles: MapObstacles, ground: 
   if (decks.length) add(geometry(decks), deckMat);
   if (piers.length) add(mergeMixed(piers), deckMat);
 
-  // --- 欄干・高架の壁（衝突体は短い箱だが、見た目は道路に沿ってなめらかにつなぐ） ---
+  // --- 欄干・高架の壁・サーキットの壁（衝突体は短い箱だが、見た目は道路に沿ってなめらかにつなぐ） ---
   const walls: number[] = [];
-  const wallMember = (i: number) => highway || (road.flags[i] & (FLAG_BRIDGE | FLAG_TUNNEL)) !== 0;
-  for (const [i0, i1] of ranges(road, wallMember)) {
+  const gap = wallGap(road);
+  const blocked = makeWallBlocked(road);
+  for (const [i0, i1] of ranges(road, (i) => walledAt(road, i))) {
     const idx = indices(road, i0, i1, 2);
     for (const side of [-1, 1]) {
       let prev: V[] | null = null;
       for (const i of idx) {
         const f = frame(road, i);
-        const u0 = side * (f.w / 2 + 0.25);
-        const u1 = side * (f.w / 2 + 0.75);
+        const u0 = side * (f.w / 2 + gap);
+        const u1 = side * (f.w / 2 + gap + 0.5);
+        // 隣を並んで走る道路にかかる所は壁を切る（衝突体と同じ）
+        if (blocked(f.x + f.lx * (u0 + u1) / 2, f.z + f.lz * (u0 + u1) / 2, i)) {
+          prev = null;
+          continue;
+        }
         const ring: V[] = [
           [u0, -0.3],
           [u0, BARRIER_HEIGHT],
@@ -305,7 +326,10 @@ export function buildRoadMesh(road: RoadModel, obstacles: MapObstacles, ground: 
       }
     }
   }
-  if (walls.length) add(geometry(walls), new THREE.MeshLambertMaterial({ color: COLORS.concrete, side: THREE.DoubleSide }));
+  if (walls.length) add(geometry(walls), new THREE.MeshLambertMaterial({ color: circuit ? COLORS.guardrail : COLORS.concrete, side: THREE.DoubleSide }));
+
+  // --- サーキットのカーブの縁石（赤と白） ---
+  if (circuit) group.add(buildCurbs(road));
 
   // --- トンネル・吊り橋・街灯 ---
   for (const [i0, i1] of ranges(road, (i) => (road.flags[i] & FLAG_TUNNEL) !== 0)) group.add(buildTunnel(road, i0, i1));
@@ -336,6 +360,41 @@ export function buildRoadMesh(road: RoadModel, obstacles: MapObstacles, ground: 
   }
   if (trunks.length) add(mergeMixed(trunks), new THREE.MeshLambertMaterial({ color: COLORS.trunk }));
   if (leaves.length) add(mergeMixed(leaves), new THREE.MeshLambertMaterial({ color: COLORS.leaves, flatShading: true }));
+  return group;
+}
+
+/** サーキットのカーブの両側の縁石。3m ごとに赤と白をくり返す */
+function buildCurbs(road: RoadModel): THREE.Group {
+  const red: number[] = [];
+  const white: number[] = [];
+  const curbW = 1.2;
+  const last = road.closed ? road.count : road.count - 1;
+  for (let i = 0; i < last; i++) {
+    const a = i % road.count;
+    const b = (i + 1) % road.count;
+    if (road.curvature[a] === 0 && road.curvature[b] === 0) continue;
+    const out = Math.floor((i * road.step) / 3) % 2 === 0 ? red : white;
+    for (const side of [-1, 1]) {
+      const ring = (k: number): V[] => {
+        const f = frame(road, k);
+        return [f.w / 2, f.w / 2 + curbW].map((u): V => [f.x + f.lx * u * side, f.y + 0.04, f.z + f.lz * u * side]);
+      };
+      const p = ring(a);
+      const q = ring(b);
+      pushUp(out, p[0], p[1], q[1]);
+      pushUp(out, p[0], q[1], q[0]);
+    }
+  }
+  const group = new THREE.Group();
+  for (const [positions, color] of [
+    [red, 0xd23a32],
+    [white, 0xf2f2f2],
+  ] as const) {
+    if (!positions.length) continue;
+    const m = new THREE.Mesh(geometry(positions), new THREE.MeshLambertMaterial({ color, polygonOffset: true, polygonOffsetFactor: -1, polygonOffsetUnits: -1 }));
+    m.receiveShadow = true;
+    group.add(m);
+  }
   return group;
 }
 

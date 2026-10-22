@@ -74,236 +74,221 @@ export interface VehiclePreset {
   params: Readonly<VehicleParams>;
 }
 
-/** 選べる車（P キーで切り替え） */
+/** 最高速度の余裕: maxForwardSpeed をこの割合だけ最高速度より高くし、空気抵抗と釣り合う速さを最高速度にする */
+const TOP_SPEED_HEADROOM = 1.1;
+
+/**
+ * アクセルを踏み続けて平らな直線で落ち着く速さ [m/s]（エンジンの加速と空気抵抗が釣り合う速さ）。
+ * engineAccel (1 - v / maxForwardSpeed) = dragCoef v^2 を解く
+ */
+export function topSpeedOf(p: Readonly<VehicleParams>): number {
+  const b = p.engineAccel / p.maxForwardSpeed;
+  if (p.dragCoef <= 0) return p.maxForwardSpeed;
+  return (-b + Math.sqrt(b * b + 4 * p.dragCoef * p.engineAccel)) / (2 * p.dragCoef);
+}
+
+/** 最高速度 topKmh [km/h] の車の性能（空気抵抗の係数を最高速度から決める） */
+function car(topKmh: number, p: Partial<VehicleParams>): VehicleParams {
+  const params = { ...DEFAULT_VEHICLE_PARAMS, ...p };
+  const v = topKmh / 3.6;
+  const maxForwardSpeed = v * TOP_SPEED_HEADROOM;
+  return { ...params, maxForwardSpeed, dragCoef: (params.engineAccel * (1 - v / maxForwardSpeed)) / (v * v) };
+}
+
+/**
+ * 選べる車（P キーで切り替え）。最高速度 [km/h] は、イニシャルDのアニメの場面（メーターの読み・直線での伸び・
+ * 車どうしの差）と、それぞれの車のチューニングから見積もった値
+ */
 export const VEHICLE_PRESETS: readonly VehiclePreset[] = [
   {
     id: 'standard',
     label: '普通車',
     description: '扱いやすいふつうの車',
-    params: { ...DEFAULT_VEHICLE_PARAMS, maxForwardSpeed: 38, engineAccel: 11.5, dragCoef: 0.0013 },
+    params: car(180, { engineAccel: 11.5 }),
   },
   {
     id: 'kei',
     label: '軽自動車',
     description: '遅いけれど小回りがきく',
-    params: { ...DEFAULT_VEHICLE_PARAMS, maxForwardSpeed: 32, engineAccel: 8.5, brakeDecel: 14, wheelBase: 2.4, maxLateralAccel: 12 },
+    params: car(140, { engineAccel: 8.5, brakeDecel: 14, wheelBase: 2.4, maxLateralAccel: 12 }),
   },
   {
     id: 'cappuccino',
     label: 'カプチーノ',
     description: 'FR・軽のオープンカー。とても軽く、小さく鋭く曲がる',
-    params: {
-      ...DEFAULT_VEHICLE_PARAMS,
-      maxForwardSpeed: 41,
+    params: car(170, {
       engineAccel: 11.5,
       brakeDecel: 23,
-      dragCoef: 0.0012,
       wheelBase: 2.06,
       maxSteerAngle: 0.64,
       steerRate: 3.1,
       steerReturnRate: 4,
       maxLateralAccel: 19.5,
       lateralGrip: 10,
-    },
+    }),
   },
   {
     id: 'sport',
     label: 'スポーツカー',
     description: '速くて曲がる、くせのない車',
-    params: {
-      ...DEFAULT_VEHICLE_PARAMS,
-      maxForwardSpeed: 55,
+    params: car(250, {
       engineAccel: 17,
       brakeDecel: 22,
-      dragCoef: 0.0008,
       steerRate: 2.6,
       maxLateralAccel: 18,
       lateralGrip: 10,
-    },
+    }),
   },
   {
     id: 'ae85',
     label: 'AE85',
     description: 'FR・AE86の兄弟車。軽いが非力で、坂と直線は苦手',
-    params: {
-      ...DEFAULT_VEHICLE_PARAMS,
-      maxForwardSpeed: 42,
+    params: car(160, {
       engineAccel: 10.5,
       brakeDecel: 21,
-      dragCoef: 0.0012,
       wheelBase: 2.4,
       maxSteerAngle: 0.62,
       steerRate: 2.8,
       steerReturnRate: 3.8,
       maxLateralAccel: 18,
       lateralGrip: 9,
-    },
+    }),
   },
   {
     id: 'ae86',
     label: 'AE86',
     description: 'FR・軽い。直線は遅いがコーナーは速い',
-    params: {
-      ...DEFAULT_VEHICLE_PARAMS,
-      maxForwardSpeed: 47,
+    params: car(210, {
       engineAccel: 13,
       brakeDecel: 23,
-      dragCoef: 0.0011,
       wheelBase: 2.4,
       maxSteerAngle: 0.62,
       steerRate: 2.9,
       steerReturnRate: 3.8,
       maxLateralAccel: 20,
       lateralGrip: 9.5,
-    },
+    }),
   },
   {
     id: 'eg6',
     label: 'シビック (EG6)',
     description: 'FF・軽い。パワーは控えめだが曲がりやすい',
-    params: {
-      ...DEFAULT_VEHICLE_PARAMS,
-      maxForwardSpeed: 48,
+    params: car(215, {
       engineAccel: 13.5,
       brakeDecel: 22,
-      dragCoef: 0.0011,
       wheelBase: 2.45,
       maxSteerAngle: 0.62,
       steerRate: 2.9,
       steerReturnRate: 3.8,
       maxLateralAccel: 19,
       lateralGrip: 10.5,
-    },
+    }),
   },
   {
     id: 'ek9',
     label: 'シビック (EK9)',
     description: 'FF・高回転のVTEC。軽くて立ち上がりが鋭い',
-    params: {
-      ...DEFAULT_VEHICLE_PARAMS,
-      maxForwardSpeed: 51,
+    params: car(225, {
       engineAccel: 15,
       brakeDecel: 23,
-      dragCoef: 0.001,
       wheelBase: 2.5,
       maxSteerAngle: 0.62,
       steerRate: 2.9,
       steerReturnRate: 3.8,
       maxLateralAccel: 19,
       lateralGrip: 11,
-    },
+    }),
   },
   {
     id: 's13',
     label: 'シルビア (S13)',
     description: 'FR・ターボ。パワーはそこそこで、お尻を流しやすい',
-    params: {
-      ...DEFAULT_VEHICLE_PARAMS,
-      maxForwardSpeed: 51,
+    params: car(220, {
       engineAccel: 15,
       brakeDecel: 21,
-      dragCoef: 0.0009,
       wheelBase: 2.475,
       steerRate: 2.7,
       maxLateralAccel: 17,
       lateralGrip: 8.5,
-    },
+    }),
   },
   {
     id: 's14',
     label: 'シルビア (S14)',
     description: 'FR・ターボ。S13よりパワーがあり、少し大きく安定',
-    params: {
-      ...DEFAULT_VEHICLE_PARAMS,
-      maxForwardSpeed: 54,
+    params: car(235, {
       engineAccel: 16.5,
       brakeDecel: 21.5,
-      dragCoef: 0.00085,
       wheelBase: 2.525,
       steerRate: 2.6,
       maxLateralAccel: 17.5,
       lateralGrip: 9,
-    },
+    }),
   },
   {
     id: 'fd3s',
     label: 'RX-7 (FD3S)',
     description: 'FR・ロータリーターボ。速いがお尻が流れやすい',
-    params: {
-      ...DEFAULT_VEHICLE_PARAMS,
-      maxForwardSpeed: 58,
+    params: car(260, {
       engineAccel: 17.5,
       brakeDecel: 21,
-      dragCoef: 0.0008,
       wheelBase: 2.43,
       steerRate: 2.8,
       maxLateralAccel: 17.5,
       lateralGrip: 8,
-    },
+    }),
   },
   {
     id: 'evo3',
     label: 'ランエボIII',
     description: '4WD・ターボ。大きなウイング。IVより少し非力',
-    params: {
-      ...DEFAULT_VEHICLE_PARAMS,
-      maxForwardSpeed: 53,
+    params: car(240, {
       engineAccel: 18.5,
       brakeDecel: 22,
-      dragCoef: 0.0009,
       wheelBase: 2.51,
       steerRate: 2.5,
       maxLateralAccel: 17,
       lateralGrip: 11,
-    },
+    }),
   },
   {
     id: 'evo',
     label: 'ランエボIV',
     description: '4WD・ターボ。立ち上がりの加速とグリップが強い',
-    params: {
-      ...DEFAULT_VEHICLE_PARAMS,
-      maxForwardSpeed: 54,
+    params: car(245, {
       engineAccel: 19.5,
       brakeDecel: 22,
-      dragCoef: 0.0009,
       wheelBase: 2.5,
       steerRate: 2.5,
       maxLateralAccel: 17.5,
       lateralGrip: 11.5,
-    },
+    }),
   },
   {
     id: 'gtr',
     label: 'GT-R (R32)',
     description: '4WD・ツインターボ。最高速がいちばん高いが重い',
-    params: {
-      ...DEFAULT_VEHICLE_PARAMS,
-      maxForwardSpeed: 61,
+    params: car(265, {
       engineAccel: 19,
       brakeDecel: 20,
-      dragCoef: 0.0007,
       wheelBase: 2.62,
       steerRate: 2.3,
       maxLateralAccel: 17,
       lateralGrip: 11,
-    },
+    }),
   },
   {
     id: 'r34',
     label: 'GT-R (R34)',
     description: '4WD・ツインターボ。R32より速く、高速コーナーも安定',
-    params: {
-      ...DEFAULT_VEHICLE_PARAMS,
-      maxForwardSpeed: 63,
+    params: car(285, {
       engineAccel: 19.5,
       brakeDecel: 21,
-      dragCoef: 0.0007,
       wheelBase: 2.66,
       steerRate: 2.3,
       maxLateralAccel: 17.5,
       lateralGrip: 11.5,
-    },
+    }),
   },
 ];
 
