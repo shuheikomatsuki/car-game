@@ -643,6 +643,38 @@ body.touch .dialog-panel input[type='text'] {
   display: none;
 }
 
+/* NPC 対戦・バトルの、いまの順位と名前 */
+#race-field {
+  margin: 4px 0 0;
+  padding: 0;
+  list-style: none;
+  font-size: 12px;
+  line-height: 1.5;
+  text-align: left;
+}
+
+#race-field:empty {
+  display: none;
+}
+
+#race-field li {
+  opacity: 0.85;
+}
+
+#race-field li.me {
+  font-weight: bold;
+  opacity: 1;
+}
+
+#race-field .dot {
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  margin-right: 5px;
+  border-radius: 50%;
+  vertical-align: middle;
+}
+
 #race-split {
   display: none;
   margin-top: 2px;

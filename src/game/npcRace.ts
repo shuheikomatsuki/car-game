@@ -2,7 +2,7 @@ import type * as THREE from 'three';
 import { type NpcLevel, NpcDriver, type Opponent } from '../race/npcDriver';
 import { buildRacingLine } from '../race/racingLine';
 import { TimeAttack } from '../race/timeAttack';
-import { CarMesh } from '../render/carMesh';
+import { CarMesh, type CarStyle } from '../render/carMesh';
 import type { Car, CarSnapshot } from '../sim/car';
 import { NEUTRAL_INPUT, type VehicleParams } from '../sim/vehicle';
 import { FallRecovery } from './fall';
@@ -42,6 +42,29 @@ function lerpSnap(a: CarSnapshot, b: CarSnapshot, t: number): CarSnapshot {
   return { ...b, x: a.x + (b.x - a.x) * t, z: a.z + (b.z - a.z) * t, yaw: a.yaw + dyaw * t };
 }
 
+/** NPC 1台の設定 */
+export interface NpcEntry {
+  name: string;
+  color: number;
+  level: NpcLevel;
+  params: VehicleParams;
+  style?: CarStyle;
+  /** 同じ強さの NPC どうしでも差がつくよう、グリップにかける係数 */
+  variation: number;
+}
+
+/** NPC 対戦の NPC たち（同じ強さ・同じ車で、名前と色だけ違う） */
+export function npcEntries(count: number, level: NpcLevel, params: VehicleParams, style?: CarStyle): NpcEntry[] {
+  return Array.from({ length: count }, (_, i) => ({
+    name: NPC_NAMES[i % NPC_NAMES.length],
+    color: PLAYER_COLORS[(i + 1) % PLAYER_COLORS.length],
+    level,
+    params,
+    style,
+    variation: VARIATIONS[i % VARIATIONS.length],
+  }));
+}
+
 /** NPC 対戦で一緒に走る NPC たち。物理ワールドに車を置き、毎ステップ運転させる */
 export class NpcField {
   readonly npcs: Npc[] = [];
@@ -49,8 +72,7 @@ export class NpcField {
   constructor(
     private readonly level: Level,
     scene: THREE.Scene,
-    npcLevel: NpcLevel,
-    params: VehicleParams,
+    entries: readonly NpcEntry[],
     totalLaps: number,
     grid: { x: number; z: number; yaw: number }[],
   ) {
@@ -58,12 +80,11 @@ export class NpcField {
     const line = buildRacingLine(course);
     const terrain = level.terrain;
     const gradient = terrain ? (x: number, z: number) => terrain.gradientAt(x, z) : undefined;
-    grid.forEach((spot, i) => {
-      const car = level.createCar(spot);
+    entries.forEach((entry, i) => {
+      const { name, color, params } = entry;
+      const car = level.createCar(grid[i]);
       car.params = { ...params };
-      const color = PLAYER_COLORS[(i + 1) % PLAYER_COLORS.length];
-      const mesh = new CarMesh(color);
-      const name = NPC_NAMES[i % NPC_NAMES.length];
+      const mesh = new CarMesh(color, entry.style);
       mesh.root.add(createLabel(name));
       scene.add(mesh.root);
       const snap = car.snapshot();
@@ -72,7 +93,7 @@ export class NpcField {
         color,
         car,
         mesh,
-        driver: new NpcDriver(line, params, npcLevel, VARIATIONS[i % VARIATIONS.length], gradient),
+        driver: new NpcDriver(line, params, entry.level, entry.variation, gradient),
         timer: new TimeAttack(course, totalLaps, true),
         prev: snap,
         curr: snap,

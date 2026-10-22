@@ -19,6 +19,12 @@ export interface RaceResult {
   notSaved: boolean;
 }
 
+const hexColor = (c: number) => `#${c.toString(16).padStart(6, '0')}`;
+
+function escapeHtml(s: string): string {
+  return s.replace(/[&<>"']/g, (c) => `&#${c.charCodeAt(0)};`);
+}
+
 /** 順位を英語の序数にする（1st, 2nd, 3rd, 4th, …, 11th, 12th, 13th, 21st） */
 export function ordinal(n: number): string {
   const teen = n % 100 >= 11 && n % 100 <= 13;
@@ -36,6 +42,8 @@ export class RaceHud {
   private shownPos = '';
   private readonly timeEl = el('race-time');
   private readonly bestEl = el('race-best');
+  private readonly fieldEl = el('race-field');
+  private shownField = '';
   private readonly splitEl = el('race-split');
   private readonly lapsEl = el('race-laps');
   /** 表に出している走り終えた周の数（増えたときだけ表を作り直す） */
@@ -88,6 +96,8 @@ export class RaceHud {
     finished: boolean;
     /** NPC 対戦の順位 */
     position?: { rank: number; total: number };
+    /** NPC 対戦の、いまの順位の並び（名前を出す） */
+    field?: readonly Standing[];
     /** ランキングから選んだ、一緒に走るゴーストの人 */
     rival?: { name: string; total: number };
   }): void {
@@ -103,6 +113,11 @@ export class RaceHud {
     // NPC 対戦では自己ベストを比べないので出さない
     const best = s.best === null ? 'ベスト --:--.--' : `ベスト ${formatTime(s.best)}`;
     this.bestEl.textContent = s.position ? '' : s.rival ? `VS ${s.rival.name} ${formatTime(s.rival.total)}　${best}` : best;
+    const field = s.field && !s.finished ? s.field.map((r, i) => `<li class="${r.isPlayer ? 'me' : ''}"><span class="dot" style="background:${hexColor(r.color)}"></span>${ordinal(i + 1)} ${escapeHtml(r.name)}</li>`).join('') : '';
+    if (field !== this.shownField) {
+      this.shownField = field;
+      this.fieldEl.innerHTML = field;
+    }
     if (s.laps.length !== this.shownLaps || (s.finished && this.currentLapEl)) this.renderLaps(s.laps, s.refLaps, s.finished, s.totalLaps);
     if (this.currentLapEl) this.currentLapEl.textContent = formatTime(s.lapTime);
   }
@@ -197,23 +212,24 @@ export class RaceHud {
   /**
    * NPC 対戦の結果（順位表）。まだ走っている NPC がいる間は毎フレーム呼んでよい（変わったときだけ描き直す）
    */
-  showStandings(rows: readonly Standing[], totalLaps: number): void {
+  showStandings(rows: readonly Standing[], totalLaps: number, battle = false): void {
     const me = rows.findIndex((r) => r.isPlayer);
     const winner = rows[0]?.total ?? null;
     const body = rows
       .map((r, i) => {
-        const color = `#${r.color.toString(16).padStart(6, '0')}`;
+        const color = hexColor(r.color);
         const time =
           r.total === null
             ? `<span class="note">走行中${totalLaps > 1 ? `（${Math.min(r.laps + 1, totalLaps)}周目）` : ''}</span>`
             : i === 0 || winner === null
               ? formatTime(r.total)
               : `${formatTime(r.total)} <span class="note">+${(r.total - winner).toFixed(2)}</span>`;
-        return `<tr class="${r.isPlayer ? 'me' : ''}"><td>${i + 1}</td><td><span class="dot" style="background:${color}"></span>${r.isPlayer ? 'あなた' : r.name}</td><td>${time}</td></tr>`;
+        return `<tr class="${r.isPlayer ? 'me' : ''}"><td>${i + 1}</td><td><span class="dot" style="background:${color}"></span>${escapeHtml(r.name)}</td><td>${time}</td></tr>`;
       })
       .join('');
     const html = `<table class="standings">${body}</table>`;
-    this.resultTitle.textContent = me === 0 ? '優勝！' : `ゴール！ ${me + 1}位`;
+    const rival = rows.find((r) => !r.isPlayer)?.name ?? '';
+    this.resultTitle.textContent = battle ? (me === 0 ? `勝利！ ${rival} に勝った` : `敗北… ${rival} の勝ち`) : me === 0 ? '優勝！' : `ゴール！ ${me + 1}位`;
     if (html !== this.standingsHtml) {
       this.standingsHtml = html;
       this.resultBody.innerHTML = html;
