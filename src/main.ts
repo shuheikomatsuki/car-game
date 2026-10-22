@@ -130,7 +130,16 @@ async function main() {
 
   const updateAssistStatus = () => {
     const pending = driver.pendingTurn;
-    const turn = pending === 'left' ? '次は左' : pending === 'right' ? '次は右' : pending === 'straight' ? '次はまっすぐ' : '';
+    const turn =
+      driver.mode === 'free'
+        ? '自由に走行中（「道に戻って」で道路へ）'
+        : pending === 'left'
+          ? '次は左'
+          : pending === 'right'
+            ? '次は右'
+            : pending === 'straight'
+              ? '次はまっすぐ'
+              : '';
     panel.setStatus(
       `運転のうまさ: ${PERSONALITIES[personalityIndex].label}（K）　巡航 ${driver.speedKmh}km/h${turn ? `　${turn}` : ''}`,
     );

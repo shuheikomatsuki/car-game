@@ -27,6 +27,11 @@ export function dirVector(d: Direction): Point {
   return { x: dc, z: dr };
 }
 
+/** 角度を -π..π にそろえる */
+export function wrapAngle(a: number): number {
+  return a - 2 * Math.PI * Math.round(a / (2 * Math.PI));
+}
+
 export function opposite(d: Direction): Direction {
   return ({ N: 'S', S: 'N', E: 'W', W: 'E' } as const)[d];
 }
@@ -267,6 +272,34 @@ export class RoutePlanner {
     this.segments.push(this.makeSegment(tile, seg.din, opposite(seg.din), false, false));
     this.rebuild();
     return true;
+  }
+
+  /** minDistance〜maxDistance [m] 先に、turn の方向へ曲がれる交差点があるか */
+  canTurnWithin(turn: Turn, minDistance: number, maxDistance: number): boolean {
+    // まだ経路を決めていない先も、道路をたどって調べる（交差点では直進したものとして進む）
+    let i = this.currentIndex + 1;
+    let distance = i < this.segments.length ? this.cumulative[this.segStarts[i]] - this.s : this.remaining();
+    let last = this.segments[this.currentIndex];
+    while (last && distance <= maxDistance) {
+      const seg = i < this.segments.length ? this.segments[i] : null;
+      const din = seg ? seg.din : last.dout;
+      const { dc, dr } = DIR_OFFSET[last.dout];
+      const tile = seg ? this.map.tileAt(seg.col, seg.row) : this.map.tileAt(last.col + dc, last.row + dr);
+      if (tile?.kind !== 'road') return false;
+      const options = exitOptions(tile, din);
+      if (distance >= minDistance && options.length > 1 && options.includes(applyTurn(din, turn))) return true;
+      if (seg) {
+        last = seg;
+      } else {
+        // 経路の先: 直進できればそのまま、できなければ調べるのをやめる
+        const next = options.includes(din) ? din : options.length === 1 ? options[0] : null;
+        if (!next) return false;
+        last = { ...last, col: tile.col, row: tile.row, din, dout: next };
+      }
+      distance += this.map.def.tileSize;
+      i++;
+    }
+    return false;
   }
 
   /** 今の区間より先で、入口まで minDistance [m] 以上あり、条件に合う最初の区間の番号（無ければ -1） */

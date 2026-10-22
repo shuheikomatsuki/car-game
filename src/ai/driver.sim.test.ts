@@ -120,7 +120,7 @@ describe('CharacterDriver on the physics world', () => {
     expect(sim.events.filter((e) => e.type === 'collision')).toEqual([]);
     expect(sim.maxImpact).toBeLessThan(2.5);
     expect(sim.distance).toBeGreaterThan(500);
-    expect(sim.events.some((e) => e.type === 'lost')).toBe(false);
+    expect(sim.events.some((e) => e.type === 'offRoad')).toBe(false);
     expect(sim.offRoadSteps).toBe(0);
   });
 
@@ -192,6 +192,46 @@ describe('CharacterDriver on the physics world', () => {
     sim.run(4);
     expect(Math.abs(sim.driver.lateralShift)).toBeLessThan(0.7);
     expect(sim.events.filter((e) => e.type === 'collision')).toEqual([]);
+  });
+
+  it('turns off the road right away when told, drives freely, and finds the road again', () => {
+    const sim = createSim(TOWN_MAP_NO_CONES);
+    sim.say('start');
+    sim.run(2);
+    const before = sim.car.snapshot();
+    // 東向きに走っている途中で「今すぐ左」→ 北の草地へ
+    sim.say('steerLeft');
+    sim.run(5);
+    const after = sim.car.snapshot();
+    expect(sim.driver.mode).toBe('free');
+    expect(after.z).toBeLessThan(before.z - 10);
+    expect(Math.abs(after.forwardSpeed)).toBeGreaterThan(2);
+    sim.say('returnToRoad');
+    sim.run(15);
+    expect(sim.events.some((e) => e.type === 'rejoin')).toBe(true);
+    expect(sim.driver.mode).toBe('route');
+    expect(sim.events.filter((e) => e.type === 'collision')).toEqual([]);
+  });
+
+  it('on a plain "right", turns at a junction just ahead, or right away when there is none', () => {
+    // スタート直後: 次の交差点（x = 100）まで遠いので、その場で曲がる
+    const sim = createSim(TOWN_MAP_NO_CONES);
+    sim.say('start');
+    sim.run(1);
+    sim.say('goRight');
+    sim.run(3);
+    expect(sim.driver.mode).toBe('free');
+
+    // 交差点の手前: その交差点で曲がり、道路に沿って走り続ける
+    const sim2 = createSim(TOWN_MAP_NO_CONES);
+    sim2.say('start');
+    sim2.run(3.2);
+    expect(sim2.car.snapshot().x).toBeGreaterThan(60);
+    sim2.say('goRight');
+    sim2.run(8);
+    expect(sim2.driver.mode).toBe('route');
+    expect(sim2.events.some((e) => e.type === 'turning' && e.turn === 'right')).toBe(true);
+    expect(sim2.car.snapshot().z).toBeGreaterThan(92);
   });
 
   it('stops quickly on "danger" even with a clumsy personality', () => {
