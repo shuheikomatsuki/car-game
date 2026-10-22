@@ -3,7 +3,7 @@ import { type NpcLevel, NpcDriver, type Opponent } from '../race/npcDriver';
 import { buildRacingLine } from '../race/racingLine';
 import { TimeAttack } from '../race/timeAttack';
 import { CarMesh, type CarStyle } from '../render/carMesh';
-import type { Car, CarSnapshot } from '../sim/car';
+import type { Car, CarSnapshot, Spawn } from '../sim/car';
 import { NEUTRAL_INPUT, type VehicleParams } from '../sim/vehicle';
 import { FallRecovery } from './fall';
 import type { Level } from './level';
@@ -74,12 +74,11 @@ export class NpcField {
     scene: THREE.Scene,
     entries: readonly NpcEntry[],
     totalLaps: number,
-    grid: { x: number; z: number; yaw: number }[],
+    grid: Spawn[],
   ) {
     const course = level.course!;
     const line = buildRacingLine(course);
-    const terrain = level.terrain;
-    const gradient = terrain ? (x: number, z: number) => terrain.gradientAt(x, z) : undefined;
+    const gradient = level.hasSlopes ? (x: number, z: number, s: number) => level.slopeAt(x, z, s) : undefined;
     entries.forEach((entry, i) => {
       const { name, color, params } = entry;
       const car = level.createCar(grid[i]);

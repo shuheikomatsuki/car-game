@@ -4,6 +4,7 @@ import { RemoteTrack } from '../net/interpolation';
 import type { CarState, PlayerInfo } from '../net/protocol';
 import { CarMesh, carStyle } from '../render/carMesh';
 import { CAR_DIMENSIONS, type CarSnapshot } from '../sim/car';
+import { carGroups } from '../sim/physics';
 import type { Level } from './level';
 
 /** プレイヤーごとの車体の色（サーバーが番号を割り当てる） */
@@ -17,6 +18,10 @@ interface RemotePlayer {
   mesh: CarMesh;
   label: THREE.Sprite;
   body: RAPIER.RigidBody | null;
+  /** コース上の距離（中心線で描く道路のマップで、立体交差のどちらの道にいるか） */
+  courseS: number | null;
+  /** 車体がぶつかる層（立体交差） */
+  layer: number;
 }
 
 /** 車の上に出す名札 */
@@ -43,8 +48,8 @@ export function createLabel(name: string): THREE.Sprite {
   return sprite;
 }
 
-function toSnapshot(s: CarState): CarSnapshot {
-  return { x: s[0], y: 0, z: s[1], yaw: s[2], forwardSpeed: s[3], lateralSpeed: 0, steerAngle: s[4], wheelSpin: s[5] };
+function toSnapshot(s: CarState, courseS: number | null): CarSnapshot {
+  return { x: s[0], y: 0, z: s[1], yaw: s[2], forwardSpeed: s[3], lateralSpeed: 0, steerAngle: s[4], wheelSpin: s[5], ...(courseS !== null ? { courseS } : {}) };
 }
 
 export function carStateOf(s: CarSnapshot): CarState {
@@ -71,7 +76,11 @@ export class RemoteCars {
   /** マップが変わったら、新しい物理ワールドに車体を作り直す */
   attachLevel(level: Level): void {
     this.level = level;
-    for (const p of this.players.values()) p.body = this.createBody();
+    for (const p of this.players.values()) {
+      p.body = this.createBody();
+      p.courseS = null;
+      p.layer = -1;
+    }
   }
 
   add(info: PlayerInfo): void {
@@ -81,7 +90,7 @@ export class RemoteCars {
     mesh.root.add(label);
     mesh.root.visible = false;
     this.scene.add(mesh.root);
-    this.players.set(info.id, { info, track: new RemoteTrack(), mesh, label, body: this.createBody() });
+    this.players.set(info.id, { info, track: new RemoteTrack(), mesh, label, body: this.createBody(), courseS: null, layer: -1 });
   }
 
   update(info: PlayerInfo): void {
@@ -131,6 +140,13 @@ export class RemoteCars {
       const collider = p.body.collider(0);
       if (collider.isEnabled() !== active) collider.setEnabled(active);
       if (!s || !active) continue;
+      // 立体交差では、その車が走っている道の層の車とだけぶつかる
+      p.courseS = this.level?.locate(s[0], s[1], s[2], p.courseS) ?? null;
+      const layer = this.level?.layerAt(p.courseS) ?? 0;
+      if (layer !== p.layer) {
+        p.layer = layer;
+        collider.setCollisionGroups(carGroups(layer));
+      }
       p.body.setNextKinematicTranslation({ x: s[0], y: 0, z: s[1] });
       p.body.setNextKinematicRotation({ x: 0, y: Math.sin(s[2] / 2), z: 0, w: Math.cos(s[2] / 2) });
     }
@@ -142,7 +158,7 @@ export class RemoteCars {
       const s = p.track.sample(localNow);
       const visible = s !== null && p.track.silenceMs(localNow) < STALE_MS;
       p.mesh.root.visible = visible;
-      if (s && visible) p.mesh.update(this.level ? this.level.ground(toSnapshot(s)) : toSnapshot(s));
+      if (s && visible) p.mesh.update(this.level ? this.level.ground(toSnapshot(s, p.courseS)) : toSnapshot(s, null));
     }
   }
 

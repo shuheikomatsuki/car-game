@@ -177,7 +177,7 @@ export const VEHICLE_PRESETS: readonly VehiclePreset[] = [
   },
   {
     id: 'ek9',
-    label: 'シビック タイプR (EK9)',
+    label: 'シビック (EK9)',
     description: 'FF・高回転のVTEC。軽くて立ち上がりが鋭い',
     params: {
       ...DEFAULT_VEHICLE_PARAMS,

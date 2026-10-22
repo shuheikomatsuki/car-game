@@ -530,39 +530,63 @@ export const STRAIGHT_DOWN_MAP: MapDefinition = {
 };
 
 /**
- * 首都高のような高架の周回コース（オリジナル）。海の上の 1.2km の直線（湾岸線）、ビルの間のコーナー、
- * レインボーブリッジのような吊り橋と、その先の右に 540° 回り込んでから左に 540° 回って抜けるループがある。
+ * 首都高のような高架の周回コース（オリジナル・約 5.9km）。中心線で描く道路（src/map/road.ts）なので、
+ * カーブはなめらかな円で、道路が自分の上を越える立体交差がある。
+ *
+ * 湾岸線のような 1.3km のロングストレートの先で、左に 540° 回りながら上る二重のループ（下の輪の真上を
+ * 上の輪が通る）、海を渡る吊り橋（レインボーブリッジ）、都心環状線のような曲がりくねった区間、
+ * 405° 回って自分の上を越えていくループ、215° 曲がり続ける大きなカーブを通ってロングストレートに戻る。
  * 道路の両側は壁で、3車線
  */
-export const WANGAN_MAP: MapDefinition = {
-  id: 'shutoko',
+export const SHUTOKO_MAP: MapDefinition = {
+  id: 'shutoko-loop',
   name: '首都高（湾岸線・ループ）',
-  tileSize: 40,
-  roadWidth: 15,
-  layout: [
-    '~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~',
-    '~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~',
-    'B.RRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRBB',
-    'B.RB...BB..B...BBB....BBB.B.BB.BBBRB.',
-    'B.RRRRRRRRRRRRRRB....B....BBB.BB..RB.',
-    '...........B...R...BBBRRRRBBBRRRRRR..',
-    '...B.RRRRRRRRR.RB.....R..RB..R.BB....',
-    'B.B.BR.T..TT.R.R....BBR..RRRRRB.B..B.',
-    '.B...RTRRRRR.RTRB..B.BR...B.B.BB...BB',
-    '....BRTRTTTRTR.R.BBBBBRRRRRRR.B.BBB..',
-    'B.B..RTR.RRRTR.R..B.B...B.BBRB..B..BB',
-    'B.B..RTR.R.T.R.R.BBB...BB...RRRRRR..B',
-    'B....R.R.RRRRRTR..B.BBBBBBB..B.BBR..B',
-    '.....R.R.T..T..RB~~~~~~~~~~~~~~~~R.B.',
-    '.....R.RRRRRRRRR.~~~~~~~~~~~~~~~~RB..',
-    '.B...RBB..B...B..~~~~~~~~~~~~~~~~RBB.',
-    '..B..RRRRRRRRRRRRR===========RRRRR.BB',
-    '~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~',
-    '~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~',
-  ],
-  start: { col: 4, row: 2, heading: 'E' },
+  tileSize: 20,
+  roadWidth: 11,
+  layout: [],
+  start: { col: 0, row: 0, heading: 'E' },
   race: { laps: 1 },
-  highway: { depth: 14, lanes: 3 },
+  road: {
+    scenery: 'highway',
+    highway: { ground: -14, lanes: 3 },
+    width: 11,
+    start: 100,
+    closed: true,
+    pieces: [
+      // 湾岸線のロングストレート
+      { straight: 1300 },
+      { arc: { radius: 500, turn: -20 } },
+      { straight: 200, h: 0 },
+      // 左に 540° 回りながら上る二重のループ
+      { arc: { radius: 55, turn: 540 }, width: 10, h: 16 },
+      { straight: 250, h: 22 },
+      // レインボーブリッジ
+      { straight: 120, h: 24 },
+      { straight: 620, suspension: true, h: 26 },
+      { straight: 150, h: 16 },
+      // 都心環状線のような曲がりくねった区間
+      { arc: { radius: 60, turn: 70 }, width: 9 },
+      { straight: 120, width: 9 },
+      { arc: { radius: 45, turn: -90 }, width: 9 },
+      { straight: 80, width: 9 },
+      { arc: { radius: 70, turn: 80 }, width: 9 },
+      { arc: { radius: 50, turn: -60 }, width: 9, h: 6 },
+      { straight: 150, width: 9, h: 6 },
+      // 405° 回って、自分の上を越えていくループ
+      { arc: { radius: 45, turn: 405 }, width: 9, h: 18 },
+      { straight: 200, width: 10, h: 8 },
+      { arc: { radius: 90, turn: -60 } },
+      // 215° 曲がり続けて、ロングストレートに戻る（周回が閉じるよう長さを合わせてある）
+      { straight: 119.5019 },
+      { arc: { radius: 200, turn: 215 } },
+      { straight: 441.0961, h: 0 },
+    ],
+    // 東京湾（北側）と、吊り橋の下の運河
+    sea: [
+      [-900, -1400, 2100, -470],
+      [880, -470, 1500, -45],
+    ],
+  },
 };
 
 /**
@@ -620,13 +644,96 @@ export const VALLEY_DOWN_MAP: MapDefinition = {
   elevation: VALLEY_ELEVATION,
 };
 
+/**
+ * 八方ヶ原のような、4 つの区間に分かれた峠の往復（オリジナル・道路 3.3km、往復 6.4km）。中心線で描く道路
+ * （src/map/road.ts）。ふもとからスタートし、頂上の広場で U ターンして、同じ道を戻ってきたらゴール。
+ *
+ * - 第1セクション: 道幅の狭い古い道。木が道路のすぐ脇まで茂り、コーナーの先が見えない
+ * - 第2セクション: 拡幅工事を終えた広くきれいな道。ただし路面は荒れていて、細かく波打って車が跳ねる
+ * - ハイポイントコーナーを過ぎた第3セクション: きついダウンヒル。その先で高さ 55m の谷に架かる大きな橋を渡る
+ * - 第4セクション: きついヒルクライム。330° 回り込むループ橋（自分の下をくぐってきた道の上を越える）、
+ *   カーブの途中にある 240m のトンネルを抜け、さらに上って頂上の広場へ
+ */
+export const HAPPOGAHARA_MAP: MapDefinition = {
+  id: 'happogahara',
+  name: '八方ヶ原風の峠（往復）',
+  tileSize: 20,
+  roadWidth: 10,
+  layout: [],
+  start: { col: 0, row: 0, heading: 'E' },
+  race: { laps: 1 },
+  road: {
+    scenery: 'touge',
+    width: 8,
+    start: 150,
+    turnaround: { radius: 11 },
+    pieces: [
+      // 第1セクション: 狭く見通しの悪い古い道
+      { straight: 200, width: 6.2, surface: 'old' },
+      { arc: { radius: 40, turn: 70 }, width: 6.2, surface: 'old' },
+      { straight: 40, width: 6.2, surface: 'old' },
+      { arc: { radius: 30, turn: -95 }, width: 6.2, surface: 'old' },
+      { straight: 30, width: 6.2, surface: 'old' },
+      { arc: { radius: 55, turn: 60 }, width: 6.2, surface: 'old' },
+      { arc: { radius: 35, turn: -80 }, width: 6.2, surface: 'old' },
+      { straight: 50, width: 6.2, surface: 'old' },
+      { arc: { radius: 28, turn: 110 }, width: 6.2, surface: 'old' },
+      { straight: 35, width: 6.2, surface: 'old' },
+      { arc: { radius: 45, turn: -70 }, width: 6.2, surface: 'old' },
+      { straight: 60, width: 6.2, surface: 'old' },
+      { arc: { radius: 32, turn: -60 }, width: 6.2, surface: 'old' },
+      { arc: { radius: 60, turn: 85 }, width: 6.2, surface: 'old', h: 30 },
+      // 第2セクション: 拡幅済みの広い新しい舗装。路面は荒れている
+      { straight: 120, width: 10, surface: 'new', bumpy: true },
+      { arc: { radius: 110, turn: -45 }, width: 10, surface: 'new', bumpy: true },
+      { straight: 80, width: 10, surface: 'new', bumpy: true },
+      { arc: { radius: 90, turn: 50 }, width: 10, surface: 'new', bumpy: true },
+      { arc: { radius: 130, turn: -35 }, width: 10, surface: 'new', bumpy: true },
+      { straight: 100, width: 10, surface: 'new', bumpy: true },
+      { arc: { radius: 75, turn: 60 }, width: 10, surface: 'new', bumpy: true },
+      { straight: 60, width: 10, surface: 'new', bumpy: true, h: 64 },
+      // ハイポイントコーナー（いちばん高い所）
+      { arc: { radius: 42, turn: -95 }, width: 10, surface: 'new', h: 70 },
+      // 第3セクション: きついダウンヒル
+      { straight: 60 },
+      { arc: { radius: 35, turn: 120 } },
+      { straight: 50 },
+      { arc: { radius: 26, turn: -150 } },
+      { straight: 60 },
+      { arc: { radius: 40, turn: 110 } },
+      { straight: 40 },
+      { arc: { radius: 45, turn: -80 } },
+      { straight: 50, h: 4 },
+      // 谷に架かる高い橋
+      { straight: 240, bridge: true, valley: 55, h: 0 },
+      // 第4セクション: きついヒルクライム
+      { straight: 70 },
+      { arc: { radius: 60, turn: -40 } },
+      { straight: 50, h: 10 },
+      // 330° 回り込むループ橋（くぐってきた道の上を越える）
+      { arc: { radius: 22, turn: -330 }, bridge: true },
+      { straight: 40, bridge: true },
+      { straight: 20, h: 32 },
+      // カーブの途中のトンネル
+      { arc: { radius: 80, turn: 110 }, tunnel: true },
+      { straight: 90, tunnel: true },
+      { arc: { radius: 45, turn: -70 } },
+      { straight: 60 },
+      { arc: { radius: 35, turn: 90 } },
+      { straight: 50 },
+      { arc: { radius: 50, turn: -60 } },
+      { straight: 60, h: 95 },
+    ],
+  },
+};
+
 export const MAPS: readonly MapDefinition[] = [
   TOWN_MAP,
   SCHOOL_MAP,
   CIRCUIT_MAP,
   TECHNICAL_MAP,
   RIVERSIDE_MAP,
-  WANGAN_MAP,
+  SHUTOKO_MAP,
   HILLCLIMB_MAP,
   DOWNHILL_MAP,
   PASS_OVER_MAP,
@@ -641,4 +748,5 @@ export const MAPS: readonly MapDefinition[] = [
   STRAIGHT_DOWN_MAP,
   VALLEY_UP_MAP,
   VALLEY_DOWN_MAP,
+  HAPPOGAHARA_MAP,
 ];

@@ -1,13 +1,15 @@
 /**
  * 先行後追い（サドンデス）のバトル。2台が前後に並んでスタートし、1本ずつ走って判定する。
  *
- * - 先行が後追いを大きく引き離したら（BREAKAWAY_DISTANCE 以上）、その時点で先行の勝ち
  * - 後追いが先行を抜いて先にゴールしたら、後追いの勝ち
- * - どちらでもなく先行がゴールしたら引き分け。先行と後追いを入れ替えて次の1本へ
+ * - 先行が先にゴールし、後追いが SAFE_SECONDS 秒より遅れてゴールしたら（まだゴールしていなくても）、先行の勝ち
+ * - 後追いが SAFE_SECONDS 秒以内に続いてゴールしたら引き分け。先行と後追いを入れ替えて次の1本へ
+ *
+ * 途中でどれだけ差が開いても、判定はゴールの時点でする
  */
 
-/** 先行の勝ちになる、コースに沿った差 [m] */
-export const BREAKAWAY_DISTANCE = 100;
+/** 先行のゴールから、後追いがこの秒数以内に続いてゴールすれば引き分け [s] */
+export const SAFE_SECONDS = 1;
 /** スタートで後追いが先行の後ろに並ぶ間隔 [m] */
 export const CHASE_START_GAP = 12;
 
@@ -21,12 +23,12 @@ export interface Runner {
   finishTime: number | null;
 }
 
-/** 1本の走りを判定する。まだ決まらなければ null */
-export function judgeRun(lead: Runner, chase: Runner, breakaway = BREAKAWAY_DISTANCE): RunOutcome | null {
+/** 1本の走りを判定する。time はいまの時刻（スタートの合図からの秒数）。まだ決まらなければ null */
+export function judgeRun(lead: Runner, chase: Runner, time: number, safe = SAFE_SECONDS): RunOutcome | null {
   if (chase.finishTime !== null && (lead.finishTime === null || chase.finishTime < lead.finishTime)) return 'chaseWins';
-  if (lead.distance - chase.distance >= breakaway) return 'leadWins';
-  if (lead.finishTime !== null) return 'draw';
-  return null;
+  if (lead.finishTime === null) return null;
+  if (chase.finishTime !== null) return chase.finishTime - lead.finishTime <= safe ? 'draw' : 'leadWins';
+  return time - lead.finishTime > safe ? 'leadWins' : null;
 }
 
 /** 先行後追いのバトルの進行（何本目か、どちらが先行か、勝ったのは誰か） */
@@ -44,11 +46,11 @@ export class SuddenDeath {
     this.playerLeads = playerLeadsFirst;
   }
 
-  /** 毎ステップ呼ぶ。この1本の判定が決まったときだけ結果を返す（決まった後は null） */
-  update(player: Runner, rival: Runner): RunOutcome | null {
+  /** 毎ステップ呼ぶ。time はいまの時刻。この1本の判定が決まったときだけ結果を返す（決まった後は null） */
+  update(player: Runner, rival: Runner, time: number): RunOutcome | null {
     if (this.outcome !== null) return null;
     const [lead, chase] = this.playerLeads ? [player, rival] : [rival, player];
-    const outcome = judgeRun(lead, chase);
+    const outcome = judgeRun(lead, chase, time);
     if (outcome === null) return null;
     this.outcome = outcome;
     if (outcome !== 'draw') {

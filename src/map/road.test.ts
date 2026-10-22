@@ -1,0 +1,133 @@
+import { describe, expect, it } from 'vitest';
+import { HAPPOGAHARA_MAP, SHUTOKO_MAP } from './maps';
+import { FLAG_BRIDGE, FLAG_TUNNEL, LAYER_LOWER, LAYER_UPPER, type RoadModel, type RoadSpec, buildRoad, bumpHeight } from './road';
+import { buildRoadObstacles } from './roadObstacles';
+
+const spec = (pieces: RoadSpec['pieces'], extra: Partial<RoadSpec> = {}): RoadSpec => ({ scenery: 'touge', width: 8, start: 0, pieces, ...extra });
+const last = (road: RoadModel) => road.count - 1;
+
+/** 道路の点の組で、平面では重なるのに道路に沿っては離れている所（立体交差）の高さの差の最小 */
+function crossingClearance(road: RoadModel): number {
+  let min = Infinity;
+  for (let i = 0; i < road.count; i += 2) {
+    for (let j = i + 100; j < road.count; j += 2) {
+      if (road.closed && road.count - (j - i) < 100) continue;
+      if (Math.hypot(road.x[i] - road.x[j], road.z[i] - road.z[j]) < (road.width[i] + road.width[j]) / 2) min = Math.min(min, Math.abs(road.h[i] - road.h[j]));
+    }
+  }
+  return min;
+}
+
+describe('road from straights and arcs', () => {
+  it('follows straights and circular arcs (left turns are positive)', () => {
+    const road = buildRoad(spec([{ straight: 100 }, { arc: { radius: 50, turn: 90 } }]));
+    expect(Math.abs(road.length - (100 + 25 * Math.PI))).toBeLessThan(1);
+    // 東へ 100m、左（北 = -Z）へ 90° 曲がると、北を向いて (150, -50) に着く
+    expect(road.x[last(road)]).toBeCloseTo(150, 0);
+    expect(road.z[last(road)]).toBeCloseTo(-50, 0);
+    expect(road.yaw[last(road)]).toBeCloseTo(Math.PI, 1);
+    expect(road.curvature[last(road)]).toBeCloseTo(1 / 50, 5);
+  });
+
+  it('climbs between the heights given at the end of pieces, smoothly', () => {
+    const road = buildRoad(spec([{ straight: 200, h: 0 }, { straight: 200, h: 20 }, { straight: 200 }]));
+    expect(road.heightAt(0)).toBeCloseTo(0, 5);
+    expect(road.heightAt(300)).toBeCloseTo(10, 0);
+    expect(road.heightAt(590)).toBeCloseTo(20, 1);
+    expect(road.gradeAt(300)).toBeCloseTo(0.1, 2);
+    // 勾配の折れ目は丸める
+    expect(road.gradeAt(200)).toBeGreaterThan(0.02);
+    expect(road.gradeAt(200)).toBeLessThan(0.08);
+  });
+
+  it('rejects a closed road that does not come back to its start, and a crossing without height', () => {
+    expect(() => buildRoad(spec([{ straight: 100 }, { arc: { radius: 30, turn: 180 } }], { closed: true }))).toThrow();
+    // 自分の上を越えずに平面で交わる
+    expect(() => buildRoad(spec([{ straight: 100 }, { arc: { radius: 30, turn: 330 } }, { straight: 100 }]))).toThrow(/crosses itself/);
+  });
+
+  it('turns around at the end on a loop that comes back to the same point facing the other way', () => {
+    const road = buildRoad(spec([{ straight: 200 }], { turnaround: { radius: 11 } }));
+    const loop = road.turnaround!.loop;
+    const a = loop[0];
+    const b = loop[loop.length - 1];
+    expect(Math.hypot(a.x - b.x, a.z - b.z)).toBeLessThan(0.01);
+    expect(Math.cos(b.yaw - a.yaw)).toBeCloseTo(-1, 5);
+    expect(road.turnaround!.length).toBeCloseTo((7 * Math.PI * 11) / 3, 3);
+  });
+
+  it('makes the bumpy section wavy and the rest flat', () => {
+    const road = buildRoad(spec([{ straight: 100 }, { straight: 200, bumpy: true }, { straight: 100 }]));
+    expect(bumpHeight(road, 50, 0)).toBe(0);
+    const waves = Array.from({ length: 100 }, (_, i) => bumpHeight(road, 150 + i, 0));
+    expect(Math.max(...waves)).toBeGreaterThan(0.05);
+    expect(Math.min(...waves)).toBeLessThan(-0.05);
+  });
+});
+
+describe('grade-separated crossings', () => {
+  it('passes the loop bridge of the mountain pass over the road below it', () => {
+    const road = buildRoad(HAPPOGAHARA_MAP.road!);
+    expect(crossingClearance(road)).toBeGreaterThan(8);
+    expect(road.layer.includes(LAYER_LOWER)).toBe(true);
+    expect(road.layer.includes(LAYER_UPPER)).toBe(true);
+  });
+
+  it('stacks the 540 degree loop of the highway with room for the cars below', () => {
+    const road = buildRoad(SHUTOKO_MAP.road!);
+    expect(crossingClearance(road)).toBeGreaterThan(8);
+    // 同じ向きに続けて曲がる角度の最大
+    let best = 0;
+    let run = 0;
+    let sign = 0;
+    for (let i = 0; i < road.count; i++) {
+      const k = road.curvature[i];
+      if (k === 0) continue;
+      if (Math.sign(k) !== sign) {
+        sign = Math.sign(k);
+        run = 0;
+      }
+      run += Math.abs(k) * road.step;
+      best = Math.max(best, run);
+    }
+    expect(best).toBeGreaterThanOrEqual(3 * Math.PI - 0.01);
+  });
+
+  it('puts the walls of the upper road on their own layer so that cars below pass under them', () => {
+    const road = buildRoad(SHUTOKO_MAP.road!);
+    const boxes = buildRoadObstacles(road).boxes;
+    expect(boxes.some((b) => b.layer === LAYER_UPPER)).toBe(true);
+    expect(boxes.some((b) => b.layer === LAYER_LOWER)).toBe(true);
+    // 首都高はすべての道路の両側に壁がある（4m ごとに左右）
+    expect(boxes.length).toBeGreaterThan((road.length / 4) * 2 - 4);
+  });
+});
+
+describe('the four-section mountain pass', () => {
+  const road = buildRoad(HAPPOGAHARA_MAP.road!);
+  const pieces = HAPPOGAHARA_MAP.road!.pieces;
+
+  it('has a narrow first section, a wide bumpy second section and a high bridge', () => {
+    expect(road.widthAt(300)).toBeLessThan(7);
+    const bumpy = pieces.findIndex((p) => p.bumpy);
+    expect(road.widthAt(road.pieceStart[bumpy] + 100)).toBeGreaterThanOrEqual(10);
+    const bridge = pieces.findIndex((p) => p.valley);
+    expect(pieces[bridge].valley).toBeGreaterThanOrEqual(50);
+    expect(road.hasFlag(road.pieceStart[bridge] + 100, FLAG_BRIDGE)).toBe(true);
+  });
+
+  it('goes downhill after the high point and steeply uphill after the bridge', () => {
+    const high = road.pieceStart[pieces.findIndex((p) => p.h === 70) + 1];
+    const bridge = pieces.findIndex((p) => p.valley);
+    expect(road.heightAt(road.pieceStart[bridge]) - road.heightAt(high)).toBeLessThan(-50);
+    expect(road.heightAt(road.length) - road.heightAt(road.pieceStart[bridge + 1])).toBeGreaterThan(80);
+  });
+
+  it('has a long tunnel in a corner', () => {
+    const tunnel = pieces.findIndex((p) => p.tunnel && p.arc);
+    expect(tunnel).toBeGreaterThan(0);
+    let length = 0;
+    for (let i = 0; i < road.count; i++) if (road.flags[i] & FLAG_TUNNEL) length += road.step;
+    expect(length).toBeGreaterThan(200);
+  });
+});

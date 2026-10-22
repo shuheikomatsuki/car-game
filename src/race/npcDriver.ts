@@ -52,6 +52,8 @@ export class NpcDriver {
   private lastSteer = 0;
   /** 1 より小さくすると全体にゆっくり走る（ゴール後のクールダウン） */
   pace = 1;
+  /** 直前にいたコース上の距離（立体交差や往復のコースで取り違えないため） */
+  private hint: number | null = null;
 
   constructor(
     private readonly line: RacingLine,
@@ -59,7 +61,7 @@ export class NpcDriver {
     readonly level: NpcLevel,
     /** 同じ強さの NPC どうしでも少し差がつくよう、速度にかける係数 */
     variation = 1,
-    gradient?: (x: number, z: number) => { x: number; z: number },
+    gradient?: (x: number, z: number, s: number) => { x: number; z: number },
   ) {
     const p = { ...params, maxForwardSpeed: params.maxForwardSpeed * level.topSpeed };
     this.speed = buildSpeedProfile(line, p, { grip: level.grip * variation, brake: level.brake, gradient });
@@ -107,16 +109,18 @@ export class NpcDriver {
       return NEUTRAL_INPUT;
     }
 
-    const here = course.project(car.x, car.z);
     const sin = Math.sin(car.yaw);
     const cos = Math.cos(car.yaw);
+    const here = course.project(car.x, car.z, { s: this.hint, dir: { x: sin, z: cos } });
+    this.hint = here.s;
 
     // --- 前の車 ---
     let follow = Infinity;
     let wantShift = 0;
-    const limit = course.map.def.roadWidth / 2 - 1.4;
+    const limit = course.widthAt(here.s) / 2 - 1.4;
     for (const o of opponents) {
-      const op = course.project(o.x, o.z);
+      const ov2 = Math.hypot(o.vx, o.vz);
+      const op = course.project(o.x, o.z, { s: here.s, dir: ov2 > 1 ? { x: o.vx / ov2, z: o.vz / ov2 } : null });
       let gap = op.s - here.s;
       if (course.closed) gap = ((gap % course.length) + course.length * 1.5) % course.length - course.length / 2;
       if (gap <= 0 || gap > 30) continue;
@@ -144,7 +148,7 @@ export class NpcDriver {
     let tx = this.lineX[ti] + Math.cos(tyaw) * this.sideShift;
     let tz = this.lineZ[ti] - Math.sin(tyaw) * this.sideShift;
     // 道路の外へは出ない
-    const tp = course.project(tx, tz);
+    const tp = course.project(tx, tz, { s: ti * this.line.step });
     if (Math.abs(tp.offset) > limit) {
       const fix = tp.offset - Math.sign(tp.offset) * limit;
       tx -= Math.cos(tyaw) * fix;

@@ -1,10 +1,8 @@
 import { beforeAll, describe, expect, it } from 'vitest';
+import { Track } from '../game/track';
 import { CIRCUIT_MAP, HAIRPIN_MAP, MAPS, STEEP_DOWN_MAP, TECHNICAL_MAP } from '../map/maps';
-import { buildObstacles } from '../map/obstacles';
-import { buildTerrain } from '../map/terrain';
 import { type MapDefinition, parseMap } from '../map/tilemap';
-import { Car } from '../sim/car';
-import { type Rapier, createPhysicsWorld, loadRapier } from '../sim/physics';
+import { type Rapier, loadRapier } from '../sim/physics';
 import { DEFAULT_VEHICLE_PARAMS, VEHICLE_PRESETS, type VehicleParams } from '../sim/vehicle';
 import { buildCourse } from './course';
 import { NPC_LEVELS, type NpcLevel, NpcDriver } from './npcDriver';
@@ -23,16 +21,16 @@ beforeAll(async () => {
 });
 
 function race(def: MapDefinition, levels: NpcLevel[], params: VehicleParams = DEFAULT_VEHICLE_PARAMS, laps = 1) {
-  const map = parseMap(def);
-  const course = buildCourse(map);
-  const terrain = buildTerrain(map);
-  const physics = createPhysicsWorld(rapier, buildObstacles(map));
+  // 坂・草地・立体交差の扱いはゲームと同じ（Track）
+  const track = new Track(rapier, def);
+  const course = track.course!;
+  const physics = track.physics;
   const line = buildRacingLine(course);
-  const gradient = terrain ? (x: number, z: number) => terrain.gradientAt(x, z) : undefined;
+  const gradient = track.hasSlopes ? (x: number, z: number, s: number) => track.slopeAt(x, z, s) : undefined;
+  const side = Math.min(2.5, course.widthAt(0) / 4);
   const racers = levels.map((level, i) => {
-    const car = new Car(physics, course.gridSpot(6 + 8 * i, i % 2 === 0 ? 2.5 : -2.5), params);
-    if (gradient) car.slope = gradient;
-    car.offRoad = (x, z) => Math.min(1, Math.max(0, (Math.abs(course.project(x, z).offset) - def.roadWidth / 2 + 0.95) / 1.9));
+    const car = track.createCar(course.gridSpot(6 + 8 * i, i % 2 === 0 ? side : -side));
+    car.params = { ...params };
     return { car, driver: new NpcDriver(line, params, level, 1, gradient), timer: new TimeAttack(course, laps), maxOffset: 0, maxImpact: 0 };
   });
   // 平均 8m/s でも走りきれる時間（最低 6 分）
@@ -58,7 +56,8 @@ function race(def: MapDefinition, levels: NpcLevel[], params: VehicleParams = DE
       const vx = Math.sin(s.yaw) * s.forwardSpeed;
       const vz = Math.cos(s.yaw) * s.forwardSpeed;
       r.timer.update(DT, { x: s.x, z: s.z, vx, vz });
-      if (r.timer.phase === 'racing') r.maxOffset = Math.max(r.maxOffset, Math.abs(course.project(s.x, s.z).offset));
+      // 道路の端からはみ出した距離（U ターンの広場の中は道路の上）
+      if (r.timer.phase === 'racing') r.maxOffset = Math.max(r.maxOffset, track.offRoadDistance(s.x, s.z, s.courseS)!);
     });
     if (racers.every((r) => r.timer.phase === 'finished')) break;
   }
@@ -89,7 +88,7 @@ describe('NPC race', () => {
       for (const r of racers) {
         expect(r.timer.phase).toBe('finished');
         // 押し合って路肩の草地へはみ出すことはあっても、崖から落ちるほどは外れない
-        expect(r.maxOffset).toBeLessThan(def.roadWidth / 2 + 3);
+        expect(r.maxOffset).toBeLessThan(3);
       }
     },
     60000,
@@ -113,7 +112,7 @@ describe('NPC race', () => {
       const { racers } = race(def, [NPC_LEVELS[3]], v.params);
       console.log(v.label, def.name, racers[0].timer.laps[0]?.toFixed(2), 'off', racers[0].maxOffset.toFixed(1));
       expect(racers[0].timer.phase).toBe('finished');
-      expect(racers[0].maxOffset).toBeLessThan(def.roadWidth / 2 + 3);
+      expect(racers[0].maxOffset).toBeLessThan(3);
     }
   }, 60000);
 });

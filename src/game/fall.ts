@@ -25,13 +25,13 @@ export class FallRecovery {
   /** 物理ステップの後に呼ぶ。落ち始めたら 'fell'、道路に戻したら 'recovered' */
   update(dt: number, level: Level, car: Car, s: CarSnapshot): 'fell' | 'recovered' | null {
     if (!this.falling) {
-      if (!level.fellOff(s.x, s.z)) return null;
+      if (!level.fellOff(s.x, s.z, s.courseS)) return null;
       this.elapsed = 0;
       return 'fell';
     }
     this.elapsed += dt;
     if (this.elapsed < FALL_SECONDS) return null;
-    car.reset(level.recoverySpot(s.x, s.z));
+    car.reset(level.recoverySpot(s.x, s.z, s.courseS));
     this.elapsed = -1;
     return 'recovered';
   }

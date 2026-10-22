@@ -45,7 +45,8 @@ export function buildRacingLine(course: Course, margin = 1.6): RacingLine {
     nx[i] = Math.cos(p.yaw);
     nz[i] = -Math.sin(p.yaw);
   }
-  const limit = course.map.def.roadWidth / 2 - margin;
+  // 道幅は場所によって変わる（中心線で描く道路のマップ）
+  const limit = Float64Array.from({ length: count }, (_, i) => Math.max(0, course.widthAt(i * ds) / 2 - margin));
   const offset = new Float64Array(count);
   const at = (i: number) => (closed ? ((i % count) + count) % count : Math.min(count - 1, Math.max(0, i)));
 
@@ -72,7 +73,7 @@ export function buildRacingLine(course: Course, margin = 1.6): RacingLine {
         const px = cx[i] + nx[i] * offset[i];
         const pz = cz[i] + nz[i] * offset[i];
         const delta = (mx - px) * nx[i] + (mz - pz) * nz[i];
-        offset[i] = Math.min(limit, Math.max(-limit, offset[i] + delta * 0.8));
+        offset[i] = Math.min(limit[i], Math.max(-limit[i], offset[i] + delta * 0.8));
       }
     }
   }
@@ -112,8 +113,8 @@ export interface SpeedProfileOptions {
   grip: number;
   /** ブレーキの強さのうち使う割合 */
   brake: number;
-  /** 坂道のマップなら勾配（上り坂で加速が鈍り、ブレーキが効きやすくなる） */
-  gradient?: (x: number, z: number) => { x: number; z: number };
+  /** 坂道のマップなら勾配（上り坂で加速が鈍り、ブレーキが効きやすくなる）。s はその点のコース上の距離 */
+  gradient?: (x: number, z: number, s: number) => { x: number; z: number };
 }
 
 /**
@@ -137,7 +138,7 @@ export function buildSpeedProfile(line: RacingLine, p: VehicleParams, opts: Spee
     for (let i = 0; i < count; i++) {
       const j = closed ? (i + 1) % count : Math.min(count - 1, i + 1);
       const h = Math.hypot(line.x[j] - line.x[i], line.z[j] - line.z[i]) || 1;
-      const g = opts.gradient(line.x[i], line.z[i]);
+      const g = opts.gradient(line.x[i], line.z[i], i * step);
       grade[i] = (g.x * (line.x[j] - line.x[i]) + g.z * (line.z[j] - line.z[i])) / h;
     }
   }

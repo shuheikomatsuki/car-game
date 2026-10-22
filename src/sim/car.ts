@@ -1,5 +1,5 @@
 import type RAPIER from '@dimforge/rapier3d-compat';
-import type { PhysicsWorld } from './physics';
+import { type PhysicsWorld, carGroups } from './physics';
 import {
   type DriverInput,
   type VehicleParams,
@@ -39,6 +39,16 @@ export interface CarSnapshot {
   pitch?: number;
   /** 描画用: 車体の左右の傾き [rad]（左が上がると正） */
   roll?: number;
+  /** コース上の距離 [m]（中心線で描く道路のマップで、立体交差のどちらの道にいるかを見分けるため） */
+  courseS?: number;
+}
+
+/** 置く位置。s はその位置のコース上の距離（分かっていれば） */
+export interface Spawn {
+  x: number;
+  z: number;
+  yaw: number;
+  s?: number;
 }
 
 /** 重力加速度 [m/s^2] */
@@ -72,10 +82,18 @@ export class Car {
   airborne = false;
   /** 直前のステップで剛体に指示した水平速度（衝突の強さを測るため） */
   private commanded = { x: 0, z: 0 };
+  /** コース上の距離（立体交差・往復のコースで、どちらの道にいるか）。分からなければ null */
+  courseS: number | null = null;
+  /**
+   * 毎ステップの初めに、いまの位置からコース上の距離を更新し、走っている道の層を返す（中心線で描く道路のマップ）。
+   * 層が変わると、ぶつかる壁が変わる
+   */
+  tracker: ((car: Car, x: number, z: number, yaw: number) => number) | null = null;
+  private layer = -1;
 
   constructor(
     private readonly physics: PhysicsWorld,
-    spawn: { x: number; z: number; yaw: number },
+    spawn: Spawn,
     params: VehicleParams = DEFAULT_VEHICLE_PARAMS,
   ) {
     const { rapier, world } = physics;
@@ -102,7 +120,8 @@ export class Car {
     this.reset(spawn);
   }
 
-  reset(spawn: { x: number; z: number; yaw: number }): void {
+  reset(spawn: Spawn): void {
+    this.courseS = spawn.s ?? null;
     this.body.setTranslation({ x: spawn.x, y: 0.05, z: spawn.z }, true);
     this.body.setRotation(yawToQuat(spawn.yaw), true);
     this.body.setLinvel({ x: 0, y: 0, z: 0 }, true);
@@ -115,6 +134,10 @@ export class Car {
   /** 物理ステップの前に呼ぶ */
   applyInput(input: DriverInput, dt: number): void {
     const yaw = quatToYaw(this.body.rotation());
+    if (this.tracker) {
+      const p = this.body.translation();
+      this.setLayer(this.tracker(this, p.x, p.z, yaw));
+    }
     const fx = Math.sin(yaw);
     const fz = Math.cos(yaw);
     // 左方向 = 前方を +90° 回したもの
@@ -166,6 +189,13 @@ export class Car {
     this.body.setAngvel({ x: 0, y: next.yawRate, z: 0 }, true);
   }
 
+  /** 走っている道の層（src/map/road.ts の LAYER_*）に合わせて、ぶつかる壁と車を変える */
+  private setLayer(layer: number): void {
+    if (layer === this.layer) return;
+    this.layer = layer;
+    for (let i = 0; i < this.body.numColliders(); i++) this.body.collider(i).setCollisionGroups(carGroups(layer));
+  }
+
   /**
    * 物理ステップの後に呼ぶ。指示した速度と実際の速度の差から衝突の強さ [m/s] を返す。
    * 壁に押し付けているだけなら小さく、勢いよくぶつかると大きくなる。
@@ -189,6 +219,7 @@ export class Car {
       lateralSpeed: v.x * Math.cos(yaw) - v.z * Math.sin(yaw),
       steerAngle: this.steerAngle,
       wheelSpin: this.wheelSpin,
+      ...(this.courseS !== null ? { courseS: this.courseS } : {}),
     };
   }
 

@@ -1,20 +1,25 @@
 import * as THREE from 'three';
-import type { Terrain } from '../map/terrain';
 import type { Course } from '../race/course';
 import { CarMesh } from './carMesh';
 
-/** スタートラインと、一本道のコースならゴールライン */
-export function buildRaceLines(course: Course, terrain: Terrain | null): THREE.Group {
+/** 坂道のマップの路面（ラインを坂に沿わせる） */
+export interface Surface {
+  heightAt(x: number, z: number): number;
+  gradientAt(x: number, z: number): { x: number; z: number };
+}
+
+/** スタートラインと、一本道のコースならゴールライン（往復のコースのようにスタートと同じ所なら1本だけ） */
+export function buildRaceLines(course: Course, terrain: Surface | null): THREE.Group {
   const group = new THREE.Group();
-  group.add(buildLine(course, course.line, terrain));
-  if (!course.closed) group.add(buildLine(course, course.finishLine, terrain));
+  group.add(buildLine(course.widthAt(0), course.line, terrain));
+  const same = Math.hypot(course.finishLine.x - course.line.x, course.finishLine.z - course.line.z) < 3;
+  if (!course.closed && !same) group.add(buildLine(course.widthAt(course.length), course.finishLine, terrain));
   return group;
 }
 
 /** スタート／ゴールラインの市松模様と、その上のゲート */
-function buildLine(course: Course, at: { x: number; z: number; yaw: number }, terrain: Terrain | null): THREE.Group {
+function buildLine(width: number, at: { x: number; z: number; yaw: number }, terrain: Surface | null): THREE.Group {
   const group = new THREE.Group();
-  const width = course.map.def.roadWidth;
   const cell = 1;
   const columns = Math.round(width / cell);
   const canvas = document.createElement('canvas');

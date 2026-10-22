@@ -11,6 +11,21 @@ export function loadRapier(): Promise<Rapier> {
   return ready;
 }
 
+/**
+ * 立体交差の層ごとの衝突のグループ（上位 16 ビットが属するグループ、下位 16 ビットがぶつかる相手）。
+ * 層のない壁や地面・建物はすべての車とぶつかり、層のある壁は同じ層（または層のない所）を走る車とだけぶつかる。
+ * 車どうしも、違う層を走っていればぶつからない
+ */
+export function wallGroups(layer: number): number {
+  return ((layer & 0xffff) << 16) | 0xffff;
+}
+
+export function carGroups(layer: number): number {
+  // 層のない所を走る車は、上と下の両方の層に属する
+  const bits = layer === 0 ? 3 : layer;
+  return (bits << 16) | bits;
+}
+
 export interface ConeBody {
   body: RAPIER.RigidBody;
 }
@@ -28,9 +43,9 @@ export interface PhysicsWorld {
 export function createPhysicsWorld(rapier: Rapier, obstacles: MapObstacles): PhysicsWorld {
   const world = new rapier.World({ x: 0, y: -9.81, z: 0 });
 
-  // 地面（十分に広い板）
+  // 地面（十分に広い板。中心線で描く道路のマップは数 km 先まで続く）
   const ground = world.createRigidBody(rapier.RigidBodyDesc.fixed().setTranslation(0, -0.5, 0));
-  world.createCollider(rapier.ColliderDesc.cuboid(2000, 0.5, 2000), ground);
+  world.createCollider(rapier.ColliderDesc.cuboid(20000, 0.5, 20000), ground);
 
   for (const b of obstacles.boxes) {
     const yaw = b.yaw ?? 0;
@@ -39,7 +54,9 @@ export function createPhysicsWorld(rapier: Rapier, obstacles: MapObstacles): Phy
         .setTranslation(b.x, b.y, b.z)
         .setRotation({ x: 0, y: Math.sin(yaw / 2), z: 0, w: Math.cos(yaw / 2) }),
     );
-    world.createCollider(rapier.ColliderDesc.cuboid(b.hx, b.hy, b.hz).setFriction(0.1), body);
+    const desc = rapier.ColliderDesc.cuboid(b.hx, b.hy, b.hz).setFriction(0.1);
+    if (b.layer) desc.setCollisionGroups(wallGroups(b.layer));
+    world.createCollider(desc, body);
   }
 
   for (const t of obstacles.trees) {

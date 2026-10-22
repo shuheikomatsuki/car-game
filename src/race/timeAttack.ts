@@ -45,6 +45,8 @@ export class TimeAttack {
   private events: RaceEvent[] = [];
   private begun = false;
   private readonly maxSkip: number;
+  /** 直前にいたコース上の距離（立体交差や往復のコースで、どちらの道にいるかを取り違えないため）。最初はスタートライン */
+  private hint: number | null = 0;
 
   constructor(
     readonly course: Course,
@@ -53,7 +55,7 @@ export class TimeAttack {
     waitForStart = false,
   ) {
     // 周回コースはスタートラインの手前（最後のタイル）から、一本道のコースはコースの手前（-1）から
-    this.progress = course.closed ? course.tiles.length - 1 : -1;
+    this.progress = course.closed ? course.checkpoints - 1 : -1;
     this.maxSkip = course.map.def.shortcuts ? SHORTCUT_MAX_SKIP : MAX_SKIP;
     if (waitForStart) this.phase = 'ready';
     else this.begin();
@@ -86,7 +88,7 @@ export class TimeAttack {
    * スタート前（ラインの手前）は負になる
    */
   distance(x: number, z: number): number {
-    const s = this.course.project(x, z).s;
+    const s = this.course.project(x, z, { s: this.hint }).s;
     if (!this.course.closed) return s;
     // 周回はスタートのタイルに入った時点で数えるので、同じ位置で update した後なら s と食い違わない
     const lapsDone = this.laps.length - (this.started ? 0 : 1);
@@ -110,17 +112,20 @@ export class TimeAttack {
     }
     if (this.phase === 'finished') return;
     this.time += dt;
-    this.trackProgress(car.x, car.z);
+    const speed = Math.hypot(car.vx, car.vz);
+    const p = this.course.project(car.x, car.z, { s: this.hint, dir: speed > 1 ? { x: car.vx / speed, z: car.vz / speed } : null });
+    this.hint = p.s;
+    this.trackProgress(p.onCourse ? p.index : -1);
     this.checkDirection(dt, car);
   }
 
-  private trackProgress(x: number, z: number): void {
+  /** index はいまいる区間の番号（コースの外なら -1） */
+  private trackProgress(index: number): void {
     if (!this.course.closed) {
-      this.trackOpen(x, z);
+      this.trackOpen(index);
       return;
     }
-    const n = this.course.tiles.length;
-    const index = this.course.indexAt(x, z);
+    const n = this.course.checkpoints;
     if (index < 0 || index === this.progress) return;
     const ahead = (index - this.progress + n) % n;
     // 後ろへ戻ったとき（半周より後ろ）は何もしない
@@ -142,8 +147,7 @@ export class TimeAttack {
   }
 
   /** 一本道のコース: スタートからゴールのタイルまで順にたどったらゴール */
-  private trackOpen(x: number, z: number): void {
-    const index = this.course.indexAt(x, z);
+  private trackOpen(index: number): void {
     if (index < 0 || index <= this.progress) return;
     if (index - this.progress > this.maxSkip) {
       this.setOffCourse(true);
