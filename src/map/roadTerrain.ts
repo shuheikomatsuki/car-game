@@ -35,7 +35,11 @@ export interface RoadGround {
  * 平均につながる（タイルの峠の地形 src/map/terrain.ts と同じ考え方）。
  * 橋の区間は地面を決めず、谷の深さ（valley）を指定した橋の下は、橋の高さから谷の深さだけ下った V 字の谷にする
  */
-export function buildRoadGround(road: RoadModel, valleys: readonly { from: number; to: number; depth: number }[]): RoadGround {
+export function buildRoadGround(
+  road: RoadModel,
+  valleys: readonly { from: number; to: number; depth: number }[],
+  shortcutAt?: (x: number, z: number, lowRamp: number) => number | null,
+): RoadGround {
   // 地面を決める道路の点（橋の上は除く）と、橋の点
   const gx: number[] = [];
   const gz: number[] = [];
@@ -192,6 +196,16 @@ export function buildRoadGround(road: RoadModel, valleys: readonly { from: numbe
         if (Math.hypot(minX + ii * GRID_STEP - road.x[i], minZ + j * GRID_STEP - road.z[i]) > r) continue;
         const cell = j * nx + ii;
         ground[cell] = Math.min(ground[cell], road.h[i] - 0.4);
+      }
+    }
+  }
+
+  // ヘアピンの内側の近道の帯は、帯の面の高さ（面の下に少し沈める）。下の道路との段差は格子 1 つ分だけ帯の側へずらす
+  if (shortcutAt) {
+    for (let j = 0; j < nz; j++) {
+      for (let i = 0; i < nx; i++) {
+        const cut = shortcutAt(minX + i * GRID_STEP, minZ + j * GRID_STEP, GRID_STEP);
+        if (cut !== null) ground[j * nx + i] = cut - 0.05;
       }
     }
   }

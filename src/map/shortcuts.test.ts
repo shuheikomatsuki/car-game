@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { HAIRPIN_DOWN_MAP, HAIRPIN_MAP } from './maps';
+import { HAIRPIN_DOWN_MAP, HAIRPIN_MAP } from './testMaps';
 import { buildCourse } from '../race/course';
 import { COUNTDOWN_SECONDS, TimeAttack } from '../race/timeAttack';
 import { findShortcuts, insideShortcut, shortcutHeight, shortcutPoint, shortcutStep } from './shortcuts';

@@ -1,7 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { buildCourse } from '../race/course';
-import { VALLEY_UP_MAP } from './maps';
-import { RIVERSIDE_MAP } from './testMaps';
+import { RIVERSIDE_MAP, VALLEY_UP_MAP } from './testMaps';
 import { buildObstacles } from './obstacles';
 import { RAVINE_DEPTH, buildTerrain } from './terrain';
 import { parseMap, tileCenter } from './tilemap';

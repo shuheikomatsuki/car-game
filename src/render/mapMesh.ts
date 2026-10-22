@@ -739,7 +739,7 @@ function splitWall(b: BoxObstacle): BoxObstacle[] {
 /**
  * ヘアピンの内側の近道の帯（コンクリートの面）。地形に沿わせ、道路と重なる所は描かない
  */
-export function buildShortcutMesh(shortcuts: readonly Shortcut[], terrain: Terrain, onRoad: (x: number, z: number) => boolean): THREE.Mesh {
+export function buildShortcutMesh(shortcuts: readonly Shortcut[], heightAt: (x: number, z: number) => number, onRoad: (x: number, z: number) => boolean): THREE.Mesh {
   const STEP = 1;
   const positions: number[] = [];
   for (const sc of shortcuts) {
@@ -747,7 +747,7 @@ export function buildShortcutMesh(shortcuts: readonly Shortcut[], terrain: Terra
     const nw = Math.ceil((sc.wMax - sc.wMin) / STEP);
     const point = (i: number, j: number) => {
       const p = shortcutPoint(sc, -sc.uMax + (2 * sc.uMax * i) / nu, sc.wMin + ((sc.wMax - sc.wMin) * j) / nw);
-      return [p.x, terrain.heightAt(p.x, p.z) + 0.02, p.z];
+      return [p.x, heightAt(p.x, p.z) + 0.02, p.z];
     };
     for (let i = 0; i < nu; i++) {
       for (let j = 0; j < nw; j++) {

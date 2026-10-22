@@ -1,8 +1,9 @@
 import { type MapObstacles, buildObstacles } from '../map/obstacles';
 import { type RoadModel, buildRoad, bumpHeight, roadValleys } from '../map/road';
 import { buildRoadObstacles } from '../map/roadObstacles';
+import { type RoadShortcut, findRoadShortcuts, roadShortcutHeight } from '../map/roadShortcuts';
 import { type RoadGround, buildRoadGround } from '../map/roadTerrain';
-import { insideShortcut } from '../map/shortcuts';
+import { type Shortcut, insideShortcut } from '../map/shortcuts';
 import { CLIFF_START, type Terrain, buildTerrain } from '../map/terrain';
 import { DIR_YAW, type MapDefinition, type ParsedMap, parseMap, tileCenter } from '../map/tilemap';
 import { type Course, buildCourse } from '../race/course';
@@ -34,6 +35,9 @@ export class Track {
   readonly roadCourse: RoadCourse | null = null;
   /** 中心線で描く峠の地面（見た目） */
   readonly roadGround: RoadGround | null = null;
+  /** ヘアピンの内側の近道の帯（MapDefinition.shortcuts のときだけ） */
+  readonly shortcuts: readonly Shortcut[];
+  private readonly roadShortcuts: readonly RoadShortcut[] = [];
 
   constructor(
     rapier: Rapier,
@@ -44,15 +48,22 @@ export class Track {
     if (def.road) {
       const road = buildRoad(def.road);
       this.road = road;
-      this.obstacles = buildRoadObstacles(road);
+      const shortcuts = def.shortcuts ? findRoadShortcuts(road) : [];
+      this.roadShortcuts = shortcuts;
+      this.shortcuts = shortcuts;
+      this.obstacles = buildRoadObstacles(road, shortcuts);
       this.roadCourse = buildRoadCourse(map, road);
       this.course = this.roadCourse;
       this.terrain = null;
-      this.roadGround = def.road.scenery === 'touge' ? buildRoadGround(road, roadValleys(road)) : null;
+      this.roadGround =
+        def.road.scenery === 'touge'
+          ? buildRoadGround(road, roadValleys(road), shortcuts.length ? (x, z, ramp) => roadShortcutHeight(road, shortcuts, x, z, ramp) : undefined)
+          : null;
       this.spawn = this.roadCourse.gridSpot(0);
     } else {
       this.obstacles = buildObstacles(map);
       this.terrain = buildTerrain(map);
+      this.shortcuts = this.terrain?.shortcuts ?? [];
       const yaw = DIR_YAW[def.start.heading];
       this.spawn = { ...tileCenter(map, def.start.col, def.start.row), yaw };
       this.course = def.race ? buildCourse(map) : null;
@@ -123,6 +134,10 @@ export class Track {
     const rc = this.roadCourse;
     if (rc && this.road) {
       const p = rc.project(x, z, { s, dir: yaw === undefined ? null : { x: Math.sin(yaw), z: Math.cos(yaw) } });
+      if (this.roadShortcuts.length && Math.abs(p.offset) > rc.widthAt(p.s) / 2) {
+        const cut = roadShortcutHeight(this.road, this.roadShortcuts, x, z);
+        if (cut !== null) return cut;
+      }
       return rc.heightAt(p.s) + (bumps ? bumpHeight(this.road, rc.roadS(p.s), p.offset) : 0);
     }
     return this.terrain?.heightAt(x, z) ?? 0;
@@ -164,7 +179,7 @@ export class Track {
 
   /** ヘアピンの内側の近道の帯の上か */
   onShortcut(x: number, z: number): boolean {
-    return this.terrain !== null && this.terrain.shortcuts.some((sc) => insideShortcut(sc, x, z));
+    return this.shortcuts.some((sc) => insideShortcut(sc, x, z));
   }
 
   /** 崖から落ちたかどうか（路肩の先の崖の縁を越えた。近道の帯の上は落ちない） */
