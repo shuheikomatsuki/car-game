@@ -27,6 +27,19 @@ export interface LeaderboardEntry {
   date: number;
 }
 
+/** 車ごとのランキングをまとめて見るときの1行（どの車の記録か付ける） */
+export interface CarEntry extends LeaderboardEntry {
+  car: string;
+}
+
+/** 同じコースの車ごとのランキングを1つにまとめ、速い順に size 件にする（同じ人でも車が違えば別の行） */
+export function mergeBoards(boards: readonly { car: string; entries: readonly LeaderboardEntry[] }[], size = BOARD_SIZE): CarEntry[] {
+  return boards
+    .flatMap(({ car, entries }) => entries.map((e) => ({ ...e, car })))
+    .sort((a, b) => a.total - b.total || a.date - b.date)
+    .slice(0, size);
+}
+
 /** サーバーに保存する1行。player は送ってきた人を見分ける秘密の id で、他の人には見せない */
 export interface StoredEntry extends LeaderboardEntry {
   player: string;

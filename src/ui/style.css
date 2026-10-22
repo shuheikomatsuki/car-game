@@ -1007,6 +1007,14 @@ body.racing #toast {
   text-overflow: ellipsis;
 }
 
+#ranking-table td.car {
+  max-width: 110px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  font-size: 11px;
+  opacity: 0.75;
+}
+
 #ranking-table tr.me {
   background: rgba(255, 215, 94, 0.15);
 }

@@ -20,11 +20,14 @@ export interface Rival {
 
 /** 弱い順 */
 export const RIVALS: readonly Rival[] = [
+  { id: 'shingo', name: '庄司慎吾', team: '妙義ナイトキッズ', car: 'eg6', course: 'pass-over', level: 'normal' },
   { id: 'nakazato', name: '中里毅', team: '妙義ナイトキッズ', car: 'gtr', course: 'downhill', level: 'hard' },
   { id: 'iwaki', name: '岩城清次', team: 'チームエンペラー', car: 'evo', course: 'uturn', level: 'hard' },
   { id: 'keisuke', name: '高橋啓介', team: '赤城レッドサンズ', car: 'fd3s', course: 'hillclimb', level: 'pro' },
   { id: 'sudo', name: '須藤京一', team: 'チームエンペラー', car: 'evo', course: 'hairpin', level: 'pro' },
-  { id: 'hoshino', name: '星野好造', team: 'パープルシャドウ', car: 'gtr', course: 'steep-up', level: 'legend' },
+  { id: 'hoshino', name: '星野好造', team: 'パープルシャドウ', car: 'r34', course: 'steep-up', level: 'legend' },
+  { id: 'tachi', name: '舘智幸', team: 'プロレーサー', car: 'ek9', course: 'hairpin-down', level: 'legend' },
+  { id: 'rin', name: '北条凛', team: '死神', car: 'gtr', course: 'marathon', level: 'legend' },
   { id: 'takumi', name: '藤原拓海', team: '藤原とうふ店', car: 'ae86', course: 'steep-down', level: 'legend' },
 ];
 

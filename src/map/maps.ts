@@ -278,6 +278,71 @@ const LONG_LAYOUT = [
   '..T...T.......T.....T.....T.T..',
 ];
 
+const HAIRPIN_DOWN_LAYOUT = [
+  '.............',
+  '.............',
+  '......RRRRR..',
+  '..T...R......',
+  '......R...T..',
+  '...RRRR......',
+  '...R.........',
+  '...RRRRRRRR..',
+  'T.........R.T',
+  '....RRRRRRR..',
+  '....R........',
+  '.T..RRRRRR...',
+  '.........R...',
+  '..RRRRRRRR...',
+  '..R..........',
+  '..RRRRRRR....',
+  '........R...T',
+  '...RRRRRR....',
+  '...R.........',
+  '...RRRRRRRR..',
+  '..........R..',
+  '.T...RRRRRR..',
+  '.T...R.......',
+  '..RRRR....T..',
+  '.............',
+  '...T.........',
+];
+const MARATHON_LAYOUT = [
+  '......T............................',
+  '....T.T....T.......................',
+  '....TT.T......RRRRRRRR..T..........',
+  '....T...RRRR..R......R.............',
+  '........R..RRRR.....RR.............',
+  '........R...........R.RRR......T...',
+  'T..T....RR.RRRR.....R.R.R..........',
+  '.T.....T.R.R..R.....R.R.R.RRRR.....',
+  '.........R.R..R.....R.R.RRR..R....T',
+  '......RRRR.R..R.....R.R......RRRR..',
+  '..T...R....R..R.T..RR.RRRRRR....R..',
+  '......R....R..R....R.......RRR..R..',
+  '..RRRRR....R..R....RRRR......R..R..',
+  '..R.....RRRR..RR......RRRRRRRR..R..',
+  '..R.....R......R...............RR..',
+  '..RRR...R......R.....T.........R..T',
+  'T...R.T.R...RRRR.........T.....R...',
+  '....R...RRR.R....RRRRR.........R..T',
+  'T...R.....R.R........R....RRRRRR...',
+  '....RRRRRRR.RRRR...T.R....R........',
+  '...............R.....R....R........',
+  'T..........RRRRR.RRRRR....R.....T..',
+  '...........R.....R........R....T...',
+  '.T.........R...RRR........R......T.',
+  '....T......R...R....RRRRRRR........',
+  '...........R.T.R...............T...',
+  '...........R...RRRR................',
+  '..T.......RR......R................',
+  '.....RRRRRR.RRRRRRR..T...T....T....',
+  '.....R......R.........TT.......T...',
+  '.....R..RRRRR........T.............',
+  '.....R..R...........T..............',
+  '.....RRRR....T......T..............',
+  '.T.T...........................T...',
+  '..............T...........T..T.....',
+];
 
 /** 上って峠を越え、反対側へ下る。頂上の前後で上りと下りが入れ替わる */
 export const PASS_OVER_MAP: MapDefinition = {
@@ -359,6 +424,36 @@ export const LONG_MAP: MapDefinition = {
   elevation: { from: { col: 2, row: 25 }, rise: 125, profile: [0, 0.45, 0.3, 0.8, 0.6, 1, 0.5, 0.15] },
 };
 
+/**
+ * つづら折りを上から下る。ヘアピンの内側には段差のある近道の帯があり、
+ * 内側の内側を攻める「地元走り」ができる（段差で少し宙に浮く）
+ */
+export const HAIRPIN_DOWN_MAP: MapDefinition = {
+  id: 'hairpin-down',
+  name: 'つづら折り（ダウンヒル）',
+  tileSize: 22,
+  roadWidth: 10,
+  layout: HAIRPIN_DOWN_LAYOUT,
+  start: { col: 8, row: 2, heading: 'W' },
+  guardrails: true,
+  race: { laps: 1 },
+  elevation: { from: { col: 2, row: 23 }, rise: 160 },
+  shortcuts: true,
+};
+
+/** 上りと下りを何度もくり返す、全長 6km を超える峠 */
+export const MARATHON_MAP: MapDefinition = {
+  id: 'marathon',
+  name: '峠（超ロング）',
+  tileSize: 30,
+  roadWidth: 11,
+  layout: MARATHON_LAYOUT,
+  start: { col: 19, row: 17, heading: 'E' },
+  guardrails: true,
+  race: { laps: 1 },
+  elevation: { from: { col: 17, row: 17 }, rise: 200, profile: [0, 0.3, 0.15, 0.45, 0.35, 0.7, 0.5, 0.85, 1, 0.75, 0.55, 0.3, 0.1] },
+};
+
 export const MAPS: readonly MapDefinition[] = [
   TOWN_MAP,
   SCHOOL_MAP,
@@ -369,7 +464,9 @@ export const MAPS: readonly MapDefinition[] = [
   PASS_OVER_MAP,
   UTURN_MAP,
   HAIRPIN_MAP,
+  HAIRPIN_DOWN_MAP,
   STEEP_UP_MAP,
   STEEP_DOWN_MAP,
   LONG_MAP,
+  MARATHON_MAP,
 ];

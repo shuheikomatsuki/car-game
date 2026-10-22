@@ -1,4 +1,5 @@
 import { roadCenterline } from '../race/course';
+import { type Shortcut, findShortcuts, insideShortcut, shortcutHeight, shortcutLocal, shortcutPoint } from './shortcuts';
 import type { ParsedMap } from './tilemap';
 
 /** 地形を計算する格子の間隔 [m] */
@@ -12,6 +13,13 @@ const MARGIN = 160;
 export const CLIFF_START = 6;
 const CLIFF_WIDTH = 6;
 const CLIFF_DEPTH = 10;
+/** 道路から離れた場所の高さを求める粗い格子の間隔（GRID_STEP の何倍か） */
+const COARSE = 4;
+/**
+ * 道路の中心線からこれより離れた場所は、道路の高さの影響を受けない（周りの平均の高さの崖の下）[m]。
+ * いちばん近い道路の点は、この距離までしか探さない
+ */
+const REACH = 56;
 
 /**
  * 高低差のある地形。道路に沿って高さが決まり、道路から離れた場所は周りの道路の高さをなめらかにつなぐ。
@@ -27,6 +35,8 @@ export interface Terrain {
   gradientAt(x: number, z: number): { x: number; z: number };
   /** 地形の格子（描画用）。ground は道路の下を少し下げた高さ */
   grid: { minX: number; minZ: number; step: number; nx: number; nz: number; ground: Float32Array };
+  /** ヘアピンの内側の近道の帯（MapDefinition.shortcuts のときだけ） */
+  shortcuts: readonly Shortcut[];
 }
 
 /**
@@ -105,31 +115,114 @@ export function buildTerrain(map: ParsedMap): Terrain | null {
     return bestH;
   };
 
-  for (let j = 0; j < nz; j++) {
-    const z = minZ + j * GRID_STEP;
-    for (let i = 0; i < nx; i++) {
-      const x = minX + i * GRID_STEP;
-      let nearest = Infinity;
-      let nearestK = 0;
+  /** 道路のいちばん近い所の高さ */
+  const roadHeightAt = (x: number, z: number) => {
+    let best = Infinity;
+    let k = 0;
+    for (let i = 0; i < px.length; i++) {
+      const d2 = (x - px[i]) ** 2 + (z - pz[i]) ** 2;
+      if (d2 < best) {
+        best = d2;
+        k = i;
+      }
+    }
+    return interpolateAlong(k, x, z);
+  };
+  // 近道の帯は、両端（道路につながる所）の高さの間を段差をはさんで下る
+  const shortcuts = map.def.shortcuts ? findShortcuts(map) : [];
+  const shortcutEnds = shortcuts.map((sc) => {
+    const w = (sc.wMin + sc.wMax) / 2;
+    const a = shortcutPoint(sc, -sc.uMax, w);
+    const b = shortcutPoint(sc, sc.uMax, w);
+    return { start: roadHeightAt(a.x, a.z), end: roadHeightAt(b.x, b.z) };
+  });
+  const shortcutHeightAt = (x: number, z: number): number | null => {
+    const i = shortcuts.findIndex((sc) => insideShortcut(sc, x, z));
+    if (i < 0) return null;
+    const sc = shortcuts[i];
+    const { start, end } = shortcutEnds[i];
+    const t = (shortcutLocal(sc, x, z).u + sc.uMax) / (2 * sc.uMax);
+    return start >= end ? shortcutHeight(t, start, end) : shortcutHeight(1 - t, end, start);
+  };
+
+  // 道路から離れた場所の高さ（周りの道路の高さの重み付き平均）はなめらかなので、粗い格子で求めて補間する
+  const cnx = Math.ceil((nx - 1) / COARSE) + 1;
+  const cnz = Math.ceil((nz - 1) / COARSE) + 1;
+  const average = new Float64Array(cnx * cnz);
+  for (let cj = 0; cj < cnz; cj++) {
+    const z = minZ + cj * COARSE * GRID_STEP;
+    for (let ci = 0; ci < cnx; ci++) {
+      const x = minX + ci * COARSE * GRID_STEP;
       let wSum = 0;
       let hSum = 0;
       for (let k = 0; k < px.length; k++) {
         const dx = x - px[k];
         const dz = z - pz[k];
         const d2 = dx * dx + dz * dz;
-        if (d2 < nearest) {
-          nearest = d2;
-          nearestK = k;
-        }
         const w = 1 / ((d2 + 25) * (d2 + 25));
         wSum += w;
         hSum += w * heights[k];
       }
-      const d = Math.sqrt(nearest);
+      average[cj * cnx + ci] = hSum / wSum;
+    }
+  }
+  const averageAt = (i: number, j: number) => {
+    const fi = i / COARSE;
+    const fj = j / COARSE;
+    const ci = Math.min(cnx - 2, Math.floor(fi));
+    const cj = Math.min(cnz - 2, Math.floor(fj));
+    const u = fi - ci;
+    const v = fj - cj;
+    const a = average[cj * cnx + ci];
+    const b = average[cj * cnx + ci + 1];
+    const c = average[(cj + 1) * cnx + ci];
+    const e = average[(cj + 1) * cnx + ci + 1];
+    return (a * (1 - u) + b * u) * (1 - v) + (c * (1 - u) + e * u) * v;
+  };
+  // それぞれの格子点にいちばん近い道路の点（REACH より遠ければ -1）。道路の点から周りの格子点へ書き込んで求める
+  const nearestDist2 = new Float64Array(nx * nz).fill(Infinity);
+  const nearestIndex = new Int32Array(nx * nz).fill(-1);
+  const reachCells = Math.ceil(REACH / GRID_STEP);
+  for (let k = 0; k < px.length; k++) {
+    const ci = Math.round((px[k] - minX) / GRID_STEP);
+    const cj = Math.round((pz[k] - minZ) / GRID_STEP);
+    for (let j = Math.max(0, cj - reachCells); j <= Math.min(nz - 1, cj + reachCells); j++) {
+      const dz = minZ + j * GRID_STEP - pz[k];
+      for (let i = Math.max(0, ci - reachCells); i <= Math.min(nx - 1, ci + reachCells); i++) {
+        const dx = minX + i * GRID_STEP - px[k];
+        const d2 = dx * dx + dz * dz;
+        const cell = j * nx + i;
+        if (d2 < nearestDist2[cell]) {
+          nearestDist2[cell] = d2;
+          nearestIndex[cell] = k;
+        }
+      }
+    }
+  }
+
+  for (let j = 0; j < nz; j++) {
+    const z = minZ + j * GRID_STEP;
+    for (let i = 0; i < nx; i++) {
+      const x = minX + i * GRID_STEP;
+      const nearestK = nearestIndex[j * nx + i];
+      if (nearestK < 0) {
+        // 道路から遠い場所: 周りの平均の高さの崖の下
+        surface[j * nx + i] = ground[j * nx + i] = averageAt(i, j) - CLIFF_DEPTH;
+        continue;
+      }
+      const d = Math.sqrt(nearestDist2[j * nx + i]);
       const nearestH = interpolateAlong(nearestK, x, z);
+      const cut = shortcuts.length ? shortcutHeightAt(x, z) : null;
+      if (cut !== null) {
+        // 近道の帯の上は崖にしない。道路の端からなめらかに帯の高さへつなぐ
+        const h = nearestH + (cut - nearestH) * smoothstep((d - rw) / 3);
+        surface[j * nx + i] = h;
+        ground[j * nx + i] = h - 0.25 * (1 - smoothstep((d - rw) / 3));
+        continue;
+      }
       // 道路の上は道路の高さ、離れるほど周りの道路の高さの重み付き平均に近づける
       const t = smoothstep((d - rw - 2) / 30);
-      const h = nearestH + (hSum / wSum - nearestH) * t - CLIFF_DEPTH * smoothstep((d - rw - CLIFF_START) / CLIFF_WIDTH);
+      const h = nearestH + (averageAt(i, j) - nearestH) * t - CLIFF_DEPTH * smoothstep((d - rw - CLIFF_START) / CLIFF_WIDTH);
       surface[j * nx + i] = h;
       // 道路の面と重ならないよう、道路の下の地面は少し下げる
       ground[j * nx + i] = h - 0.25 * (1 - smoothstep((d - rw) / 3));
@@ -160,5 +253,6 @@ export function buildTerrain(map: ParsedMap): Terrain | null {
       };
     },
     grid: { minX, minZ, step: GRID_STEP, nx, nz, ground },
+    shortcuts,
   };
 }

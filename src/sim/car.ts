@@ -68,6 +68,8 @@ export class Car {
    * 草地ではグリップが落ち、転がり抵抗で速度が出なくなる
    */
   offRoad: ((x: number, z: number) => number) | null = null;
+  /** 段差で宙に浮いている間は true にする。タイヤが効かず、そのままの速さと向きで飛ぶ */
+  airborne = false;
   /** 直前のステップで剛体に指示した水平速度（衝突の強さを測るため） */
   private commanded = { x: 0, z: 0 };
 
@@ -106,6 +108,7 @@ export class Car {
     this.body.setLinvel({ x: 0, y: 0, z: 0 }, true);
     this.body.setAngvel({ x: 0, y: 0, z: 0 }, true);
     this.steerAngle = 0;
+    this.airborne = false;
     this.commanded = { x: 0, z: 0 };
   }
 
@@ -121,6 +124,13 @@ export class Car {
     const vel = this.body.linvel();
     const forwardSpeed = vel.x * fx + vel.z * fz;
     const lateralSpeed = vel.x * lx + vel.z * lz;
+
+    if (this.airborne) {
+      this.commanded = { x: vel.x, z: vel.z };
+      this.wheelSpin += (forwardSpeed / CAR_DIMENSIONS.wheelRadius) * dt;
+      this.body.setAngvel({ x: 0, y: 0, z: 0 }, true);
+      return;
+    }
 
     const t = this.body.translation();
     const grass = this.offRoad ? this.offRoad(t.x, t.z) : 0;

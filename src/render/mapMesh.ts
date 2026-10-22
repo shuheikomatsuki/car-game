@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
 import type { BoxObstacle, MapObstacles } from '../map/obstacles';
+import { type Shortcut, shortcutPoint } from '../map/shortcuts';
 import type { Terrain } from '../map/terrain';
 import { type ParsedMap, type Tile, DIR_OFFSET, roadShape, tileCenter } from '../map/tilemap';
 import { CONE_HALF_SIZE } from '../sim/physics';
@@ -22,6 +23,7 @@ const COLORS = {
   roof: 0x6b6f78,
   guardrail: 0xe6e8ea,
   guardrailPost: 0x8c9196,
+  shortcut: 0xa9a59b,
 };
 
 const ROAD_Y = 0.01;
@@ -321,6 +323,43 @@ function splitWall(b: BoxObstacle): BoxObstacle[] {
 }
 
 /** コーン（動く小物）のメッシュ。位置は毎フレーム物理から同期する */
+/**
+ * ヘアピンの内側の近道の帯（コンクリートの面）。地形に沿わせ、道路と重なる所は描かない
+ */
+export function buildShortcutMesh(shortcuts: readonly Shortcut[], terrain: Terrain, onRoad: (x: number, z: number) => boolean): THREE.Mesh {
+  const STEP = 1;
+  const positions: number[] = [];
+  for (const sc of shortcuts) {
+    const nu = Math.ceil((2 * sc.uMax) / STEP);
+    const nw = Math.ceil((sc.wMax - sc.wMin) / STEP);
+    const point = (i: number, j: number) => {
+      const p = shortcutPoint(sc, -sc.uMax + (2 * sc.uMax * i) / nu, sc.wMin + ((sc.wMax - sc.wMin) * j) / nw);
+      return [p.x, terrain.heightAt(p.x, p.z) + 0.02, p.z];
+    };
+    for (let i = 0; i < nu; i++) {
+      for (let j = 0; j < nw; j++) {
+        const c = shortcutPoint(sc, -sc.uMax + (2 * sc.uMax * (i + 0.5)) / nu, sc.wMin + ((sc.wMax - sc.wMin) * (j + 0.5)) / nw);
+        if (onRoad(c.x, c.z)) continue;
+        const a = point(i, j);
+        const b = point(i + 1, j);
+        const d = point(i, j + 1);
+        const e = point(i + 1, j + 1);
+        positions.push(...a, ...b, ...e, ...a, ...e, ...d);
+      }
+    }
+  }
+  const g = new THREE.BufferGeometry();
+  g.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
+  g.computeVertexNormals();
+  // 三角形の向きは帯の向きで変わるので、両面を描く
+  const mesh = new THREE.Mesh(
+    g,
+    new THREE.MeshLambertMaterial({ color: COLORS.shortcut, side: THREE.DoubleSide, polygonOffset: true, polygonOffsetFactor: -0.5, polygonOffsetUnits: -0.5 }),
+  );
+  mesh.receiveShadow = true;
+  return mesh;
+}
+
 export function createConeMesh(): THREE.Mesh {
   const { radius, height } = CONE_HALF_SIZE;
   const mesh = new THREE.Mesh(

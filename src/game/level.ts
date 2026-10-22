@@ -1,9 +1,10 @@
 import * as THREE from 'three';
 import { buildObstacles } from '../map/obstacles';
+import { insideShortcut } from '../map/shortcuts';
 import { CLIFF_START, type Terrain, buildTerrain } from '../map/terrain';
 import { DIR_YAW, type MapDefinition, type ParsedMap, parseMap, tileCenter } from '../map/tilemap';
 import { type Course, buildCourse } from '../race/course';
-import { buildMapMesh, createConeMesh } from '../render/mapMesh';
+import { buildMapMesh, buildShortcutMesh, createConeMesh } from '../render/mapMesh';
 import { buildRaceLines } from '../render/raceMesh';
 import { CAR_DIMENSIONS, Car, type CarSnapshot } from '../sim/car';
 import { type PhysicsWorld, type Rapier, createPhysicsWorld } from '../sim/physics';
@@ -43,6 +44,9 @@ export class Level {
 
     this.group.add(buildMapMesh(map, obstacles, this.terrain));
     if (this.course) this.group.add(buildRaceLines(this.course, this.terrain));
+    if (this.terrain?.shortcuts.length) {
+      this.group.add(buildShortcutMesh(this.terrain.shortcuts, this.terrain, (x, z) => this.offRoadDistance(x, z)! < 0));
+    }
     this.coneMeshes = this.physics.cones.map(() => {
       const m = createConeMesh();
       this.group.add(m);
@@ -56,9 +60,9 @@ export class Level {
     const terrain = this.terrain;
     if (terrain) car.slope = (x, z) => terrain.gradientAt(x, z);
     if (this.course) {
-      // 車体の中心が道路の端にあれば半分、車幅の半分より外ならタイヤがすべて草地
+      // 車体の中心が道路の端にあれば半分、車幅の半分より外ならタイヤがすべて草地（近道の帯の上は舗装と同じ）
       const half = CAR_DIMENSIONS.width / 2;
-      car.offRoad = (x, z) => Math.min(1, Math.max(0, (this.offRoadDistance(x, z)! + half) / (2 * half)));
+      car.offRoad = (x, z) => (this.onShortcut(x, z) ? 0 : Math.min(1, Math.max(0, (this.offRoadDistance(x, z)! + half) / (2 * half))));
     }
     return car;
   }
@@ -74,9 +78,14 @@ export class Level {
     return this.terrain !== null && this.course !== null;
   }
 
-  /** 崖から落ちたかどうか（路肩の先の崖の縁を越えた） */
+  /** ヘアピンの内側の近道の帯の上か */
+  onShortcut(x: number, z: number): boolean {
+    return this.terrain !== null && this.terrain.shortcuts.some((sc) => insideShortcut(sc, x, z));
+  }
+
+  /** 崖から落ちたかどうか（路肩の先の崖の縁を越えた。近道の帯の上は落ちない） */
   fellOff(x: number, z: number): boolean {
-    return this.hasCliffs && this.offRoadDistance(x, z)! > FALL_DISTANCE;
+    return this.hasCliffs && this.offRoadDistance(x, z)! > FALL_DISTANCE && !this.onShortcut(x, z);
   }
 
   /** 落ちた車を戻す位置: 落ちた地点より少し手前の、道路の中央 */

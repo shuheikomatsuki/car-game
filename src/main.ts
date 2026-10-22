@@ -1,6 +1,7 @@
 import { SoundSystem } from './audio/sound';
 import { GamepadInput, KeyboardInput, PAD_BUTTON, mergeInputs } from './core/input';
 import { FixedStepLoop } from './core/loop';
+import { Airborne } from './game/airborne';
 import { FallRecovery } from './game/fall';
 import { Level } from './game/level';
 import { NpcField, npcEntries, rankEntrants, velocityOf } from './game/npcRace';
@@ -8,7 +9,7 @@ import { PLAYER_COLORS, RemoteCars, carStateOf, createLabel } from './game/remot
 import { MAPS } from './map/maps';
 import type { MapDefinition } from './map/tilemap';
 import { NetClient } from './net/client';
-import type { SubmitResult } from './net/leaderboard';
+import { type SubmitResult, mergeBoards } from './net/leaderboard';
 import { LeaderboardClient, myEntryId, playerId, uploadedTotal } from './net/leaderboardClient';
 import { type GhostData, type GhostPose, GhostRecorder, ghostPoseAt } from './race/ghost';
 import { NPC_LEVELS } from './race/npcDriver';
@@ -25,7 +26,7 @@ import { loadRapier } from './sim/physics';
 import { NEUTRAL_INPUT, VEHICLE_PRESETS } from './sim/vehicle';
 import { Hud, hideLoading, showError } from './ui/hud';
 import { OnlinePanel, loadPlayerName } from './ui/onlinePanel';
-import { RankingPanel } from './ui/rankingPanel';
+import { ALL_CARS, RankingPanel } from './ui/rankingPanel';
 import { Minimap } from './ui/minimap';
 import { GameMenu } from './ui/menu';
 import { RaceHud } from './ui/raceHud';
@@ -34,6 +35,8 @@ import { TouchControls, prefersTouch } from './ui/touchControls';
 
 /** この強さ [m/s] 以上の速度変化を「衝突」として音・揺れを出す */
 const IMPACT_THRESHOLD = 2.5;
+/** 段差から着地したときに、この下向きの速さ [m/s] 以上なら音・揺れを出す */
+const LANDING_THRESHOLD = 3;
 /** 自分の車の状態を送る間隔（物理ステップ数。60Hz / 3 = 20Hz） */
 const SEND_EVERY_STEPS = 3;
 
@@ -91,6 +94,9 @@ async function main() {
   let input = { ...NEUTRAL_INPUT };
   /** 峠で道路から落ちたとき */
   const fall = new FallRecovery();
+  /** 段差で宙に浮いたとき */
+  const air = new Airborne();
+  const groundAt = (s: { x: number; z: number }) => level.terrain?.heightAt(s.x, s.z) ?? 0;
 
   const remoteCars = new RemoteCars(view.scene);
   remoteCars.attachLevel(level);
@@ -149,6 +155,7 @@ async function main() {
     level.car.reset(spawn);
     fall.cancel();
     prev = curr = level.car.snapshot();
+    air.reset(groundAt(curr));
     cameraRig.snap();
     // スタート地点で他の車と重なっても弾き飛ばされないように
     remoteCars.ghost(performance.now());
@@ -407,13 +414,20 @@ async function main() {
     {
       load: async (course, car) => {
         const def = MAPS.find((m) => m.id === course);
-        // 前に走った自己ベストも、名前を入れた後なら送る
-        if (def) await uploadBest(def, car).catch(() => null);
-        return { entries: await board!.list(course, car), mine: myEntryId(course, car) };
+        const cars = car === ALL_CARS ? VEHICLE_PRESETS.map((v) => v.id) : [car];
+        const boards = await Promise.all(
+          cars.map(async (id) => {
+            // 前に走った自己ベストも、名前を入れた後なら送る
+            if (def) await uploadBest(def, id).catch(() => null);
+            return { car: id, entries: await board!.list(course, id) };
+          }),
+        );
+        const mine = new Set(cars.map((id) => myEntryId(course, id)).filter((id): id is string => id !== null));
+        return { entries: mergeBoards(boards), mine };
       },
-      onRace: async (course, car, entry) => {
-        const ghost = await board!.ghost(course, car, entry.id);
-        raceAgainst(course, car, { name: entry.name, total: entry.total, ghost });
+      onRace: async (course, entry) => {
+        const ghost = await board!.ghost(course, entry.car, entry.id);
+        raceAgainst(course, entry.car, { name: entry.name, total: entry.total, ghost });
       },
       onOpenChange: (open) => {
         keyboard.enabled = !open;
@@ -426,7 +440,7 @@ async function main() {
       hud.toast('このサイトにはオンライン用のサーバーがまだ設定されていません');
       return;
     }
-    rankingPanel.open(level.def.race ? level.def.id : raceMaps[0].id, vehicle().id);
+    rankingPanel.open(level.def.race ? level.def.id : raceMaps[0].id, ALL_CARS);
   }
   const cycleCamera = () => {
     cameraRig.cycle();
@@ -723,9 +737,17 @@ async function main() {
           break;
         case 'recovered':
           prev = curr = level.car.snapshot();
+          air.reset(groundAt(curr));
           cameraRig.snap();
           remoteCars.ghost(performance.now());
           break;
+      }
+      // 段差で浮いている間はタイヤが効かない。強く着地したら音と揺れ
+      const landing = air.update(dt, groundAt(curr));
+      level.car.airborne = air.inAir && !fall.falling;
+      if (landing !== null && landing > LANDING_THRESHOLD) {
+        sound.impact(landing);
+        cameraRig.addShake(landing * 0.25);
       }
       // 草地を走るとガタガタ揺れる
       const grass = level.car.offRoad?.(curr.x, curr.z) ?? 0;
@@ -744,7 +766,7 @@ async function main() {
     },
     (alpha, frameDt) => {
       const s = level.ground(lerpSnapshot(prev, curr, alpha));
-      s.y -= fall.drop;
+      s.y += air.gap - fall.drop;
       carMesh.update(s);
       remoteCars.render(performance.now());
       npcField?.render(alpha);

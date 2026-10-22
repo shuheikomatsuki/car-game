@@ -35,7 +35,8 @@ function race(def: MapDefinition, levels: NpcLevel[], params: VehicleParams = DE
     car.offRoad = (x, z) => Math.min(1, Math.max(0, (Math.abs(course.project(x, z).offset) - def.roadWidth / 2 + 0.95) / 1.9));
     return { car, driver: new NpcDriver(line, params, level, 1, gradient), timer: new TimeAttack(course, laps), maxOffset: 0, maxImpact: 0 };
   });
-  const limit = 60 * 60 * 6;
+  // 平均 8m/s でも走りきれる時間（最低 6 分）
+  const limit = 60 * Math.max(360, course.length / 8);
   for (let step = 0; step < limit; step++) {
     const snaps = racers.map((r) => r.car.snapshot());
     racers.forEach((r, i) => {

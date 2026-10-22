@@ -1,4 +1,4 @@
-import type { LeaderboardEntry } from '../net/leaderboard';
+import type { CarEntry } from '../net/leaderboard';
 import { MAX_ENTRY_NAME_LENGTH } from '../net/leaderboard';
 import { formatTime } from '../race/timeAttack';
 import { loadPlayerName, savePlayerName } from './onlinePanel';
@@ -18,11 +18,14 @@ export interface BoardChoice {
   label: string;
 }
 
+/** 車の選択肢の「すべての車」（車ごとのランキングをまとめて出す） */
+export const ALL_CARS = 'all';
+
 export interface RankingPanelHandlers {
-  /** そのランキングを読む（まだ送っていない自己ベストがあれば先に送る） */
-  load: (course: string, car: string) => Promise<{ entries: LeaderboardEntry[]; mine: string | null }>;
-  /** 選んだ記録のゴーストと走る */
-  onRace: (course: string, car: string, entry: LeaderboardEntry) => Promise<void>;
+  /** そのランキングを読む（car が ALL_CARS ならすべての車。まだ送っていない自己ベストがあれば先に送る）。mine は自分の記録の id */
+  load: (course: string, car: string) => Promise<{ entries: CarEntry[]; mine: ReadonlySet<string> }>;
+  /** 選んだ記録のゴーストと、その記録の車で走る */
+  onRace: (course: string, entry: CarEntry) => Promise<void>;
   onOpenChange: (open: boolean) => void;
 }
 
@@ -34,7 +37,8 @@ export class RankingPanel {
   private readonly name = el<HTMLInputElement>('ranking-name');
   private readonly status = el('ranking-status');
   private readonly table = el<HTMLTableElement>('ranking-table');
-  private entries: LeaderboardEntry[] = [];
+  private entries: CarEntry[] = [];
+  private readonly carLabels: Map<string, string>;
   private openValue = false;
   /** 古い読み込みの結果で上書きしないための番号 */
   private loadId = 0;
@@ -46,7 +50,8 @@ export class RankingPanel {
   ) {
     const options = (list: readonly BoardChoice[]) => list.map((c) => `<option value="${c.id}">${escapeHtml(c.label)}</option>`).join('');
     this.course.innerHTML = options(courses);
-    this.car.innerHTML = options(cars);
+    this.car.innerHTML = options([{ id: ALL_CARS, label: 'すべての車' }, ...cars]);
+    this.carLabels = new Map(cars.map((c) => [c.id, c.label]));
     this.course.addEventListener('change', () => void this.reload());
     this.car.addEventListener('change', () => void this.reload());
     this.name.maxLength = MAX_ENTRY_NAME_LENGTH;
@@ -62,7 +67,7 @@ export class RankingPanel {
       if (!entry) return;
       button.disabled = true;
       this.status.textContent = `${entry.name} さんのゴーストを読み込んでいます…`;
-      this.handlers.onRace(this.course.value, this.car.value, entry).then(
+      this.handlers.onRace(this.course.value, entry).then(
         () => this.close(),
         (err: unknown) => {
           button.disabled = false;
@@ -115,18 +120,18 @@ export class RankingPanel {
     } catch (err) {
       if (id !== this.loadId) return;
       this.entries = [];
-      this.render(null);
+      this.render(new Set());
       this.status.textContent = `ランキングを読み込めませんでした: ${err instanceof Error ? err.message : String(err)}`;
     }
   }
 
-  private render(mine: string | null): void {
+  private render(mine: ReadonlySet<string>): void {
     const top = this.entries[0]?.total;
     this.table.innerHTML = this.entries
       .map((e, i) => {
         const gap = i === 0 || top === undefined ? '' : `<span class="note">+${(e.total - top).toFixed(2)}</span>`;
         const date = new Date(e.date).toLocaleDateString('ja-JP', { month: 'numeric', day: 'numeric' });
-        return `<tr class="${e.id === mine ? 'me' : ''}"><td>${i + 1}</td><td class="name">${escapeHtml(e.name)}</td><td>${formatTime(e.total)} ${gap}</td><td class="note">${date}</td><td><button type="button" data-index="${i}">対戦</button></td></tr>`;
+        return `<tr class="${mine.has(e.id) ? 'me' : ''}"><td>${i + 1}</td><td class="name">${escapeHtml(e.name)}</td><td class="car">${escapeHtml(this.carLabels.get(e.car) ?? e.car)}</td><td>${formatTime(e.total)} ${gap}</td><td class="note">${date}</td><td><button type="button" data-index="${i}">対戦</button></td></tr>`;
       })
       .join('');
   }
