@@ -22,6 +22,7 @@ import { NEUTRAL_INPUT, VEHICLE_PRESETS } from './sim/vehicle';
 import { AssistPanel, commandLabel } from './ui/assistPanel';
 import { Hud, hideLoading, showError } from './ui/hud';
 import { OnlinePanel } from './ui/onlinePanel';
+import { TouchControls, prefersTouch } from './ui/touchControls';
 import { VoiceInput } from './voice/recognition';
 import { VoiceOutput } from './voice/speech';
 
@@ -230,6 +231,7 @@ async function main() {
     },
     onOpenChange: (open) => {
       keyboard.enabled = !open;
+      touch.enabled = !open;
       // 貼った顔を確認しやすいよう、顔を映す視点にする
       if (open && assist) {
         cameraRig.select('faceCam');
@@ -320,7 +322,10 @@ async function main() {
         net.disconnect();
         hud.toast('部屋から退出しました');
       },
-      onOpenChange: (open) => (keyboard.enabled = !open),
+      onOpenChange: (open) => {
+        keyboard.enabled = !open;
+        touch.enabled = !open;
+      },
     },
     serverUrl !== '',
   );
@@ -345,10 +350,43 @@ async function main() {
   gamepad.onButton(PAD_BUTTON.start, resetCar);
   gamepad.onButton(PAD_BUTTON.select, nextMap);
 
-  // ブラウザの制約で、音はユーザー操作の後でないと鳴らせない
-  const unlockAudio = () => sound.start();
+  // --- スマホのタッチ操作 ---
+  const touch = new TouchControls(
+    [
+      {
+        label: () => 'カメラ',
+        run: () => {
+          cycleCamera();
+          hud.toast(`カメラ: ${cameraRig.modeName}`);
+        },
+        quick: true,
+      },
+      { label: () => 'リセット', run: resetCar, quick: true },
+      { label: () => (assist ? '自分で運転する' : `${CHARACTER_NAME}に運転してもらう`), run: () => setAssist(!assist) },
+      { label: () => 'みんなで走る', run: () => onlinePanel.open() },
+      { label: () => 'マップを切り替える', run: nextMap },
+      { label: () => '車を切り替える', run: cycleCar },
+      { label: () => `運転のうまさ: ${PERSONALITIES[personalityIndex].label}`, run: cyclePersonality, visible: () => assist },
+      { label: () => '顔写真', run: openFaceEditor, visible: () => assist },
+      { label: () => `サウンド: ${sound.isMuted ? 'OFF' : 'ON'}`, run: toggleMute },
+    ],
+    () => `${level.def.name}・${assist ? `${CHARACTER_NAME}に指示` : '自分で運転'}・${vehicle().label}・カメラ: ${cameraRig.modeName}`,
+  );
+  // スマホ・タブレットなら最初から、そうでなくても画面に触れたら操作画面を出す（?touch で強制表示）
+  if (prefersTouch() || params.has('touch')) touch.show();
+  window.addEventListener('pointerdown', (e) => {
+    if (e.pointerType === 'touch') touch.show();
+  });
+
+  // ブラウザの制約で、音はユーザー操作の後でないと鳴らせない（タッチは指を離したときが操作とみなされる）
+  const unlockAudio = () => {
+    sound.start();
+    voiceOut.unlock();
+  };
   window.addEventListener('keydown', unlockAudio);
   window.addEventListener('pointerdown', unlockAudio);
+  window.addEventListener('pointerup', unlockAudio);
+  window.addEventListener('touchend', unlockAudio);
 
   hud.setCameraName(cameraRig.modeName);
   hud.setMapName(level.def.name);
@@ -356,6 +394,7 @@ async function main() {
   hud.setMuted(sound.isMuted);
   voiceOut.enabled = !sound.isMuted;
   setAssist(assist);
+  if (touch.isShown && window.innerHeight > window.innerWidth) hud.toast('横向きにすると遊びやすくなります');
 
   const loop = new FixedStepLoop(
     (dt) => {
@@ -365,7 +404,7 @@ async function main() {
       if (assist) {
         input = driver.update(dt, curr, level.sense);
       } else {
-        input = mergeInputs(keyboard.read(), pad);
+        input = mergeInputs(mergeInputs(keyboard.read(), pad), touch.read());
       }
       remoteCars.step(performance.now());
       level.physics.world.timestep = dt;
@@ -411,7 +450,7 @@ async function main() {
   // ?debug を付けるとブラウザの開発者ツールや自動テストから状態を触れる
   if (params.has('debug')) {
     Object.assign(window, {
-      __game: { getLevel: () => level, getDriver: () => driver, faceEditor, net, remoteCars, onlinePanel, cameraRig, sound, giveCommand, setAssist },
+      __game: { getLevel: () => level, getDriver: () => driver, faceEditor, net, remoteCars, touch, onlinePanel, cameraRig, sound, giveCommand, setAssist },
     });
   }
 

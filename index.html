@@ -2,7 +2,12 @@
 <html lang="ja">
   <head>
     <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" />
+    <!-- ホーム画面に追加すると、アドレスバーなしの全画面で開く -->
+    <meta name="mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+    <meta name="apple-mobile-web-app-title" content="Car Game" />
     <title>Car Game</title>
     <link rel="stylesheet" href="/src/ui/style.css" />
   </head>
@@ -70,6 +75,31 @@
           <span class="spacer"></span>
           <button id="online-close">閉じる</button>
           <button id="online-join" class="primary">参加する</button>
+        </div>
+      </div>
+    </div>
+    <div id="touch" class="hidden">
+      <div id="touch-top">
+        <button id="touch-menu-button" type="button" aria-label="メニュー">☰</button>
+        <span id="touch-quick"></span>
+      </div>
+      <div id="touch-steer" class="touch-drive">
+        <span class="hint">左右になぞってハンドル</span>
+        <div id="touch-steer-base"><div id="touch-steer-knob"></div></div>
+      </div>
+      <div id="touch-pedals" class="touch-drive">
+        <button id="touch-brake" type="button">ブレーキ<br /><small>止まると後退</small></button>
+        <button id="touch-accel" type="button">アクセル</button>
+      </div>
+      <div id="touch-menu" class="hidden" role="dialog" aria-label="メニュー">
+        <div class="dialog-panel">
+          <h2>メニュー</h2>
+          <p id="touch-menu-info" class="note"></p>
+          <div id="touch-menu-items"></div>
+          <div class="dialog-buttons">
+            <span class="spacer"></span>
+            <button id="touch-menu-close" class="primary">閉じる</button>
+          </div>
         </div>
       </div>
     </div>

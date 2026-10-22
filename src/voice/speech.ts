@@ -6,6 +6,7 @@ export class VoiceOutput {
   enabled = true;
   private voice: SpeechSynthesisVoice | null = null;
   private speakingUntil = 0;
+  private unlocked = false;
 
   constructor() {
     if (!('speechSynthesis' in window)) return;
@@ -38,6 +39,18 @@ export class VoiceOutput {
       this.speakingUntil = performance.now() + 400;
     };
     this.speakingUntil = performance.now() + 400 + spoken.length * 150;
+    speechSynthesis.speak(u);
+  }
+
+  /**
+   * iPhone などは、最初の読み上げをユーザー操作の中で行わないと以降も声が出ない。
+   * 画面に触れたときに無音の読み上げを一度だけ行っておく。
+   */
+  unlock(): void {
+    if (this.unlocked || !('speechSynthesis' in window)) return;
+    this.unlocked = true;
+    const u = new SpeechSynthesisUtterance('');
+    u.volume = 0;
     speechSynthesis.speak(u);
   }
 
