@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { type Command, isEmergency, parseCommand } from './commands';
+import { type Command, isEmergency, parseCommand, parseCommandOptions } from './commands';
 
 const cases: [string, Command | null][] = [
   ['発進して', 'start'],
@@ -33,6 +33,11 @@ const cases: [string, Command | null][] = [
   ['ハンドル右に切って', 'steerRight'],
   ['道に戻って', 'returnToRoad'],
   ['道路に出て', 'returnToRoad'],
+  ['道なりに走って', 'followRoad'],
+  ['ハンドル戻して', 'straight'],
+  ['3秒後に左に曲がって', 'goLeft'],
+  ['30度右', 'goRight'],
+  ['もっと左', 'shiftLeft'],
   ['そこじゃなくて、次を左！', 'correctLeft'],
   ['違う違う、次を右', 'correctRight'],
   ['まっすぐ行って', 'straight'],
@@ -57,5 +62,20 @@ describe('parseCommand', () => {
     expect(isEmergency('stop')).toBe(true);
     expect(isEmergency('danger')).toBe(true);
     expect(isEmergency('turnLeft')).toBe(false);
+  });
+});
+
+describe('parseCommandOptions', () => {
+  it.each([
+    ['3秒後に左に曲がって', { delaySeconds: 3 }],
+    ['１．５秒たったら右', { delaySeconds: 1.5 }],
+    ['五秒後に右', { delaySeconds: 5 }],
+    ['十五秒後に止まって', { delaySeconds: 15 }],
+    ['50メートル先で右', { distanceMeters: 50 }],
+    ['30度右に切って', { angleDeg: 30 }],
+    ['四十五度左', { angleDeg: 45 }],
+    ['右に曲がって', {}],
+  ])('%s', (text, expected) => {
+    expect(parseCommandOptions(text)).toEqual(expected);
   });
 });

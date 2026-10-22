@@ -1,4 +1,4 @@
-import { type Command, COMMAND_BUTTONS, isEmergency } from './ai/commands';
+import { type Command, COMMAND_BUTTONS, isEmergency, parseCommandOptions } from './ai/commands';
 import { CHARACTER_NAME, Dialogue, type DialogueTrigger } from './ai/dialogue';
 import { CharacterDriver } from './ai/driver';
 import { PERSONALITIES, createRng } from './ai/personality';
@@ -104,7 +104,8 @@ async function main() {
 
   const giveCommand = (command: Command, spoken?: string) => {
     if (!assist) return;
-    driver.command(command);
+    // 「3秒後に左」「30度右」のような数値は、話した言葉から読み取る
+    driver.command(command, spoken ? parseCommandOptions(spoken) : {});
     panel.showHeard(spoken ?? commandLabel(command), command, true);
   };
 
@@ -131,15 +132,9 @@ async function main() {
   const updateAssistStatus = () => {
     const pending = driver.pendingTurn;
     const turn =
-      driver.mode === 'free'
-        ? '自由に走行中（「道に戻って」で道路へ）'
-        : pending === 'left'
-          ? '次は左'
-          : pending === 'right'
-            ? '次は右'
-            : pending === 'straight'
-              ? '次はまっすぐ'
-              : '';
+      driver.mode === 'route'
+        ? `道なりに走行中${pending === 'left' ? '（次は左）' : pending === 'right' ? '（次は右）' : ''}`
+        : '';
     panel.setStatus(
       `運転のうまさ: ${PERSONALITIES[personalityIndex].label}（K）　巡航 ${driver.speedKmh}km/h${turn ? `　${turn}` : ''}`,
     );

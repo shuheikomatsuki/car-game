@@ -6,9 +6,21 @@ function el<T extends HTMLElement = HTMLElement>(id: string): T {
   return e as T;
 }
 
-const LABEL: Record<Command, string> = Object.fromEntries(
-  COMMAND_BUTTONS.map((b) => [b.command, b.label]),
-) as Record<Command, string>;
+/** 声でだけ出せる指示（ボタンが無いもの）の表示名 */
+const VOICE_ONLY_LABEL: Partial<Record<Command, string>> = {
+  turnLeft: '次を左',
+  turnRight: '次を右',
+  goLeft: '左に曲がって',
+  goRight: '右に曲がって',
+  correctLeft: 'そこじゃなくて次を左',
+  correctRight: 'そこじゃなくて次を右',
+  keepLane: '車線に戻って',
+};
+
+const LABEL: Record<Command, string> = {
+  ...VOICE_ONLY_LABEL,
+  ...Object.fromEntries(COMMAND_BUTTONS.map((b) => [b.command, b.label])),
+} as Record<Command, string>;
 
 export function commandLabel(c: Command): string {
   return LABEL[c];
