@@ -1,9 +1,18 @@
 import * as THREE from 'three';
+import type { Terrain } from '../map/terrain';
 import type { Course } from '../race/course';
 import { CarMesh } from './carMesh';
 
+/** スタートラインと、一本道のコースならゴールライン */
+export function buildRaceLines(course: Course, terrain: Terrain | null): THREE.Group {
+  const group = new THREE.Group();
+  group.add(buildLine(course, course.line, terrain));
+  if (!course.closed) group.add(buildLine(course, course.finishLine, terrain));
+  return group;
+}
+
 /** スタート／ゴールラインの市松模様と、その上のゲート */
-export function buildStartLine(course: Course): THREE.Group {
+function buildLine(course: Course, at: { x: number; z: number; yaw: number }, terrain: Terrain | null): THREE.Group {
   const group = new THREE.Group();
   const width = course.map.def.roadWidth;
   const cell = 1;
@@ -45,8 +54,16 @@ export function buildStartLine(course: Course): THREE.Group {
   group.add(banner);
 
   // 横幅の向き（X）を道路の横方向に合わせる。yaw は前方 +Z からの回転なので、そのまま回せばよい
-  group.position.set(course.line.x, 0, course.line.z);
-  group.rotation.y = course.line.yaw;
+  if (terrain) {
+    // 坂の途中なら、進行方向の勾配に合わせて傾ける
+    const g = terrain.gradientAt(at.x, at.z);
+    const slope = g.x * Math.sin(at.yaw) + g.z * Math.cos(at.yaw);
+    group.position.set(at.x, terrain.heightAt(at.x, at.z), at.z);
+    group.rotation.set(-Math.atan(slope), at.yaw, 0, 'YXZ');
+  } else {
+    group.position.set(at.x, 0, at.z);
+    group.rotation.y = at.yaw;
+  }
   return group;
 }
 

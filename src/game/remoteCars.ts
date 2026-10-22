@@ -131,7 +131,7 @@ export class RemoteCars {
       const s = p.track.sample(localNow);
       const visible = s !== null && p.track.silenceMs(localNow) < STALE_MS;
       p.mesh.root.visible = visible;
-      if (s && visible) p.mesh.update(toSnapshot(s));
+      if (s && visible) p.mesh.update(this.level ? this.level.ground(toSnapshot(s)) : toSnapshot(s));
     }
   }
 

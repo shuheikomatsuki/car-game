@@ -41,10 +41,11 @@ describe('parseMap', () => {
 
   it.each(MAPS.map((m) => [m.name, m] as const))('parses bundled map %s', (_, def) => {
     const map = parseMap(def);
-    // すべての道路が少なくとも2方向につながっている（行き止まりや孤立した道路がない）
-    for (const t of map.tiles.filter((t) => t.kind === 'road')) {
-      expect(t.connections.length, `road at (${t.col}, ${t.row})`).toBeGreaterThanOrEqual(2);
-    }
+    // すべての道路が少なくとも2方向につながっている（行き止まりや孤立した道路がない）。
+    // 高低差のある一本道のコースだけは、ふもとと頂上の2か所が行き止まり
+    const roads = map.tiles.filter((t) => t.kind === 'road');
+    expect(roads.filter((t) => t.connections.length === 1)).toHaveLength(def.elevation ? 2 : 0);
+    for (const t of roads) expect(t.connections.length, `road at (${t.col}, ${t.row})`).toBeGreaterThanOrEqual(1);
     expect(buildObstacles(map).signs.length).toBe(def.signs?.length ?? 0);
   });
 

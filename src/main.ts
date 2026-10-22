@@ -304,7 +304,10 @@ async function main() {
     net.updateJoin({ map: mapIndex });
   };
   const nextMap = () => {
-    loadMap((mapIndex + 1) % MAPS.length);
+    // タイムアタック中は、レース用のコースだけを順に替える
+    let next = (mapIndex + 1) % MAPS.length;
+    while (race && !MAPS[next].race) next = (next + 1) % MAPS.length;
+    loadMap(next);
     // 同じ部屋の全員のマップも切り替える
     net.send({ t: 'map', map: mapIndex });
   };
@@ -547,7 +550,7 @@ async function main() {
         visible: () => canRequestFullscreen() && !isFullscreen() && !isStandalone(),
       },
       { label: () => 'みんなで走る', run: () => onlinePanel.open() },
-      { label: () => 'マップを切り替える', run: nextMap },
+      { label: () => (race ? 'コースを切り替える' : 'マップを切り替える'), run: nextMap },
       { label: () => '車を切り替える', run: cycleCar },
       { label: () => `運転のうまさ: ${PERSONALITIES[personalityIndex].label}`, run: cyclePersonality, visible: () => assist },
       { label: () => '顔写真', run: openFaceEditor, visible: () => assist },
@@ -641,13 +644,13 @@ async function main() {
       }
     },
     (alpha, frameDt) => {
-      const s = lerpSnapshot(prev, curr, alpha);
+      const s = level.ground(lerpSnapshot(prev, curr, alpha));
       carMesh.update(s);
       remoteCars.render(performance.now());
       if (race) {
         const pose = best ? ghostPoseAt(best.ghost, Math.max(0, race.time)) : null;
         ghostMesh.root.visible = pose !== null;
-        if (pose) ghostMesh.update({ x: pose.x, y: 0, z: pose.z, yaw: pose.yaw, forwardSpeed: 0, lateralSpeed: 0, steerAngle: 0, wheelSpin: 0 });
+        if (pose) ghostMesh.update(level.ground({ x: pose.x, y: 0.05, z: pose.z, yaw: pose.yaw, forwardSpeed: 0, lateralSpeed: 0, steerAngle: 0, wheelSpin: 0 }));
         raceHud.update({
           lap: race.lap,
           totalLaps: race.totalLaps,
@@ -666,7 +669,7 @@ async function main() {
       character.update(frameDt, s.steerAngle);
       level.syncProps();
       cameraRig.update(s, frameDt);
-      view.followTarget(s.x, s.z);
+      view.followTarget(s.x, s.z, s.y);
       hud.update(s);
       if (assist) updateAssistStatus();
       sound.update(s.forwardSpeed, input.throttle, s.lateralSpeed, input.brake > 0 && s.forwardSpeed > 0);

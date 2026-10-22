@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { CIRCUIT_MAP, SCHOOL_MAP } from '../map/maps';
+import { CIRCUIT_MAP, DOWNHILL_MAP, HILLCLIMB_MAP, SCHOOL_MAP, TECHNICAL_MAP } from '../map/maps';
 import { parseMap } from '../map/tilemap';
 import { buildCourse } from './course';
 import { GhostRecorder, ghostPoseAt } from './ghost';
@@ -37,6 +37,86 @@ describe('buildCourse', () => {
     const d = course.directionAt(corner);
     expect(d.x).toBeCloseTo(Math.SQRT1_2);
     expect(d.z).toBeCloseTo(Math.SQRT1_2);
+  });
+});
+
+describe('course geometry', () => {
+  it('measures the centerline (straights + quarter circles)', () => {
+    const curves = course.tiles.filter((t) => t.entry !== t.exit).length;
+    const straights = course.tiles.length - curves;
+    expect(course.length).toBeCloseTo(straights * size + curves * (Math.PI / 2) * (size / 2));
+    expect(course.closed).toBe(true);
+  });
+
+  it('projects points on the centerline back to the same distance', () => {
+    for (let s = 0; s < course.length; s += 7.3) {
+      const p = course.pointAt(s);
+      const pr = course.project(p.x, p.z);
+      expect(pr.s).toBeCloseTo(s, 5);
+      expect(pr.offset).toBeCloseTo(0, 5);
+      // 左へずらすと offset が正になる
+      const left = course.project(p.x + Math.cos(p.yaw) * 3, p.z - Math.sin(p.yaw) * 3);
+      expect(left.offset).toBeCloseTo(3, 5);
+    }
+  });
+
+  it('gives curvature only on curves', () => {
+    const corner = course.tiles.findIndex((t) => t.col === 13 && t.row === 1);
+    const before = course.pointAt(5);
+    expect(before.curvature).toBe(0);
+    // サーキットは時計回り（上から見て右回り）なので右カーブ = 負
+    let s = 0;
+    for (let i = 0; i < corner; i++) s += course.tiles[i].entry === course.tiles[i].exit ? size : (Math.PI / 4) * size;
+    expect(course.pointAt(s + 1).curvature).toBeCloseTo(-2 / size);
+  });
+
+  it('builds the technical circuit as a loop with many corners', () => {
+    const tech = buildCourse(parseMap(TECHNICAL_MAP));
+    expect(tech.closed).toBe(true);
+    expect(tech.tiles.filter((t) => t.entry !== t.exit).length).toBeGreaterThanOrEqual(20);
+  });
+
+  it('builds the mountain pass as a point-to-point course in both directions', () => {
+    const up = buildCourse(parseMap(HILLCLIMB_MAP));
+    const down = buildCourse(parseMap(DOWNHILL_MAP));
+    for (const c of [up, down]) {
+      expect(c.closed).toBe(false);
+      // 最後の2枚はゴール後に止まるための区間
+      expect(c.finishIndex).toBe(c.tiles.length - 2);
+      expect(c.length).toBeGreaterThan(1500);
+    }
+    // 上りの最後のタイルは頂上の行き止まり、下りの最後はふもとの行き止まり
+    expect(up.tiles[up.tiles.length - 1]).toMatchObject({ col: 1, row: 1 });
+    expect(down.tiles[down.tiles.length - 1]).toMatchObject({ col: 2, row: 14 });
+  });
+});
+
+describe('TimeAttack on a point-to-point course', () => {
+  it('finishes after reaching the finish line once', () => {
+    const hill = buildCourse(parseMap(HILLCLIMB_MAP));
+    const race = new TimeAttack(hill, 1);
+    const ts = HILLCLIMB_MAP.tileSize;
+    for (let i = 0; i < 70; i++) race.update(0.05, { x: hill.line.x - 10, z: hill.line.z, vx: 0, vz: 0 });
+    expect(race.phase).toBe('racing');
+    for (const t of hill.tiles) {
+      for (let i = 0; i < 10; i++) race.update(0.05, { x: t.col * ts, z: t.row * ts, vx: 0, vz: 0 });
+      if (race.phase === 'finished') break;
+    }
+    expect(race.phase).toBe('finished');
+    expect(race.laps).toHaveLength(1);
+    // ゴールのタイルに入った時点で終わる（カウントダウン後の 0.5 秒 + 最初の1ステップを含む）
+    expect(race.laps[0]).toBeCloseTo(0.55 + hill.finishIndex * 10 * 0.05, 5);
+  });
+
+  it('does not count a shortcut across the grass', () => {
+    const hill = buildCourse(parseMap(HILLCLIMB_MAP));
+    const race = new TimeAttack(hill, 1);
+    const ts = HILLCLIMB_MAP.tileSize;
+    for (let i = 0; i < 70; i++) race.update(0.05, { x: 0, z: 0, vx: 0, vz: 0 });
+    const goal = hill.tiles[hill.finishIndex];
+    race.update(0.05, { x: hill.tiles[0].col * ts, z: hill.tiles[0].row * ts, vx: 0, vz: 0 });
+    race.update(0.05, { x: goal.col * ts, z: goal.row * ts, vx: 0, vz: 0 });
+    expect(race.phase).toBe('racing');
   });
 });
 
