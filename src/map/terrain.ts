@@ -91,8 +91,8 @@ export function buildTerrain(map: ParsedMap): Terrain | null {
   const px = Float64Array.from(points, (p) => p.x);
   const pz = Float64Array.from(points, (p) => p.z);
 
-  /** 点の間隔で高さが段々にならないよう、近い点の前後の区間に投影して高さを補間する */
-  const interpolateAlong = (k: number, x: number, z: number): number => {
+  /** 点の間隔で高さが段々にならないよう、近い点の前後の区間に投影して高さを補間する（d2 はその区間までの距離の2乗） */
+  const projectAlong = (k: number, x: number, z: number): { h: number; d2: number } => {
     let bestD = Infinity;
     let bestH = heights[k];
     for (const [a, b] of [
@@ -112,8 +112,9 @@ export function buildTerrain(map: ParsedMap): Terrain | null {
         bestH = heights[a] + (heights[b] - heights[a]) * t;
       }
     }
-    return bestH;
+    return { h: bestH, d2: bestD };
   };
+  const interpolateAlong = (k: number, x: number, z: number) => projectAlong(k, x, z).h;
 
   /** 道路のいちばん近い所の高さ */
   const roadHeightAt = (x: number, z: number) => {
@@ -128,21 +129,65 @@ export function buildTerrain(map: ParsedMap): Terrain | null {
     }
     return interpolateAlong(k, x, z);
   };
-  // 近道の帯は、両端（道路につながる所）の高さの間を段差をはさんで下る
+  // 近道の面: 上の道路の縁から下の道路の縁まで下り、下の道路の縁で段差になる
   const shortcuts = map.def.shortcuts ? findShortcuts(map) : [];
-  const shortcutEnds = shortcuts.map((sc) => {
-    const w = (sc.wMin + sc.wMax) / 2;
-    const a = shortcutPoint(sc, -sc.uMax, w);
-    const b = shortcutPoint(sc, sc.uMax, w);
-    return { start: roadHeightAt(a.x, a.z), end: roadHeightAt(b.x, b.z) };
+  const shortcutData = shortcuts.map((sc) => {
+    // 奥行き 1m ごとの、上と下の道路の縁の高さ
+    const ws: number[] = [];
+    const starts: number[] = [];
+    const ends: number[] = [];
+    for (let w = sc.wMin; w <= sc.wMax + 1; w += 1) {
+      const a = shortcutPoint(sc, -sc.uEdge, w);
+      const b = shortcutPoint(sc, sc.uEdge, w);
+      ws.push(w);
+      starts.push(roadHeightAt(a.x, a.z));
+      ends.push(roadHeightAt(b.x, b.z));
+    }
+    // 直線の向きに進むと下るなら dir = 1
+    const mid = Math.floor(ws.length / 2);
+    const dir = starts[mid] >= ends[mid] ? 1 : -1;
+    // 面の近くの道路の点（いちばん近い点を探す範囲を絞る）
+    const near: number[] = [];
+    const margin = tileSize;
+    for (let k = 0; k < px.length; k++) {
+      const { u, w } = shortcutLocal(sc, px[k], pz[k]);
+      if (Math.abs(u) <= sc.uMax + margin && w >= -margin && w <= sc.wMax + margin) near.push(k);
+    }
+    return { starts, ends, dir, near };
   });
-  const shortcutHeightAt = (x: number, z: number): number | null => {
+  /**
+   * 近道の面の上の高さ（面の外なら null）。道路の上は道路の高さ。上の道路からはなめらかにつなぎ、
+   * 下の道路との境目は段差にする。lowRamp は下の道路との境目を、道路の端からこの距離だけ面の側へずらす（地形の格子用）
+   */
+  const shortcutHeightAt = (x: number, z: number, lowRamp = 0): number | null => {
     const i = shortcuts.findIndex((sc) => insideShortcut(sc, x, z));
     if (i < 0) return null;
     const sc = shortcuts[i];
-    const { start, end } = shortcutEnds[i];
-    const t = (shortcutLocal(sc, x, z).u + sc.uMax) / (2 * sc.uMax);
-    return start >= end ? shortcutHeight(t, start, end) : shortcutHeight(1 - t, end, start);
+    const { starts, ends, dir, near } = shortcutData[i];
+    let bestK = near[0];
+    let best = Infinity;
+    for (const k of near) {
+      const d2 = (x - px[k]) ** 2 + (z - pz[k]) ** 2;
+      if (d2 < best) {
+        best = d2;
+        bestK = k;
+      }
+    }
+    const road = projectAlong(bestK, x, z);
+    const d = Math.sqrt(road.d2);
+    if (d <= rw) return road.h;
+    const { u, w } = shortcutLocal(sc, x, z);
+    const fw = Math.min(starts.length - 1.001, Math.max(0, w - sc.wMin));
+    const j = Math.floor(fw);
+    const f = fw - j;
+    const start = starts[j] + (starts[j + 1] - starts[j]) * f;
+    const end = ends[j] + (ends[j + 1] - ends[j]) * f;
+    const [high, low] = dir > 0 ? [start, end] : [end, start];
+    const cut = shortcutHeight((u * dir + sc.uEdge) / (2 * sc.uEdge), high, low);
+    // いちばん近い道路が下りの後半（下の道路の側）で、面より低ければ段差
+    const lowSide = shortcutLocal(sc, px[bestK], pz[bestK]).u * dir > 0 && road.h < cut;
+    if (lowSide) return d > rw + lowRamp ? cut : road.h;
+    return road.h + (cut - road.h) * smoothstep((d - rw) / 3);
   };
 
   // 道路から離れた場所の高さ（周りの道路の高さの重み付き平均）はなめらかなので、粗い格子で求めて補間する
@@ -212,12 +257,12 @@ export function buildTerrain(map: ParsedMap): Terrain | null {
       }
       const d = Math.sqrt(nearestDist2[j * nx + i]);
       const nearestH = interpolateAlong(nearestK, x, z);
-      const cut = shortcuts.length ? shortcutHeightAt(x, z) : null;
+      // 近道の面の上は崖にしない。段差は格子の間隔より細かいので、格子では下の道路の端から少し離してつなぐ
+      // （面そのものは buildShortcutMesh が heightAt で細かく描く）
+      const cut = shortcuts.length ? shortcutHeightAt(x, z, GRID_STEP) : null;
       if (cut !== null) {
-        // 近道の帯の上は崖にしない。道路の端からなめらかに帯の高さへつなぐ
-        const h = nearestH + (cut - nearestH) * smoothstep((d - rw) / 3);
-        surface[j * nx + i] = h;
-        ground[j * nx + i] = h - 0.25 * (1 - smoothstep((d - rw) / 3));
+        surface[j * nx + i] = cut;
+        ground[j * nx + i] = cut - 0.25 * (1 - smoothstep((d - rw) / 3));
         continue;
       }
       // 道路の上は道路の高さ、離れるほど周りの道路の高さの重み付き平均に近づける
@@ -229,7 +274,7 @@ export function buildTerrain(map: ParsedMap): Terrain | null {
     }
   }
 
-  const heightAt = (x: number, z: number) => {
+  const gridHeightAt = (x: number, z: number) => {
     const fx = Math.min(nx - 1.001, Math.max(0, (x - minX) / GRID_STEP));
     const fz = Math.min(nz - 1.001, Math.max(0, (z - minZ) / GRID_STEP));
     const i = Math.floor(fx);
@@ -242,6 +287,9 @@ export function buildTerrain(map: ParsedMap): Terrain | null {
     const e = surface[(j + 1) * nx + i + 1];
     return (a * (1 - u) + b * u) * (1 - v) + (c * (1 - u) + e * u) * v;
   };
+
+  // 近道の面の上は、段差がはっきり出るよう格子を使わずにその場で求める
+  const heightAt = shortcuts.length ? (x: number, z: number) => shortcutHeightAt(x, z) ?? gridHeightAt(x, z) : gridHeightAt;
 
   return {
     heightAt,

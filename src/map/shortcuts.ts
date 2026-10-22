@@ -3,9 +3,11 @@ import { DIR_OFFSET, type Direction, type ParsedMap, roadShape, tileCenter } fro
 /**
  * ヘアピンの内側の近道（いろは坂の「インベタのさらにインベタ」）。
  *
- * ヘアピン（同じ側へ曲がる2つのカーブを直線1枚でつないだUターン）の内側に沿って、道路の外に走れる帯を作る。
- * 帯の上は崖に落ちず、道路と同じように走れる。内側を大きく使えるぶん速く回れるが、
- * 帯の途中には段差があり、下りで飛び込むと少し宙に浮く（浮いている間はハンドルもアクセルも効かない）。
+ * ヘアピン（同じ側へ曲がる2つのカーブを直線1枚でつないだUターン）の内側、行きと帰りの道路にはさまれた所を
+ * 走れる面にする。面の上は崖に落ちず、道路と同じように走れる（コースアウトにもならない）。
+ * コーナーの手前で内側へ飛び込めば、道路よりずっと小さく回れる。
+ * 面は上の道路の高さから下っていき、下の道路の縁で段差になって終わる。段差から飛び降りると、真下が下の道路
+ * （浮いている間はハンドルもアクセルも効かない）。
  */
 export interface Shortcut {
   /** ヘアピンの直線のタイルの中心 */
@@ -19,12 +21,14 @@ export interface Shortcut {
   nz: number;
   /** 帯の範囲: 直線に沿って -uMax..uMax、内側へ wMin..wMax [m]（直線の中心線から） */
   uMax: number;
+  /** 行きと帰りの道路の内側の縁の位置（直線に沿って ±uEdge） */
+  uEdge: number;
   wMin: number;
   wMax: number;
 }
 
-/** 帯の幅（直線の道路の端から内側へ）。タイルの大きさに対する割合 */
-const WIDTH_RATIO = 0.45;
+/** 面の奥行き（直線の道路の端から内側へ）。タイルの大きさに対する割合 */
+const DEPTH_RATIO = 0.95;
 
 /** マップの中のヘアピンを探して、内側の近道の帯を作る */
 export function findShortcuts(map: ParsedMap): Shortcut[] {
@@ -52,8 +56,9 @@ export function findShortcuts(map: ParsedMap): Shortcut[] {
       nx: inner.dc,
       nz: inner.dr,
       uMax: tileSize - rw + 2,
+      uEdge: tileSize - rw,
       wMin: rw - 1,
-      wMax: rw + WIDTH_RATIO * tileSize,
+      wMax: rw + DEPTH_RATIO * tileSize,
     });
   }
   return result;
@@ -80,21 +85,22 @@ export function shortcutPoint(sc: Shortcut, u: number, w: number): { x: number; 
   return { x: sc.x + sc.ax * u + sc.nx * w, z: sc.z + sc.az * u + sc.nz * w };
 }
 
-/** 段差の位置（高い側の端から、帯の長さに対する割合） */
-const STEP_AT = 0.3;
-/** 段差までに下がる割合（帯の両端の高低差に対する） */
-const BEFORE_STEP = 0.1;
-/** 段差の高さ [m]（両端の高低差の 3 割までに抑える） */
-const STEP_HEIGHT = 2.2;
+/** 段差の高さ [m]（上と下の道路の高低差の 8 割までに抑える） */
+const STEP_HEIGHT = 2.5;
+const STEP_RATIO = 0.8;
+
+/** 段差の高さ [m]。上と下の道路の高低差 drop に対して */
+export function shortcutStep(drop: number): number {
+  return Math.min(STEP_HEIGHT, STEP_RATIO * Math.max(0, drop));
+}
 
 /**
- * 帯の上の高さ。両端（道路につながる所）の高さ high・low の間を、途中に段差をはさんで下る。
- * t は高い側の端から低い側の端まで 0..1
+ * 面の上の高さ。t は上の道路の縁（0）から下の道路の縁（1）まで。上の道路の高さ high から下り、
+ * 下の道路の縁で段差の高さだけ low より高い所まで来る（その先の段差を降りると下の道路）。
+ * 上の道路からはなめらかに入れるよう、初めはゆるく、段差に近づくほど急に下る
  */
 export function shortcutHeight(t: number, high: number, low: number): number {
   const drop = high - low;
-  const step = Math.min(STEP_HEIGHT, 0.3 * Math.max(0, drop));
-  const before = BEFORE_STEP * drop;
-  if (t < STEP_AT) return high - (before * t) / STEP_AT;
-  return high - before - step - ((drop - before - step) * (t - STEP_AT)) / (1 - STEP_AT);
+  const u = Math.min(1, Math.max(0, t));
+  return high - (drop - shortcutStep(drop)) * u * u;
 }

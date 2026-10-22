@@ -1,0 +1,20 @@
+import { describe, expect, it } from 'vitest';
+import { VEHICLE_PRESETS } from '../sim/vehicle';
+import { paramsForWeather } from './environment';
+
+describe('paramsForWeather', () => {
+  const params = VEHICLE_PRESETS[0].params;
+
+  it('keeps the car as it is in clear weather and fog', () => {
+    expect(paramsForWeather(params, 'clear')).toEqual(params);
+    expect(paramsForWeather(params, 'fog')).toEqual(params);
+  });
+
+  it('makes the tyres slip and the brakes weaker in the rain', () => {
+    const wet = paramsForWeather(params, 'rain');
+    expect(wet.maxLateralAccel).toBeLessThan(params.maxLateralAccel);
+    expect(wet.lateralGrip).toBeLessThan(params.lateralGrip);
+    expect(wet.brakeDecel).toBeLessThan(params.brakeDecel);
+    expect(wet.maxForwardSpeed).toBe(params.maxForwardSpeed);
+  });
+});
