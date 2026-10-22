@@ -713,6 +713,7 @@ body.touch #assist {
   bottom: calc(env(safe-area-inset-bottom) + 8px);
 }
 
+body.touch #race-result kbd,
 body.touch #assist kbd {
   display: none;
 }
@@ -750,5 +751,185 @@ body.touch .dialog-panel input[type='text'] {
 
   body.touch #toast {
     top: calc(env(safe-area-inset-top) + 120px);
+  }
+}
+
+/* --- タイムアタック --- */
+#race {
+  position: fixed;
+  top: calc(env(safe-area-inset-top) + 10px);
+  left: 50%;
+  transform: translateX(-50%);
+  padding: 6px 16px 8px;
+  border-radius: 12px;
+  background: rgba(0, 0, 0, 0.55);
+  text-align: center;
+  pointer-events: none;
+  font-variant-numeric: tabular-nums;
+}
+
+#race.hidden {
+  display: none;
+}
+
+#race .row {
+  display: flex;
+  gap: 14px;
+  align-items: baseline;
+  justify-content: center;
+}
+
+#race-lap {
+  font-size: 15px;
+  font-weight: bold;
+  opacity: 0.85;
+}
+
+#race-time {
+  font-size: 28px;
+  font-weight: bold;
+}
+
+#race-best {
+  font-size: 12px;
+  opacity: 0.8;
+}
+
+#race-split {
+  display: none;
+  margin-top: 2px;
+  font-size: 15px;
+  font-weight: bold;
+}
+
+#race-split.visible {
+  display: block;
+}
+
+#race-split.good {
+  color: #7dff9a;
+}
+
+/* タイムアタック中は、お知らせをタイムの下に出す */
+body.racing #toast {
+  top: calc(env(safe-area-inset-top) + 100px);
+}
+
+#countdown {
+  position: fixed;
+  top: 38%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  font-size: 96px;
+  font-weight: bold;
+  text-shadow: 0 4px 16px rgba(0, 0, 0, 0.6);
+  opacity: 0;
+  pointer-events: none;
+}
+
+#countdown.visible {
+  opacity: 1;
+}
+
+#race-warning {
+  position: fixed;
+  top: 28%;
+  left: 50%;
+  transform: translateX(-50%);
+  max-width: calc(100vw - 32px);
+  padding: 8px 18px;
+  border-radius: 10px;
+  background: rgba(200, 30, 30, 0.8);
+  font-size: 18px;
+  font-weight: bold;
+  text-align: center;
+  opacity: 0;
+  transition: opacity 0.2s;
+  pointer-events: none;
+}
+
+#race-warning.visible {
+  opacity: 1;
+}
+
+#race-result {
+  position: fixed;
+  top: calc(env(safe-area-inset-top) + 100px);
+  left: 50%;
+  transform: translateX(-50%);
+  width: min(320px, calc(100vw - 32px));
+  max-height: calc(100vh - 120px);
+  overflow-y: auto;
+  padding: 12px 18px;
+  border-radius: 12px;
+  background: rgba(20, 24, 32, 0.92);
+  box-shadow: 0 10px 40px rgba(0, 0, 0, 0.5);
+  font-variant-numeric: tabular-nums;
+  user-select: none;
+}
+
+#race-result.hidden {
+  display: none;
+}
+
+#race-result h2 {
+  margin: 0;
+  font-size: 17px;
+}
+
+#race-result .total {
+  margin: 4px 0;
+  font-size: 34px;
+  font-weight: bold;
+}
+
+#race-result .note {
+  margin: 4px 0;
+  font-size: 12px;
+  opacity: 0.85;
+}
+
+#race-result .new {
+  color: #7dff9a;
+  font-weight: bold;
+}
+
+#race-result .big {
+  margin: 4px 0;
+  font-size: 14px;
+}
+
+#race-result table {
+  width: 100%;
+  font-size: 13px;
+  border-collapse: collapse;
+}
+
+#race-result td {
+  padding: 2px 0;
+}
+
+#race-result td:last-child {
+  text-align: right;
+}
+
+#race-result kbd {
+  margin-left: 6px;
+}
+
+/* 横向きのスマホでは結果を小さめに */
+@media (max-height: 480px) {
+  #race-time {
+    font-size: 22px;
+  }
+  #race-result {
+    top: calc(env(safe-area-inset-top) + 70px);
+    max-height: calc(100vh - 80px);
+  }
+  #race-result .total {
+    font-size: 26px;
+  }
+  body.racing #toast {
+    top: calc(env(safe-area-inset-top) + 80px);
   }
 }

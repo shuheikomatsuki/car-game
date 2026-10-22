@@ -53,4 +53,30 @@ export const SCHOOL_MAP: MapDefinition = {
   ],
 };
 
-export const MAPS: readonly MapDefinition[] = [TOWN_MAP, SCHOOL_MAP];
+/**
+ * タイムアタック用の周回サーキット。交差点はなく、一周が1本道。
+ * 速度を出せるよう、タイルを大きく（カーブの半径 20m）、道幅を広くしている。
+ */
+export const CIRCUIT_MAP: MapDefinition = {
+  name: 'サーキット',
+  tileSize: 40,
+  roadWidth: 16,
+  layout: [
+    '...............',
+    '.RRRRRRRRRRRRR.',
+    '.R..T.....T..R.',
+    '.R..RRRRR....R.',
+    '.R..R.T.R..T.R.',
+    '.RRRR...R..RRR.',
+    '..T.....R..R...',
+    '...RRRRRR..R.T.',
+    '...R..B..T.R...',
+    '...RRRRRRRRR...',
+    '...............',
+  ],
+  start: { col: 6, row: 1, heading: 'E' },
+  guardrails: true,
+  race: { laps: 3 },
+};
+
+export const MAPS: readonly MapDefinition[] = [TOWN_MAP, SCHOOL_MAP, CIRCUIT_MAP];
