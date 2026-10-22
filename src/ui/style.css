@@ -810,6 +810,86 @@ body.touch .dialog-panel input[type='text'] {
   color: #7dff9a;
 }
 
+#race-laps {
+  margin: 4px auto 0;
+  font-size: 13px;
+  border-collapse: collapse;
+}
+
+#race-laps td {
+  padding: 0 4px;
+  text-align: right;
+}
+
+#race-laps td:first-child {
+  opacity: 0.7;
+}
+
+#race-laps td:first-child::before {
+  content: 'L';
+}
+
+#race-laps td:last-child {
+  min-width: 48px;
+  font-size: 12px;
+}
+
+#race-laps .fastest td:nth-child(2) {
+  color: #d9a6ff;
+}
+
+#race-laps .current td {
+  opacity: 0.85;
+}
+
+#race-laps .good {
+  color: #7dff9a;
+}
+
+#race-laps .bad {
+  color: #ff8f8f;
+}
+
+/* コースを上から見た地図 */
+#minimap {
+  position: fixed;
+  right: 16px;
+  top: 16px;
+  width: 180px;
+  display: flex;
+  justify-content: flex-end;
+  pointer-events: none;
+}
+
+#minimap canvas {
+  border-radius: 10px;
+  background: rgba(0, 0, 0, 0.4);
+}
+
+#minimap.hidden {
+  display: none;
+}
+
+body.racing #net-status {
+  top: 200px;
+}
+
+body.touch #minimap {
+  top: calc(env(safe-area-inset-top) + 10px);
+  right: calc(env(safe-area-inset-right) + 10px);
+  width: 130px;
+}
+
+body.touch.racing #net-status {
+  top: calc(env(safe-area-inset-top) + 130px);
+}
+
+/* スマホでは、タイムアタック中の速度はタイムと重ならないよう下の中央に出す */
+body.touch.racing #hud {
+  top: auto;
+  bottom: calc(env(safe-area-inset-bottom) + 10px);
+}
+
 /* タイムアタック中は、お知らせをタイムの下に出す */
 body.racing #toast {
   top: calc(env(safe-area-inset-top) + 100px);
@@ -931,5 +1011,43 @@ body.racing #toast {
   }
   body.racing #toast {
     top: calc(env(safe-area-inset-top) + 80px);
+  }
+  #race {
+    padding: 4px 12px 6px;
+  }
+  #race-laps {
+    font-size: 11px;
+  }
+  #race-laps td:last-child {
+    font-size: 10px;
+  }
+  body.touch #minimap {
+    width: 110px;
+  }
+  body.touch.racing #net-status {
+    top: calc(env(safe-area-inset-top) + 110px);
+  }
+}
+
+/* 縦向きのスマホは横幅が狭いので、タイムは左上のボタンの下、地図は右上、速度は右下に出す */
+@media (orientation: portrait) {
+  body.touch #race {
+    left: calc(env(safe-area-inset-left) + 10px);
+    top: calc(env(safe-area-inset-top) + 64px);
+    transform: none;
+  }
+  body.touch.racing #hud {
+    left: auto;
+    right: calc(env(safe-area-inset-right) + 12px);
+    top: auto;
+    bottom: calc(env(safe-area-inset-bottom) + 160px);
+  }
+  body.touch #minimap {
+    top: calc(env(safe-area-inset-top) + 64px);
+  }
+  body.touch.racing #net-status {
+    left: auto;
+    right: calc(env(safe-area-inset-right) + 10px);
+    top: calc(env(safe-area-inset-top) + 200px);
   }
 }

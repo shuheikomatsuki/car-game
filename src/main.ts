@@ -27,6 +27,7 @@ import { NEUTRAL_INPUT, VEHICLE_PRESETS } from './sim/vehicle';
 import { AssistPanel, commandLabel } from './ui/assistPanel';
 import { Hud, hideLoading, showError } from './ui/hud';
 import { OnlinePanel } from './ui/onlinePanel';
+import { Minimap } from './ui/minimap';
 import { RaceHud } from './ui/raceHud';
 import { canRequestFullscreen, enterFullscreen, isFullscreen, isStandalone, needsHomeScreenForFullscreen } from './ui/fullscreen';
 import { TouchControls, prefersTouch } from './ui/touchControls';
@@ -157,6 +158,7 @@ async function main() {
   ghostMesh.root.visible = false;
   view.scene.add(ghostMesh.root);
   const raceMapIndex = MAPS.findIndex((m) => m.race);
+  const minimap = new Minimap(document.getElementById('minimap')!);
   const raceHud = new RaceHud({
     onRetry: () => race && startTimeAttack(),
     onQuit: () => stopTimeAttack(),
@@ -190,6 +192,7 @@ async function main() {
     best = loadRecord(level.def.name, vehicle().id);
     placeCar(course.gridSpot(6));
     raceHud.show(true);
+    minimap.setCourse(course);
     raceHud.hideResult();
     raceHud.setWarning({ wrongWay: false, offCourse: false });
     hud.setMode(false, 'タイムアタック');
@@ -200,6 +203,7 @@ async function main() {
     if (!race) return;
     race = null;
     raceHud.show(false);
+    minimap.setCourse(null);
     ghostMesh.root.visible = false;
     hud.setMode(false, '自分で運転');
     resetCar();
@@ -255,6 +259,7 @@ async function main() {
     if (on && race) {
       race = null;
       raceHud.show(false);
+      minimap.setCourse(null);
       ghostMesh.root.visible = false;
     }
     assist = on;
@@ -288,6 +293,7 @@ async function main() {
     if (race && !level.course) {
       race = null;
       raceHud.show(false);
+      minimap.setCourse(null);
       ghostMesh.root.visible = false;
       hud.setMode(false, '自分で運転');
       touch.refresh();
@@ -642,7 +648,20 @@ async function main() {
         const pose = best ? ghostPoseAt(best.ghost, Math.max(0, race.time)) : null;
         ghostMesh.root.visible = pose !== null;
         if (pose) ghostMesh.update({ x: pose.x, y: 0, z: pose.z, yaw: pose.yaw, forwardSpeed: 0, lateralSpeed: 0, steerAngle: 0, wheelSpin: 0 });
-        raceHud.update(race.lap, race.totalLaps, race.time, best?.total ?? null);
+        raceHud.update({
+          lap: race.lap,
+          totalLaps: race.totalLaps,
+          time: race.time,
+          best: best?.total ?? null,
+          laps: race.laps,
+          lapTime: race.lapTime,
+          refLaps: best?.laps,
+          finished: race.phase === 'finished',
+        });
+        minimap.draw([
+          ...(pose ? [{ x: pose.x, z: pose.z, color: '#7fd4ff' }] : []),
+          { x: s.x, z: s.z, yaw: s.yaw, color: '#ff5a4f', size: 5 },
+        ]);
       }
       character.update(frameDt, s.steerAngle);
       level.syncProps();
