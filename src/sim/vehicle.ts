@@ -66,22 +66,27 @@ export const DEFAULT_VEHICLE_PARAMS: Readonly<VehicleParams> = {
 };
 
 export interface VehiclePreset {
+  /** 変わらない id（ランキングの区別に使う）。表示名 label は変えてもよい */
   id: string;
   label: string;
+  /** メニューに出す短い説明 */
+  description: string;
   params: Readonly<VehicleParams>;
 }
 
 /** 選べる車（P キーで切り替え） */
 export const VEHICLE_PRESETS: readonly VehiclePreset[] = [
-  { id: 'standard', label: '普通車', params: DEFAULT_VEHICLE_PARAMS },
+  { id: 'standard', label: '普通車', description: '扱いやすいふつうの車', params: DEFAULT_VEHICLE_PARAMS },
   {
     id: 'kei',
     label: '軽自動車',
+    description: '遅いけれど小回りがきく',
     params: { ...DEFAULT_VEHICLE_PARAMS, maxForwardSpeed: 24, engineAccel: 7, brakeDecel: 14, wheelBase: 2.4, maxLateralAccel: 12 },
   },
   {
     id: 'sport',
     label: 'スポーツカー',
+    description: '速くて曲がる、くせのない車',
     params: {
       ...DEFAULT_VEHICLE_PARAMS,
       maxForwardSpeed: 55,
@@ -91,6 +96,72 @@ export const VEHICLE_PRESETS: readonly VehiclePreset[] = [
       steerRate: 2.6,
       maxLateralAccel: 18,
       lateralGrip: 10,
+    },
+  },
+  {
+    id: 'ae86',
+    label: 'AE86',
+    description: 'FR・軽い。直線は遅いがコーナーは速い',
+    params: {
+      ...DEFAULT_VEHICLE_PARAMS,
+      maxForwardSpeed: 47,
+      engineAccel: 13,
+      brakeDecel: 23,
+      dragCoef: 0.0011,
+      wheelBase: 2.4,
+      maxSteerAngle: 0.62,
+      steerRate: 2.9,
+      steerReturnRate: 3.8,
+      maxLateralAccel: 20,
+      lateralGrip: 9.5,
+    },
+  },
+  {
+    id: 'fd3s',
+    label: 'RX-7 (FD3S)',
+    description: 'FR・ロータリーターボ。速いがお尻が流れやすい',
+    params: {
+      ...DEFAULT_VEHICLE_PARAMS,
+      maxForwardSpeed: 58,
+      engineAccel: 17.5,
+      brakeDecel: 21,
+      dragCoef: 0.0008,
+      wheelBase: 2.43,
+      steerRate: 2.8,
+      maxLateralAccel: 17.5,
+      lateralGrip: 8,
+    },
+  },
+  {
+    id: 'evo',
+    label: 'ランエボ',
+    description: '4WD・ターボ。立ち上がりの加速とグリップが強い',
+    params: {
+      ...DEFAULT_VEHICLE_PARAMS,
+      maxForwardSpeed: 54,
+      engineAccel: 19.5,
+      brakeDecel: 22,
+      dragCoef: 0.0009,
+      wheelBase: 2.5,
+      steerRate: 2.5,
+      maxLateralAccel: 17.5,
+      lateralGrip: 11.5,
+    },
+  },
+  {
+    id: 'gtr',
+    label: 'GT-R (R32)',
+    description: '4WD・ツインターボ。最高速がいちばん高いが重い',
+    params: {
+      ...DEFAULT_VEHICLE_PARAMS,
+      maxForwardSpeed: 61,
+      engineAccel: 19,
+      brakeDecel: 20,
+      dragCoef: 0.0007,
+      wheelBase: 2.62,
+      steerRate: 2.3,
+      maxLateralAccel: 17,
+      lateralGrip: 11,
     },
   },
 ];

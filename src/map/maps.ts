@@ -155,4 +155,221 @@ export const DOWNHILL_MAP: MapDefinition = {
   elevation: PASS_ELEVATION,
 };
 
-export const MAPS: readonly MapDefinition[] = [TOWN_MAP, SCHOOL_MAP, CIRCUIT_MAP, TECHNICAL_MAP, HILLCLIMB_MAP, DOWNHILL_MAP];
+const OVER_LAYOUT = [
+  '....................T.......',
+  '............................',
+  '.T.......RRRRRR..RRRR.......',
+  '...T.....R....R..R..R..T...T',
+  '.....RRRRR....R..R..R......T',
+  '..T..R........RRRR..R.......',
+  '.T...R............RRR.......',
+  '.....RRRR.........R........T',
+  '........R..T......R.........',
+  '.T.T....R.........RRRRR.T...',
+  '......RRR.............R.....',
+  '......R..........T..RRR.....',
+  '.T....R.............R.......',
+  'T.RRRRR.............RRRRRR..',
+  '.......T...T................',
+  '.....TT......T....T.......T.',
+];
+const UTURN_LAYOUT = [
+  '....................',
+  '....................',
+  '...............RRR.T',
+  'T............T.R.R..',
+  '.........T..T..R.R..',
+  '......T....T...R.R.T',
+  '....T....T..RRRR.R..',
+  '......T.....R....R..',
+  '.T.....T....R.RRRR..',
+  '.........RRRR.R.....',
+  '.TT......R....R.....',
+  'T........R.RRRR.....',
+  '......RRRR.R...T....',
+  '......R....R..T.....',
+  '.T....R.RRRR........',
+  '..RRRRR.R...........',
+  '........R...T.......',
+  '...RRRRRR...TT......',
+  '....................',
+  '....................',
+];
+const HAIRPIN_LAYOUT = [
+  '.............',
+  '.............',
+  '......RRR....',
+  '..T...R......',
+  '......R...T..',
+  '...RRRR......',
+  '...R.........',
+  '...RRRRRRRR..',
+  'T.........R.T',
+  '....RRRRRRR..',
+  '....R........',
+  '.T..RRRRRR...',
+  '.........R...',
+  '..RRRRRRRR...',
+  '..R..........',
+  '..RRRRRRR....',
+  '........R...T',
+  '...RRRRRR....',
+  '...R.........',
+  '...RRRRRRRR..',
+  '..........R..',
+  '.T...RRRRRR..',
+  '.T...R.......',
+  '..RRRR....T..',
+  '.............',
+  '...T.........',
+];
+const STEEP_LAYOUT = [
+  '......T.T......',
+  '......T........',
+  'T...........R..',
+  '............R..',
+  '...RRRRRRR..R..',
+  '...R.....R..R..',
+  '...R.....RRRR..',
+  '...RRRRRR......',
+  '..T.....R......',
+  'TT....RRR..T..T',
+  '......R........',
+  '......R......T.',
+  '......RRRRR....',
+  '..........R....',
+  '..........R....',
+  '.....RRR..R....',
+  '.....R.R..R...T',
+  '.....R.RRRR....',
+  '.....R.........',
+  '..RRRR..T....T.',
+  'T..............',
+  '...............',
+];
+const LONG_LAYOUT = [
+  '........T......................',
+  'T...........T..................',
+  '.............RRRRRRRRR........T',
+  '.............R.......R.........',
+  '.......T.....R.....T.RRRR...TTT',
+  '........T....RRRRRR.....R.T.T..',
+  '..................R.....R......',
+  'T.....T...T.T.....RRRRR.R......',
+  '......................R.R..T...',
+  '...............T......R.RRR....',
+  '........T......T.RRRRRR...R.T..',
+  '........T........R........R....',
+  '...T...T.........R........R....',
+  '........RRRRRRR..RRRR.....R....',
+  '........R.....R.....R..RRRR....',
+  '.....RRRR.T...R..T..R..R.......',
+  '.T...R........RRR...R..R.......',
+  '.....R..........R.T.R..RRRRRR..',
+  '.....RRRRRR.....R...R.......R..',
+  '..........R..TT.RRRRR.TT.T..R..',
+  '..........R....T......T.....R..',
+  '..........R.................R..',
+  '.......RRRR....................',
+  '.......R.........T............T',
+  '.......R.......................',
+  '..RRRRRR.................T.....',
+  '.......................T.......',
+  '..T...T.......T.....T.....T.T..',
+];
+
+
+/** 上って峠を越え、反対側へ下る。頂上の前後で上りと下りが入れ替わる */
+export const PASS_OVER_MAP: MapDefinition = {
+  id: 'pass-over',
+  name: '峠（山越え）',
+  tileSize: 30,
+  roadWidth: 11,
+  layout: OVER_LAYOUT,
+  start: { col: 4, row: 13, heading: 'E' },
+  guardrails: true,
+  race: { laps: 1 },
+  elevation: { from: { col: 2, row: 13 }, rise: 110, profile: [0, 0.5, 1, 0.55, 0.1] },
+};
+
+/** 谷沿いに上り、頂上のヘアピンで折り返して隣の道を下る。ゴールはスタートのすぐそば */
+export const UTURN_MAP: MapDefinition = {
+  id: 'uturn',
+  name: '峠（Uターン）',
+  tileSize: 30,
+  roadWidth: 11,
+  layout: UTURN_LAYOUT,
+  start: { col: 4, row: 15, heading: 'E' },
+  guardrails: true,
+  race: { laps: 1 },
+  elevation: { from: { col: 2, row: 15 }, rise: 85, profile: [0, 0.55, 1, 0.55, 0] },
+};
+
+/** 斜面をつづら折りで上る。ヘアピンが十数個続く */
+export const HAIRPIN_MAP: MapDefinition = {
+  id: 'hairpin',
+  name: 'つづら折り（ヘアピン）',
+  tileSize: 22,
+  roadWidth: 10,
+  layout: HAIRPIN_LAYOUT,
+  start: { col: 4, row: 23, heading: 'E' },
+  guardrails: true,
+  race: { laps: 1 },
+  elevation: { from: { col: 2, row: 23 }, rise: 150 },
+};
+
+const STEEP_ELEVATION = { from: { col: 2, row: 19 }, rise: 230 };
+
+/** 急な坂を上る。パワーのない車は坂の途中で伸びなくなる */
+export const STEEP_UP_MAP: MapDefinition = {
+  id: 'steep-up',
+  name: '激坂（ヒルクライム）',
+  tileSize: 26,
+  roadWidth: 10,
+  layout: STEEP_LAYOUT,
+  start: { col: 4, row: 19, heading: 'E' },
+  guardrails: true,
+  race: { laps: 1 },
+  elevation: STEEP_ELEVATION,
+};
+
+/** 同じ激坂を下る。ブレーキを早めに踏まないとコーナーで止まりきれない */
+export const STEEP_DOWN_MAP: MapDefinition = {
+  id: 'steep-down',
+  name: '激坂（ダウンヒル）',
+  tileSize: 26,
+  roadWidth: 10,
+  layout: STEEP_LAYOUT,
+  start: { col: 12, row: 4, heading: 'S' },
+  guardrails: true,
+  race: { laps: 1 },
+  elevation: STEEP_ELEVATION,
+};
+
+/** 上りと下りを何度もくり返す、全長 3km ほどの長いコース */
+export const LONG_MAP: MapDefinition = {
+  id: 'long',
+  name: '峠（ロング）',
+  tileSize: 30,
+  roadWidth: 11,
+  layout: LONG_LAYOUT,
+  start: { col: 4, row: 25, heading: 'E' },
+  guardrails: true,
+  race: { laps: 1 },
+  elevation: { from: { col: 2, row: 25 }, rise: 125, profile: [0, 0.45, 0.3, 0.8, 0.6, 1, 0.5, 0.15] },
+};
+
+export const MAPS: readonly MapDefinition[] = [
+  TOWN_MAP,
+  SCHOOL_MAP,
+  CIRCUIT_MAP,
+  TECHNICAL_MAP,
+  HILLCLIMB_MAP,
+  DOWNHILL_MAP,
+  PASS_OVER_MAP,
+  UTURN_MAP,
+  HAIRPIN_MAP,
+  STEEP_UP_MAP,
+  STEEP_DOWN_MAP,
+  LONG_MAP,
+];

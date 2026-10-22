@@ -4,7 +4,7 @@ import { Car } from '../sim/car';
 import { createPhysicsWorld, loadRapier } from '../sim/physics';
 import { HILLCLIMB_MAP, CIRCUIT_MAP } from './maps';
 import { buildObstacles } from './obstacles';
-import { buildTerrain, elevationProfile } from './terrain';
+import { buildTerrain, elevationProfile, profileHeight } from './terrain';
 import { parseMap } from './tilemap';
 
 describe('terrain', () => {
@@ -74,5 +74,17 @@ describe('terrain', () => {
     const down = run(Math.PI);
     expect(up).toBeLessThan(flat - 0.2);
     expect(down).toBeGreaterThan(flat + 0.2);
+  });
+});
+
+describe('profileHeight', () => {
+  it('goes up and back down through the given points', () => {
+    const profile = [0, 1, 0.25];
+    expect(profileHeight(0, 100, profile)).toBeCloseTo(0);
+    expect(profileHeight(0.5, 100, profile)).toBeCloseTo(100);
+    expect(profileHeight(1, 100, profile)).toBeCloseTo(25);
+    expect(profileHeight(0.25, 100, profile)).toBeCloseTo(50);
+    // 点の上では坂がゆるむ
+    expect(profileHeight(0.51, 100, profile) - profileHeight(0.5, 100, profile)).toBeGreaterThan(-0.2);
   });
 });

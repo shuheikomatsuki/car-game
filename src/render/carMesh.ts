@@ -15,14 +15,39 @@ const STEERING_RATIO = 6;
 const BELT_Y = CAR_DIMENSIONS.wheelRadius + 0.475;
 /** 座面の高さ */
 export const SEAT_Y = BELT_Y + 0.11;
-const ROOF_Y = 1.42;
-/** 窓の形（側面から見た z, y）。後ろ下 → 前下 → 前上 → 後ろ上 */
-const WINDOW_PROFILE: [number, number][] = [
-  [-1.5, BELT_Y],
-  [0.95, BELT_Y],
-  [0.4, ROOF_Y],
-  [-1.15, ROOF_Y],
-];
+
+/** 車種ごとの見た目（当たり判定の大きさはどの車も同じで、形と色だけを変える） */
+export interface CarStyle {
+  /** 屋根の高さ [m] */
+  roof: number;
+  /** 窓の前後の位置（側面から見た z）。後ろ下・前下・前上・後ろ上 */
+  window: [rearLow: number, frontLow: number, frontHigh: number, rearHigh: number];
+  /** 後ろの羽（リアウイング） */
+  wing?: 'low' | 'high';
+  /** ツートンの下半分の色（パンダトレノなど） */
+  lowerColor?: number;
+  /** 丸いテールランプ */
+  roundTail?: boolean;
+  /** 一人で走るときのボディの色 */
+  color: number;
+}
+
+const DEFAULT_STYLE: CarStyle = { roof: 1.42, window: [-1.5, 0.95, 0.4, -1.15], color: 0xd94141 };
+
+/** 車の id ごとの見た目 */
+const CAR_STYLES: Record<string, CarStyle> = {
+  standard: DEFAULT_STYLE,
+  kei: { roof: 1.56, window: [-1.8, 0.95, 0.6, -1.72], color: 0x8fc7e8 },
+  sport: { roof: 1.34, window: [-1.6, 1.0, 0.2, -0.8], wing: 'low', color: 0xd94141 },
+  ae86: { roof: 1.4, window: [-1.95, 0.95, 0.35, -1.05], lowerColor: 0x1d1d1f, color: 0xf2f2ee },
+  fd3s: { roof: 1.34, window: [-1.8, 1.05, 0.15, -0.7], wing: 'low', color: 0xf2c318 },
+  evo: { roof: 1.43, window: [-1.45, 0.95, 0.4, -1.1], wing: 'high', color: 0xe9ecef },
+  gtr: { roof: 1.37, window: [-1.6, 0.98, 0.3, -0.9], wing: 'low', roundTail: true, color: 0x2a2c30 },
+};
+
+export function carStyle(carId: string): CarStyle {
+  return CAR_STYLES[carId] ?? DEFAULT_STYLE;
+}
 
 /** 2点を結ぶ細い棒（ピラーなど） */
 function strut(
@@ -48,8 +73,21 @@ export class CarMesh {
   private readonly steeringWheel = new THREE.Group();
   private readonly paint: THREE.MeshLambertMaterial;
 
-  constructor(color = 0xd94141) {
-    const paint = new THREE.MeshLambertMaterial({ color });
+  private readonly style: CarStyle;
+  private readonly roofY: number;
+  private readonly windowProfile: [number, number][];
+
+  constructor(color?: number, style: CarStyle = DEFAULT_STYLE) {
+    this.style = style;
+    this.roofY = style.roof;
+    const [rearLow, frontLow, frontHigh, rearHigh] = style.window;
+    this.windowProfile = [
+      [rearLow, BELT_Y],
+      [frontLow, BELT_Y],
+      [frontHigh, style.roof],
+      [rearHigh, style.roof],
+    ];
+    const paint = new THREE.MeshLambertMaterial({ color: color ?? style.color });
     this.paint = paint;
     const dark = new THREE.MeshLambertMaterial({ color: 0x1d1d1f });
     const trim = new THREE.MeshLambertMaterial({ color: 0x2b2d31 });
@@ -72,21 +110,54 @@ export class CarMesh {
       this.root.add(bumper);
     }
 
+    const { lowerColor, roundTail, wing } = this.style;
+    if (lowerColor !== undefined) {
+      // ツートン: ボディの下半分を別の色にする
+      const band = new THREE.Mesh(new THREE.BoxGeometry(width + 0.02, 0.26, length + 0.02), new THREE.MeshLambertMaterial({ color: lowerColor }));
+      band.position.y = wheelRadius + 0.06;
+      this.root.add(band);
+    }
+
     const lightGeo = new THREE.BoxGeometry(0.4, 0.14, 0.05);
+    const roundGeo = new THREE.CylinderGeometry(0.1, 0.1, 0.05, 16).rotateX(Math.PI / 2);
     const headMat = new THREE.MeshBasicMaterial({ color: 0xfff6d5 });
     const tailMat = new THREE.MeshBasicMaterial({ color: 0xc81e1e });
     for (const s of [-1, 1]) {
       const head = new THREE.Mesh(lightGeo, headMat);
       head.position.set(s * (width / 2 - 0.3), wheelRadius + 0.3, length / 2 + 0.01);
       this.root.add(head);
-      const tail = new THREE.Mesh(lightGeo, tailMat);
-      tail.position.set(s * (width / 2 - 0.3), wheelRadius + 0.3, -length / 2 - 0.01);
-      this.root.add(tail);
+      if (roundTail) {
+        // 丸いテールランプを左右に2つずつ
+        for (const dx of [0.22, 0.48]) {
+          const tail = new THREE.Mesh(roundGeo, tailMat);
+          tail.position.set(s * (width / 2 - dx), wheelRadius + 0.3, -length / 2 - 0.01);
+          this.root.add(tail);
+        }
+      } else {
+        const tail = new THREE.Mesh(lightGeo, tailMat);
+        tail.position.set(s * (width / 2 - 0.3), wheelRadius + 0.3, -length / 2 - 0.01);
+        this.root.add(tail);
+      }
 
       // ドアミラー
       const mirror = new THREE.Mesh(new THREE.BoxGeometry(0.2, 0.12, 0.08), paint);
       mirror.position.set(s * (width / 2 + 0.08), BELT_Y + 0.12, 0.75);
       this.root.add(mirror);
+    }
+
+    if (wing) {
+      // リアウイング: 2本の支柱の上に板
+      const h = wing === 'high' ? 0.32 : 0.14;
+      const z = -length / 2 + 0.22;
+      const blade = new THREE.Mesh(new THREE.BoxGeometry(width - 0.1, 0.04, 0.3), paint);
+      blade.position.set(0, BELT_Y + h, z);
+      blade.castShadow = true;
+      this.root.add(blade);
+      for (const s of [-1, 1]) {
+        const post = new THREE.Mesh(new THREE.BoxGeometry(0.05, h, 0.12), dark);
+        post.position.set(s * (width / 2 - 0.35), BELT_Y + h / 2, z);
+        this.root.add(post);
+      }
     }
   }
 
@@ -100,11 +171,12 @@ export class CarMesh {
       side: THREE.DoubleSide,
       shininess: 80,
     });
-    const [rearLow, frontLow, frontHigh, rearHigh] = WINDOW_PROFILE;
+    const [rearLow, frontLow, frontHigh, rearHigh] = this.windowProfile;
+    const roofY = this.roofY;
     const halfW = width / 2 - 0.06;
 
     // 側面の窓（台形）
-    const shape = new THREE.Shape(WINDOW_PROFILE.map(([z, y]) => new THREE.Vector2(z, y)));
+    const shape = new THREE.Shape(this.windowProfile.map(([z, y]) => new THREE.Vector2(z, y)));
     const sideGeo = new THREE.ShapeGeometry(shape).rotateY(-Math.PI / 2);
     for (const s of [-1, 1]) {
       const side = new THREE.Mesh(sideGeo, glass);
@@ -129,7 +201,7 @@ export class CarMesh {
       new THREE.BoxGeometry(width - 0.08, 0.06, frontHigh[0] - rearHigh[0] + 0.1),
       paint,
     );
-    roof.position.set(0, ROOF_Y + 0.03, (frontHigh[0] + rearHigh[0]) / 2);
+    roof.position.set(0, roofY + 0.03, (frontHigh[0] + rearHigh[0]) / 2);
     roof.castShadow = true;
     this.root.add(roof);
     // 天井の内張り（車内視点で屋根の裏が暗く見えないように）
@@ -138,13 +210,13 @@ export class CarMesh {
       // 下向きの面は地面の照り返し色（緑）を受けるので、照明の影響を受けない素材にする
       new THREE.MeshBasicMaterial({ color: 0x8f8a82 }),
     );
-    headliner.position.set(0, ROOF_Y - 0.01, (frontHigh[0] + rearHigh[0]) / 2);
+    headliner.position.set(0, roofY - 0.01, (frontHigh[0] + rearHigh[0]) / 2);
     this.root.add(headliner);
     for (const s of [-1, 1]) {
       const x = s * halfW;
       this.root.add(strut(paint, x, frontLow, frontHigh, 0.05));
       this.root.add(strut(paint, x, rearLow, rearHigh));
-      this.root.add(strut(trim, x, [-0.35, BELT_Y], [-0.35, ROOF_Y], 0.06));
+      this.root.add(strut(trim, x, [-0.35, BELT_Y], [-0.35, roofY], 0.06));
     }
   }
 

@@ -40,6 +40,19 @@ export function elevationProfile(t: number, rise: number): number {
   return rise * (t - (k * Math.sin(w * t)) / w);
 }
 
+/**
+ * 道路に沿った高さの形を、等間隔の点の高さ（rise に対する割合）で指定したとき。
+ * 点の間はなめらかにつなぐ（点の上で坂がゆるみ、点と点の中ほどが一番急になる）。
+ */
+export function profileHeight(t: number, rise: number, profile: readonly number[]): number {
+  if (profile.length < 2) return rise * (profile[0] ?? 0);
+  const x = Math.min(1, Math.max(0, t)) * (profile.length - 1);
+  const i = Math.min(profile.length - 2, Math.floor(x));
+  const u = x - i;
+  const w = (1 - Math.cos(Math.PI * u)) / 2;
+  return rise * (profile[i] + (profile[i + 1] - profile[i]) * w);
+}
+
 const smoothstep = (x: number) => {
   const t = Math.min(1, Math.max(0, x));
   return t * t * (3 - 2 * t);
@@ -53,7 +66,8 @@ export function buildTerrain(map: ParsedMap): Terrain | null {
     throw new Error('The elevation must start from a dead end of the road');
   }
   const { points, length } = roadCenterline(map, from, from.connections[0], GRID_STEP);
-  const heights = points.map((p) => elevationProfile(p.s / length, spec.rise));
+  const profile = spec.profile;
+  const heights = points.map((p) => (profile ? profileHeight(p.s / length, spec.rise, profile) : elevationProfile(p.s / length, spec.rise)));
 
   const { tileSize, roadWidth } = map.def;
   const half = tileSize / 2;

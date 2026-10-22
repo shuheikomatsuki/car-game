@@ -77,8 +77,11 @@ export interface MapDefinition {
    * 行き止まりで終わる一本道のコース（周回数は 1）にする
    */
   race?: { laps: number };
-  /** 高低差。道路の行き止まり from から、道路に沿って反対の端まで rise [m] 上る */
-  elevation?: { from: { col: number; row: number }; rise: number };
+  /**
+   * 高低差。道路の行き止まり from から、道路に沿って反対の端まで rise [m] 上る。
+   * profile を書くと、上ってから下るなどの形にできる（from から反対の端までの等間隔の点の高さ。rise に対する割合）
+   */
+  elevation?: { from: { col: number; row: number }; rise: number; profile?: readonly number[] };
 }
 
 export interface ParsedMap {

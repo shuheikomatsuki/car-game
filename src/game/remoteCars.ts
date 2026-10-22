@@ -2,7 +2,7 @@ import type RAPIER from '@dimforge/rapier3d-compat';
 import * as THREE from 'three';
 import { RemoteTrack } from '../net/interpolation';
 import type { CarState, PlayerInfo } from '../net/protocol';
-import { CarMesh } from '../render/carMesh';
+import { CarMesh, carStyle } from '../render/carMesh';
 import { CAR_DIMENSIONS, type CarSnapshot } from '../sim/car';
 import type { Level } from './level';
 
@@ -76,7 +76,7 @@ export class RemoteCars {
 
   add(info: PlayerInfo): void {
     this.remove(info.id);
-    const mesh = new CarMesh(PLAYER_COLORS[info.color % PLAYER_COLORS.length]);
+    const mesh = new CarMesh(PLAYER_COLORS[info.color % PLAYER_COLORS.length], carStyle(info.car));
     const label = createLabel(info.name);
     mesh.root.add(label);
     mesh.root.visible = false;
@@ -86,7 +86,17 @@ export class RemoteCars {
 
   update(info: PlayerInfo): void {
     const p = this.players.get(info.id);
-    if (p) p.info = info;
+    if (!p) return;
+    if (info.car !== p.info.car) {
+      // 車を替えたら、その車の形の車体に作り直す
+      const mesh = new CarMesh(PLAYER_COLORS[info.color % PLAYER_COLORS.length], carStyle(info.car));
+      mesh.root.add(p.label);
+      mesh.root.visible = p.mesh.root.visible;
+      p.mesh.dispose();
+      this.scene.add(mesh.root);
+      p.mesh = mesh;
+    }
+    p.info = info;
   }
 
   remove(id: number): void {
