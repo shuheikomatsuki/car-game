@@ -1,5 +1,5 @@
 import { beforeAll, describe, expect, it } from 'vitest';
-import { CIRCUIT_MAP, DOWNHILL_MAP, HILLCLIMB_MAP, TECHNICAL_MAP } from '../map/maps';
+import { CIRCUIT_MAP, HAIRPIN_MAP, MAPS, STEEP_DOWN_MAP, TECHNICAL_MAP } from '../map/maps';
 import { buildObstacles } from '../map/obstacles';
 import { buildTerrain } from '../map/terrain';
 import { type MapDefinition, parseMap } from '../map/tilemap';
@@ -79,7 +79,7 @@ describe('racing line', () => {
 });
 
 describe('NPC race', () => {
-  it.each([CIRCUIT_MAP, TECHNICAL_MAP, HILLCLIMB_MAP, DOWNHILL_MAP].map((m) => [m.name, m] as const))(
+  it.each(MAPS.filter((m) => m.race).map((m) => [m.name, m] as const))(
     'every level finishes %s without leaving the road',
     (_, def) => {
       const { racers } = race(def, [...NPC_LEVELS]);
@@ -105,5 +105,14 @@ describe('NPC race', () => {
     const { racers } = race(CIRCUIT_MAP, [NPC_LEVELS[3]], sport);
     console.log('sport pro', racers[0].timer.laps[0].toFixed(2), 'off', racers[0].maxOffset.toFixed(1));
     expect(racers[0].timer.phase).toBe('finished');
+  }, 60000);
+
+  it.each(VEHICLE_PRESETS.map((v) => [v.label, v] as const))('drives %s down the hairpins and the steep pass', (_, v) => {
+    for (const def of [HAIRPIN_MAP, STEEP_DOWN_MAP]) {
+      const { racers } = race(def, [NPC_LEVELS[3]], v.params);
+      console.log(v.label, def.name, racers[0].timer.laps[0]?.toFixed(2), 'off', racers[0].maxOffset.toFixed(1));
+      expect(racers[0].timer.phase).toBe('finished');
+      expect(racers[0].maxOffset).toBeLessThan(def.roadWidth / 2 + 3);
+    }
   }, 60000);
 });

@@ -16,7 +16,7 @@ import { type RaceRecord, loadRecord, mergeRecord, saveRecord } from './race/rec
 import { TimeAttack, formatTime } from './race/timeAttack';
 import { isRoomCode, normalizeRoomCode } from './net/protocol';
 import { CameraRig } from './render/camera';
-import { CarMesh } from './render/carMesh';
+import { CarMesh, carStyle } from './render/carMesh';
 import { createGhostMesh } from './render/raceMesh';
 import { GameScene } from './render/scene';
 import type { CarSnapshot } from './sim/car';
@@ -58,8 +58,6 @@ async function main() {
   const serverUrl: string = params.get('server') ?? import.meta.env.VITE_SERVER_URL ?? '';
 
   const view = new GameScene(document.getElementById('app')!);
-  const carMesh = new CarMesh();
-  view.scene.add(carMesh.root);
   const cameraRig = new CameraRig(window.innerWidth / window.innerHeight);
   const hud = new Hud();
   const sound = new SoundSystem();
@@ -71,6 +69,16 @@ async function main() {
   // ?car=sport のように開始時の車を指定できる
   let carIndex = Math.max(0, VEHICLE_PRESETS.findIndex((v) => v.id === params.get('car')));
   const vehicle = () => VEHICLE_PRESETS[carIndex];
+  /** オンラインの部屋で割り当てられた色（一人のときは車ごとの色） */
+  let assignedColor: number | null = null;
+  let carMesh = new CarMesh(undefined, carStyle(vehicle().id));
+  view.scene.add(carMesh.root);
+  /** 車を替えたら、その車の形の車体に作り直す */
+  const rebuildCarMesh = () => {
+    carMesh.dispose();
+    carMesh = new CarMesh(assignedColor ?? undefined, carStyle(vehicle().id));
+    view.scene.add(carMesh.root);
+  };
   let level = new Level(rapier, MAPS[mapIndex]);
   level.car.params = { ...vehicle().params };
   view.scene.add(level.group);
@@ -319,6 +327,7 @@ async function main() {
   const selectCar = (index: number) => {
     carIndex = index;
     level.car.params = { ...vehicle().params };
+    rebuildCarMesh();
     // ランキングの人のゴーストは、同じ車のときだけ一緒に走る
     setRival(null);
     hud.setCarName(vehicle().label);
@@ -422,7 +431,8 @@ async function main() {
     onStatus: (status, detail) => {
       if (status === 'offline' || status === 'error') {
         remoteCars.clear();
-        carMesh.setColor(PLAYER_COLORS[0]);
+        assignedColor = null;
+        carMesh.setColor(carStyle(vehicle().id).color);
       }
       if (status === 'reconnecting') remoteCars.clear();
       onlinePanel.setConnected(status === 'online' || status === 'connecting' || status === 'reconnecting');
@@ -443,7 +453,8 @@ async function main() {
         case 'welcome':
           remoteCars.clear();
           for (const p of m.players) remoteCars.add(p);
-          carMesh.setColor(PLAYER_COLORS[m.color % PLAYER_COLORS.length]);
+          assignedColor = PLAYER_COLORS[m.color % PLAYER_COLORS.length];
+          carMesh.setColor(assignedColor);
           if (m.map !== mapIndex && m.map >= 0 && m.map < MAPS.length) loadMap(m.map, `部屋のマップ「${MAPS[m.map].name}」に移動しました`);
           hud.toast(`部屋 ${roomCode} に参加しました`);
           onlinePanel.close();
@@ -574,6 +585,7 @@ async function main() {
       {
         title: '車',
         choices: () => VEHICLE_PRESETS.map((v) => ({ id: v.id, label: v.label, note: `最高 ${Math.round(v.params.maxForwardSpeed * 3.6)}km/h` })),
+        detail: () => vehicle().description,
         selected: () => vehicle().id,
         select: (id) => {
           const index = VEHICLE_PRESETS.findIndex((v) => v.id === id);
