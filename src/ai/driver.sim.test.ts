@@ -84,6 +84,11 @@ function createSim(def: MapDefinition, personality: Personality = EASY, seed = 1
   };
 }
 
+const TOWN_MAP_NO_CONES: MapDefinition = {
+  ...TOWN_MAP,
+  layout: TOWN_MAP.layout.map((row) => row.replace(/c/g, 'R')),
+};
+
 /** コーンを取り除いたコース（周回テスト用） */
 const SCHOOL_NO_CONES: MapDefinition = {
   ...SCHOOL_MAP,
@@ -98,17 +103,19 @@ describe('CharacterDriver on the physics world', () => {
     expect(sim.driver.state).toBe('parked');
   });
 
-  it('laps the driving school course without hitting anything, asking for directions at T-junctions', () => {
+  it('laps the driving school course without hitting anything, choosing a way at T-junctions by itself or as told', () => {
     const sim = createSim(SCHOOL_NO_CONES);
     sim.say('start');
-    let asks = 0;
+    let autoTurns = 0;
     sim.run(150, (e) => {
-      if (e.type === 'askDirection') {
-        asks++;
-        sim.say(asks % 2 ? 'turnLeft' : 'turnRight');
+      if (e.type === 'autoTurn') {
+        autoTurns++;
+        // 自分で決めた方向を、ときどき反対に言い直す
+        if (autoTurns % 2 === 0) sim.say(e.turn === 'left' ? 'turnRight' : 'turnLeft');
       }
     });
-    expect(asks).toBeGreaterThan(0);
+    expect(autoTurns).toBeGreaterThan(0);
+    expect(sim.events.some((e) => e.type === 'stopped')).toBe(false);
     expect(sim.events.some((e) => e.type === 'turning')).toBe(true);
     expect(sim.events.filter((e) => e.type === 'collision')).toEqual([]);
     expect(sim.maxImpact).toBeLessThan(2.5);
@@ -123,7 +130,7 @@ describe('CharacterDriver on the physics world', () => {
       const sim = createSim(SCHOOL_NO_CONES, personality, seed);
       sim.say('start');
       sim.run(120, (e) => {
-        if (e.type === 'askDirection') sim.say('turnRight');
+        if (e.type === 'autoTurn') sim.say('turnRight');
         // 急ブレーキや衝突で止まったら、また発進させる
         if (e.type === 'stopped') sim.say('start');
       });
@@ -141,13 +148,13 @@ describe('CharacterDriver on the physics world', () => {
     let top = 0;
     for (let t = 0; t < 120; t++) {
       sim.run(1, (e) => {
-        if (e.type === 'askDirection') sim.say('turnLeft');
+        if (e.type === 'autoTurn' && t % 3 === 0) sim.say('turnRight');
       });
       top = Math.max(top, sim.car.snapshot().forwardSpeed * 3.6);
     }
-    expect(sim.driver.speedKmh).toBe(60);
+    expect(sim.driver.speedKmh).toBe(100);
     // 直線では実際に普通の巡航（40km/h）より速く走る
-    expect(top).toBeGreaterThan(45);
+    expect(top).toBeGreaterThan(60);
     expect(sim.maxImpact).toBeLessThan(2.5);
     expect(sim.offRoadSteps).toBe(0);
     expect(sim.distance).toBeGreaterThan(700);
@@ -179,6 +186,57 @@ describe('CharacterDriver on the physics world', () => {
     sim.run(2);
     expect(sim.driver.state).toBe('parked');
     expect(sim.events.some((e) => e.type === 'stopped')).toBe(true);
+  });
+
+  it('turns at the junction just ahead when told in time, even after deciding to go straight', () => {
+    // (2,4) から東へ。(5,4) の交差点（入口 x=90）の 20m ほど手前で「右」と言う
+    const sim2 = createSim(TOWN_MAP_NO_CONES);
+    sim2.say('start');
+    let told = false;
+    let turned = false;
+    for (let i = 0; i < 60 * 30 && !turned; i++) {
+      sim2.run(DT);
+      if (!told && sim2.car.snapshot().x > 70) {
+        sim2.say('turnRight');
+        told = true;
+      }
+      if (sim2.events.some((e) => e.type === 'turning' && e.turn === 'right')) turned = true;
+    }
+    expect(turned).toBe(true);
+    // 右（南）へ曲がって (5,5) 側へ進む
+    sim2.run(5);
+    expect(sim2.car.snapshot().z).toBeGreaterThan(92);
+    expect(sim2.maxImpact).toBeLessThan(2.5);
+    expect(sim2.offRoadSteps).toBe(0);
+  });
+
+  it('makes a U-turn when told and drives back the other way', () => {
+    const sim = createSim(TOWN_MAP_NO_CONES);
+    sim.say('start');
+    sim.run(4);
+    sim.say('uturn');
+    // 速度を落とせる距離の先のタイルでUターンする
+    let uturnX = 0;
+    sim.run(17, (e) => {
+      if (e.type === 'uturning') uturnX = sim.car.snapshot().x;
+    });
+    expect(uturnX).toBeGreaterThan(0);
+    const s = sim.car.snapshot();
+    // 西向き（yaw ≈ -90°）で、Uターンを始めた地点より西へ戻っている
+    expect(Math.sin(s.yaw)).toBeLessThan(-0.8);
+    expect(s.x).toBeLessThan(uturnX - 10);
+    expect(sim.maxImpact).toBeLessThan(2.5);
+    expect(sim.offRoadSteps).toBe(0);
+  });
+
+  it('never turns on its own at a junction where it can go straight with the "normal" personality', () => {
+    const normal = PERSONALITIES.find((p) => p.id === 'normal')!;
+    for (const seed of [1, 2, 3, 4]) {
+      const sim = createSim(SCHOOL_NO_CONES, normal, seed);
+      sim.say('start');
+      sim.run(60);
+      expect(sim.events.some((e) => e.type === 'wrongTurn' || e.type === 'suddenBrake'), `seed ${seed}`).toBe(false);
+    }
   });
 
   it('can mishear left and right, and says what it heard', () => {

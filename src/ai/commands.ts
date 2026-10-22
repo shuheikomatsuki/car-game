@@ -11,7 +11,8 @@ export type Command =
   | 'turnRight'
   | 'straight'
   | 'correctLeft'
-  | 'correctRight';
+  | 'correctRight'
+  | 'uturn';
 
 /** 即座に反応すべき緊急の指示（音声認識の途中結果でも実行する） */
 export function isEmergency(c: Command): boolean {
@@ -36,6 +37,7 @@ export const COMMAND_BUTTONS: readonly CommandInfo[] = [
   { command: 'danger', label: '危ない！', key: '8' },
   { command: 'correctLeft', label: 'そこじゃなくて次を左', key: '9' },
   { command: 'correctRight', label: 'そこじゃなくて次を右', key: '0' },
+  { command: 'uturn', label: 'Uターン', key: 'U' },
 ];
 
 /** 句読点・空白・長音を除き、カタカナをひらがなにそろえる（パターンもこの形で書く） */
@@ -53,6 +55,7 @@ const RIGHT = /(右|みぎ)/;
 const RULES: { command: Command | ((t: string) => Command | null); pattern: RegExp }[] = [
   { command: 'danger', pattern: /(危な|あぶな|あぶね|危険|きけん|ぶつかる)/ },
   { command: 'stop', pattern: /(止まって|とまって|止まれ|とまれ|止めて|とめて|すとっぷ|stop|停止|ていし|ぶれき)/ },
+  { command: 'uturn', pattern: /(uた|ｕた|ゆた|ゆうた|引き返|ひきかえ|戻って|もどって|逆に行|反対に行)/ },
   {
     command: (t) => (LEFT.test(t) ? 'correctLeft' : RIGHT.test(t) ? 'correctRight' : null),
     pattern: /(じゃなく|じゃない|ではなく|違う|ちがう|ちがくて|そこじゃ|ここじゃ)/,
@@ -69,7 +72,7 @@ const RULES: { command: Command | ((t: string) => Command | null); pattern: RegE
   },
   { command: 'straight', pattern: /(まっすぐ|真っ直ぐ|真っすぐ|直進|ちょくしん)/ },
   { command: 'slower', pattern: /(ゆっくり|ゆっくし|おそく|遅く|すぴどおと|すぴど落と|速度落と|落として|おとして|減速)/ },
-  { command: 'faster', pattern: /(すぴどあげ|すぴどあっぷ|すぴど上げ|速度上げ|上げて|あげて|速く|はやく|急いで|いそいで|加速)/ },
+  { command: 'faster', pattern: /(飛ばして|とばして|すぴどあげ|すぴどあっぷ|すぴど上げ|速度上げ|上げて|あげて|速く|はやく|急いで|いそいで|加速)/ },
   // 音声認識は「はっしん」を「発信」「発振」などの同音語で返すことがあるので、それらも受け付ける
   { command: 'start', pattern: /(発進|発信|発振|八進|はっしん|発車|はっしゃ|出発|しゅっぱつ|進んで|すすんで|行って|いって|行こう|いこう|動いて|うごいて|go|よし)/ },
 ];

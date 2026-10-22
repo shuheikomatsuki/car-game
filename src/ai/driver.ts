@@ -13,8 +13,10 @@ import { RoutePlanner, type Turn } from './navigation';
 import { type Personality, randomBetween } from './personality';
 
 /** 選べる巡航速度 [km/h] */
-export const SPEED_LEVELS_KMH = [12, 20, 30, 40, 50, 60];
-const DEFAULT_SPEED_LEVEL = 1;
+export const SPEED_LEVELS_KMH = [20, 30, 40, 50, 60, 80, 100];
+const DEFAULT_SPEED_LEVEL = 2;
+/** 曲がり始める速さの目安 [m/s]（指示された交差点に間に合うかの判断に使う） */
+const TURN_ENTRY_SPEED = 4;
 /** 計画上の減速度 [m/s^2]（実際のブレーキ性能より十分小さくして余裕を持たせる） */
 const PLAN_DECEL = 2.5;
 
@@ -22,8 +24,9 @@ export type DriverState = 'parked' | 'driving' | 'stopping' | 'panic';
 
 export type DriverEvent =
   | { type: 'ack'; command: Command; misheard?: boolean; speedKmh?: number }
-  | { type: 'askDirection' }
+  | { type: 'autoTurn'; turn: Turn }
   | { type: 'turning'; turn: Turn }
+  | { type: 'uturning' }
   | { type: 'wrongTurn' }
   | { type: 'tooLate' }
   | { type: 'obstacle' }
@@ -69,6 +72,8 @@ export class CharacterDriver {
   private pushThroughUntil = 0;
   private suddenBrakeUntil = 0;
   private lostReported = false;
+  /** 最後に見た車の速さ [m/s] */
+  private lastSpeed = 0;
   private readonly wobblePhase: number;
 
   constructor(
@@ -145,6 +150,7 @@ export class CharacterDriver {
     }
 
     const v = car.forwardSpeed;
+    this.lastSpeed = v;
     if (!this.localized) {
       this.localized = this.planner.localize(car.x, car.z, car.yaw);
       if (!this.localized) return this.lost(v);
@@ -195,7 +201,6 @@ export class CharacterDriver {
         if (this.obstacleAhead) this.pushThroughUntil = this.time + 3;
         this.stateValue = 'driving';
         ack();
-        if (this.planner.isWaitingForDirection) this.events.push({ type: 'askDirection' });
         break;
       case 'faster':
         this.speedLevel = Math.min(SPEED_LEVELS_KMH.length - 1, this.speedLevel + 1);
@@ -219,13 +224,21 @@ export class CharacterDriver {
         // 聞き間違えると逆の方向だと思い込む（返事で気づけるように、言い間違えたまま返事する）
         const misheard = this.rng() < this.personality.mishearChance;
         const heard = misheard ? MIRROR[command]! : command;
-        this.planner.setTurn(TURN_OF[heard]!);
+        this.planner.setTurn(TURN_OF[heard]!, this.turnReachDistance());
         this.events.push({ type: 'ack', command: heard, misheard });
         break;
       }
       case 'straight':
-        this.planner.setTurn('straight');
+        this.planner.setTurn('straight', this.turnReachDistance());
         ack();
+        break;
+      case 'uturn':
+        if (this.planner.uturn(this.turnReachDistance())) {
+          if (this.stateValue !== 'driving') this.stateValue = 'driving';
+          ack();
+        } else {
+          this.events.push({ type: 'lost' });
+        }
         break;
       case 'correctLeft':
       case 'correctRight': {
@@ -239,13 +252,22 @@ export class CharacterDriver {
 
   private handlePlannerEvents(): void {
     for (const e of this.planner.drainEvents()) {
-      if (e.type === 'askDirection') {
-        if (this.stateValue === 'driving') this.events.push({ type: 'askDirection' });
+      if (e.type === 'autoTurn') {
+        if (this.stateValue === 'driving') this.events.push({ type: 'autoTurn', turn: e.turn });
+      } else if (e.type === 'enterUturn') {
+        this.events.push({ type: 'uturning' });
       } else if (e.type === 'enterJunction') {
         if (e.mistaken) this.events.push({ type: 'wrongTurn' });
         else if (e.turn !== 'straight') this.events.push({ type: 'turning', turn: e.turn });
       }
     }
+  }
+
+  /** 今の速さから、曲がれる速さまで無理なく落とせる距離 [m]。これより先の交差点なら指示に間に合う */
+  private turnReachDistance(): number {
+    const v = Math.max(0, this.lastSpeed);
+    const brake = Math.max(0, v * v - TURN_ENTRY_SPEED * TURN_ENTRY_SPEED) / (2 * PLAN_DECEL);
+    return brake + 3;
   }
 
   private maybeSuddenBrake(dt: number, v: number): void {

@@ -4,6 +4,8 @@ export const TILT_FULL_LOCK = (35 * Math.PI) / 180;
 const TILT_DEADZONE = (3 * Math.PI) / 180;
 /** 重力が画面の面にこれ [m/s²] 未満しかかからない（ほぼ平らに置いた）ときは傾きを測らない */
 const MIN_GRAVITY_IN_PLANE = 3;
+/** 真ん中付近を鈍くする強さ（1 なら傾きに比例。大きいほど小さな傾きでは少ししか切らない） */
+const TILT_CURVE = 1.6;
 
 /**
  * 加速度センサー（重力込み）の x, y から、端末を画面に向かって時計回りに回した角度 [rad] を求める。
@@ -18,12 +20,13 @@ export function rollAngle(ax: number, ay: number): number | null {
 
 /**
  * 基準の角度（まっすぐ走るときの持ち方）からの傾きをハンドル入力（左が正、-1〜1）に変える。
- * 時計回り（右を下げる）に傾けると右に曲がる。
+ * 時計回り（右を下げる）に傾けると右に曲がる。小さな傾きは鈍く、TILT_FULL_LOCK で切りきる
+ * （切りきる角度を大きくすると、画面が縦向きに回ってしまうので）。
  */
 export function tiltSteer(angle: number, neutral: number): number {
   const diff = Math.atan2(Math.sin(angle - neutral), Math.cos(angle - neutral));
   const mag = Math.abs(diff);
   if (mag < TILT_DEADZONE) return 0;
-  const v = Math.min(1, (mag - TILT_DEADZONE) / (TILT_FULL_LOCK - TILT_DEADZONE));
+  const v = Math.min(1, (mag - TILT_DEADZONE) / (TILT_FULL_LOCK - TILT_DEADZONE)) ** TILT_CURVE;
   return -Math.sign(diff) * v;
 }

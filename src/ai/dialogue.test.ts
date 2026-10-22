@@ -4,10 +4,12 @@ import { Dialogue } from './dialogue';
 import { createRng } from './personality';
 
 const TRIGGERS = [
-  ...(['start', 'faster', 'slower', 'stop', 'danger', 'turnLeft', 'turnRight', 'straight', 'correctLeft', 'correctRight'] as const).map(
+  ...(['start', 'faster', 'slower', 'stop', 'danger', 'turnLeft', 'turnRight', 'straight', 'correctLeft', 'correctRight', 'uturn'] as const).map(
     (command) => ({ type: 'ack' as const, command }),
   ),
-  ...(['askDirection', 'wrongTurn', 'tooLate', 'obstacle', 'suddenBrake', 'stopped', 'collision', 'lost', 'greeting', 'idle', 'notUnderstood'] as const).map(
+  { type: 'autoTurn' as const, turn: 'left' as const },
+  { type: 'autoTurn' as const, turn: 'right' as const },
+  ...(['uturning', 'wrongTurn', 'tooLate', 'obstacle', 'suddenBrake', 'stopped', 'collision', 'lost', 'greeting', 'idle', 'notUnderstood'] as const).map(
     (type) => ({ type }),
   ),
 ];

@@ -25,8 +25,8 @@ type Table = { lines: string[]; mood: Mood; priority: number };
  * 「止まって」「ブレーキ」「右に」などの指示の言葉はなるべく使わない。
  */
 const ACK: Record<string, Table> = {
-  start: { lines: ['しゅっぱーつ！', 'じゃあ、行くね！', 'そーっと出るね…'], mood: 'happy', priority: 2 },
-  faster: { lines: ['ちょっとだけね…！', 'こ、怖くない？', 'がんばってみる！'], mood: 'nervous', priority: 2 },
+  start: { lines: ['しゅっぱーつ！', 'じゃあ、行くね！', 'オッケー、出るよ！'], mood: 'happy', priority: 2 },
+  faster: { lines: ['スピード上げるね！', 'いっくよー！', 'ぐんぐん行くよ！'], mood: 'happy', priority: 2 },
   slower: { lines: ['うん、そっとね', 'のんびり行こっか', 'このくらい？'], mood: 'neutral', priority: 2 },
   stop: { lines: ['は、はいっ！', '了解っ！', 'いま止めるね！'], mood: 'nervous', priority: 3 },
   danger: { lines: ['きゃっ！', 'わわっ！？', 'ひゃあっ！'], mood: 'panic', priority: 5 },
@@ -35,24 +35,26 @@ const ACK: Record<string, Table> = {
   straight: { lines: ['まっすぐね！', 'このまま行くね'], mood: 'neutral', priority: 2 },
   correctLeft: { lines: ['えっ、ここじゃないの！？', 'あ、その次ね！'], mood: 'nervous', priority: 3 },
   correctRight: { lines: ['えっ、ここじゃないの！？', 'あ、その次ね！'], mood: 'nervous', priority: 3 },
+  uturn: { lines: ['くるっと戻るね！', '引き返すね！'], mood: 'happy', priority: 2 },
 };
 
 const EVENTS: Record<string, Table> = {
-  askDirection: { lines: ['ねえ、どっちに曲がればいい？', 'ここ、どっち行けばいいの？', 'あれ、まっすぐ行けない…どっち？'], mood: 'nervous', priority: 3 },
-  turning: { lines: ['曲がるよ…！', 'ハンドル切るね…', 'よいしょ…っと'], mood: 'nervous', priority: 1 },
+  autoTurnLeft: { lines: ['この先まっすぐ行けないから、ひだりに行くね', '突き当たりはひだりに行くね'], mood: 'neutral', priority: 2 },
+  autoTurnRight: { lines: ['この先まっすぐ行けないから、みぎに行くね', '突き当たりはみぎに行くね'], mood: 'neutral', priority: 2 },
+  turning: { lines: ['曲がるよ！', 'ハンドル切るね', 'よいしょっと'], mood: 'happy', priority: 1 },
+  uturning: { lines: ['くるっとね…！', '大回りするよ〜'], mood: 'happy', priority: 1 },
   wrongTurn: { lines: ['あっ、間違えた…！', 'あれ？こっちじゃなかった…', 'ご、ごめん、逆に曲がっちゃった'], mood: 'sad', priority: 4 },
   tooLate: { lines: ['もう曲がっちゃった…！', 'えっ、もう遅いよぉ'], mood: 'sad', priority: 3 },
-  obstacle: { lines: ['前に何かあるよ…', 'ぶつかりそうで怖い…', 'これ以上進めないよ？'], mood: 'nervous', priority: 3 },
+  obstacle: { lines: ['前に何かあるよ', 'これ以上進めないよ？'], mood: 'nervous', priority: 3 },
   suddenBrake: { lines: ['わっ、なんか怖くて…', 'ご、ごめん、足が勝手に…'], mood: 'nervous', priority: 3 },
   stopped: { lines: ['ふぅ…', 'ちゃんとできた…！', 'セーフ…かな？'], mood: 'neutral', priority: 1 },
   collision: { lines: ['いたっ…ごめん！', 'ぶつけちゃった…', 'あわわ…どうしよう'], mood: 'sad', priority: 5 },
   lost: { lines: ['ここ、道じゃないよね…？', 'どこ走ってるんだろ…'], mood: 'nervous', priority: 3 },
   greeting: { lines: [`よろしくね！「発進して」って言ってくれたら出発するよ`], mood: 'happy', priority: 1 },
-  idle: { lines: ['運転ってむずかしいね', 'ちゃんと前見てるよ！', 'このへん、いい景色だね', '次はどっち行くの？'], mood: 'happy', priority: 0 },
+  idle: { lines: ['運転って楽しいね', 'ちゃんと前見てるよ！', 'このへん、いい景色だね', '行きたい方向があったら言ってね'], mood: 'happy', priority: 0 },
   notUnderstood: { lines: ['え？なんて？', 'ごめん、もう一回言って？'], mood: 'neutral', priority: 1 },
 };
 
-const MISHEARD_SUFFIX = ['…で合ってるよね？', ''];
 
 export class Dialogue {
   private lastIndex = new Map<string, number>();
@@ -67,14 +69,11 @@ export class Dialogue {
       key = `ack:${trigger.command}`;
       table = ACK[trigger.command];
     } else {
-      key = trigger.type;
-      table = EVENTS[trigger.type];
+      key = trigger.type === 'autoTurn' ? (trigger.turn === 'right' ? 'autoTurnRight' : 'autoTurnLeft') : trigger.type;
+      table = EVENTS[key];
     }
     if (!table) return null;
     let text = this.pick(key, table.lines);
-    if (trigger.type === 'ack' && trigger.misheard) {
-      text += MISHEARD_SUFFIX[Math.floor(this.rng() * MISHEARD_SUFFIX.length)];
-    }
     if (trigger.type === 'ack' && trigger.speedKmh !== undefined && trigger.command !== 'start') {
       text += `（${trigger.speedKmh}km/h）`;
     }

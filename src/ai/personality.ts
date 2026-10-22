@@ -21,14 +21,15 @@ export interface Personality {
 
 export const PERSONALITIES: readonly Personality[] = [
   {
+    // 指示どおりに走る。苦手さは反応の遅れと少しのふらつきだけ
     id: 'normal',
     label: 'ふつう',
-    reactionDelay: [0.5, 1.1],
-    emergencyDelay: [0.12, 0.25],
-    mishearChance: 0.12,
-    wrongTurnChance: 0.08,
-    suddenBrakePerMinute: 0.6,
-    steerWobble: 0.06,
+    reactionDelay: [0.4, 0.8],
+    emergencyDelay: [0.1, 0.2],
+    mishearChance: 0,
+    wrongTurnChance: 0,
+    suddenBrakePerMinute: 0,
+    steerWobble: 0.04,
   },
   {
     id: 'easy',
@@ -43,11 +44,12 @@ export const PERSONALITIES: readonly Personality[] = [
   {
     id: 'hard',
     label: 'にがて',
+    // 聞き間違い・曲がり間違い・急ブレーキが入る（ドタバタを楽しむ用）
     reactionDelay: [0.8, 1.6],
     emergencyDelay: [0.2, 0.35],
-    mishearChance: 0.25,
-    wrongTurnChance: 0.18,
-    suddenBrakePerMinute: 1.5,
+    mishearChance: 0.2,
+    wrongTurnChance: 0.12,
+    suddenBrakePerMinute: 1,
     steerWobble: 0.12,
   },
 ];
