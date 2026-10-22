@@ -40,6 +40,8 @@ export interface Tile {
   cones: boolean;
   /** 道路タイルのみ: 水の上に架かる橋 */
   bridge: boolean;
+  /** 道路タイルのみ: トンネルの中 */
+  tunnel: boolean;
 }
 
 export type SignType = 'stop' | 'speed30' | 'speed40';
@@ -68,7 +70,10 @@ export interface MapDefinition {
    * 凡例:
    *   . 草地   R 道路   c 道路＋コーン
    *   B 建物   T 木
-   *   ~ 水（川・海）   = 橋（水の上の道路）
+   *   ~ 水（川・海）   = 橋（水の上の道路）   # トンネル（山の中の道路）
+   *
+   * 高低差のあるマップの橋は谷に架かり、川（~）は谷の底を流れる。
+   * 高架のマップ（highway）で、まっすぐ 6 枚以上続く橋は吊り橋（主塔とケーブルのある橋）になる
    */
   layout: string[];
   start: { col: number; row: number; heading: Direction };
@@ -102,7 +107,7 @@ export interface ParsedMap {
   tileAt(col: number, row: number): Tile | undefined;
 }
 
-const KIND_BY_CHAR: Record<string, { kind: TileKind; cones?: boolean; bridge?: boolean }> = {
+const KIND_BY_CHAR: Record<string, { kind: TileKind; cones?: boolean; bridge?: boolean; tunnel?: boolean }> = {
   '.': { kind: 'grass' },
   R: { kind: 'road' },
   c: { kind: 'road', cones: true },
@@ -110,6 +115,7 @@ const KIND_BY_CHAR: Record<string, { kind: TileKind; cones?: boolean; bridge?: b
   T: { kind: 'tree' },
   '~': { kind: 'water' },
   '=': { kind: 'road', bridge: true },
+  '#': { kind: 'road', tunnel: true },
 };
 
 export function parseMap(def: MapDefinition): ParsedMap {
@@ -123,7 +129,7 @@ export function parseMap(def: MapDefinition): ParsedMap {
       const ch = def.layout[row][col] ?? '.';
       const entry = KIND_BY_CHAR[ch];
       if (!entry) throw new Error(`Unknown map char '${ch}' at (${col}, ${row})`);
-      line.push({ col, row, kind: entry.kind, connections: [], cones: entry.cones ?? false, bridge: entry.bridge ?? false });
+      line.push({ col, row, kind: entry.kind, connections: [], cones: entry.cones ?? false, bridge: entry.bridge ?? false, tunnel: entry.tunnel ?? false });
     }
     grid.push(line);
   }
