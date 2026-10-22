@@ -5,7 +5,8 @@ import { type ParsedMap, type SignType, DIR_OFFSET, DIR_YAW, roadShape, tileCent
  */
 
 export interface BoxObstacle {
-  kind: 'building' | 'wall' | 'guardrail';
+  /** barrier は橋の欄干・高架の壁（コンクリートの低い壁） */
+  kind: 'building' | 'wall' | 'guardrail' | 'barrier';
   /** 中心座標 */
   x: number;
   y: number;
@@ -58,6 +59,11 @@ const WALL_HEIGHT = 1.2;
 const WALL_THICKNESS = 1;
 const GUARDRAIL_SEGMENTS = 6;
 const GUARDRAIL_HEIGHT = 0.8;
+/** 橋の欄干・高架の壁の高さと厚さ [m] */
+export const BARRIER_HEIGHT = 1.1;
+const BARRIER_THICKNESS = 0.5;
+/** 高架の壁のカーブを区切る数 */
+const BARRIER_SEGMENTS = 8;
 
 export function buildObstacles(map: ParsedMap): MapObstacles {
   const { tileSize, roadWidth } = map.def;
@@ -71,12 +77,14 @@ export function buildObstacles(map: ParsedMap): MapObstacles {
   for (const tile of map.tiles) {
     const { x, z } = tileCenter(map, tile.col, tile.row);
     if (tile.kind === 'building') {
-      const height = 6 + Math.floor(tileHash(tile.col, tile.row) * 4) * 4;
+      // 高架の道路のマップでは、下の街から高架より高くそびえるビルにする
+      const depth = map.def.highway?.depth ?? 0;
+      const height = depth + (depth ? 4 + Math.floor(tileHash(tile.col, tile.row) * 6) * 5 : 6 + Math.floor(tileHash(tile.col, tile.row) * 4) * 4);
       const size = half - 2;
       boxes.push({
         kind: 'building',
         x,
-        y: height / 2,
+        y: height / 2 - depth,
         z,
         hx: size,
         hy: height / 2,
@@ -125,6 +133,37 @@ export function buildObstacles(map: ParsedMap): MapObstacles {
     }
   }
 
+  if (map.def.highway) {
+    // 高架: すべての道路の両側に壁
+    for (const tile of map.tiles) {
+      if (tile.kind === 'road') boxes.push(...roadsideBarriers(map, tile.col, tile.row, tile.connections));
+    }
+  } else {
+    for (const tile of map.tiles) {
+      if (tile.kind === 'road' && tile.bridge) boxes.push(...roadsideBarriers(map, tile.col, tile.row, tile.connections));
+    }
+    // 川岸: 水と陸の境目に柵（橋の上は欄干があるので、橋とのあいだには置かない）
+    for (const tile of map.tiles) {
+      if (tile.kind !== 'water') continue;
+      const { x, z } = tileCenter(map, tile.col, tile.row);
+      for (const { dc, dr } of Object.values(DIR_OFFSET)) {
+        const next = map.tileAt(tile.col + dc, tile.row + dr);
+        if (!next || next.kind === 'water' || next.bridge) continue;
+        boxes.push({
+          kind: 'guardrail',
+          x: x + dc * (half - 0.3),
+          y: GUARDRAIL_HEIGHT / 2,
+          z: z + dr * (half - 0.3),
+          hx: 0.15,
+          hy: GUARDRAIL_HEIGHT / 2,
+          hz: half,
+          yaw: dc !== 0 ? 0 : Math.PI / 2,
+          variant: 0,
+        });
+      }
+    }
+  }
+
   for (const sign of map.def.signs ?? []) {
     const { x, z } = tileCenter(map, sign.col, sign.row);
     const d = rw + 1.2;
@@ -155,6 +194,49 @@ export function buildObstacles(map: ParsedMap): MapObstacles {
   );
 
   return { boxes, trees, cones, signs };
+}
+
+/** 道路の両側の低いコンクリートの壁（橋の欄干・高架の壁）。直線は2枚、カーブは内側と外側の円弧に沿って短く区切る */
+function roadsideBarriers(map: ParsedMap, col: number, row: number, connections: string[]): BoxObstacle[] {
+  const { tileSize, roadWidth } = map.def;
+  const half = tileSize / 2;
+  const off = roadWidth / 2 + BARRIER_THICKNESS / 2 + 0.3;
+  const { x, z } = tileCenter(map, col, row);
+  const wall = (bx: number, bz: number, length: number, yaw: number): BoxObstacle => ({
+    kind: 'barrier',
+    x: bx,
+    y: BARRIER_HEIGHT / 2,
+    z: bz,
+    hx: BARRIER_THICKNESS / 2,
+    hy: BARRIER_HEIGHT / 2,
+    hz: length / 2,
+    yaw,
+    variant: 0,
+  });
+  const ns = connections.includes('N') && connections.includes('S');
+  const ew = connections.includes('E') && connections.includes('W');
+  if (ns || ew || connections.length !== 2) {
+    // 直線（行き止まりなども直線として扱う）
+    const alongX = ew || (!ns && (connections.includes('E') || connections.includes('W')));
+    return [-1, 1].map((s) => (alongX ? wall(x, z + s * off, tileSize, Math.PI / 2) : wall(x + s * off, z, tileSize, 0)));
+  }
+  const sx = connections.includes('E') ? 1 : -1;
+  const sz = connections.includes('S') ? 1 : -1;
+  const cx = x + sx * half;
+  const cz = z + sz * half;
+  const step = Math.PI / 2 / BARRIER_SEGMENTS;
+  const result: BoxObstacle[] = [];
+  for (const radius of [half - off, half + off]) {
+    // 隙間ができないよう、少し長めにする
+    const length = 2 * radius * Math.tan(step / 2) + BARRIER_THICKNESS;
+    for (let i = 0; i < BARRIER_SEGMENTS; i++) {
+      const phi = (i + 0.5) * step;
+      const tx = sx * Math.sin(phi);
+      const tz = -sz * Math.cos(phi);
+      result.push(wall(cx - sx * Math.cos(phi) * radius, cz - sz * Math.sin(phi) * radius, length, Math.atan2(tx, tz)));
+    }
+  }
+  return result;
 }
 
 /** カーブの外周に沿って、短い直線のガードレールを並べる */

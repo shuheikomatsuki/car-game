@@ -85,7 +85,8 @@
     </div>
     <div id="menu" class="hidden" role="dialog" aria-label="メニュー">
       <div class="dialog-panel">
-        <h2>メニュー</h2>
+        <h2 id="menu-title">メニュー</h2>
+        <ol id="menu-steps"></ol>
         <p id="menu-info" class="note"></p>
         <div id="menu-groups"></div>
         <div id="menu-actions"></div>
@@ -93,8 +94,10 @@
           アドレスバーを消して遊ぶには、Safari の共有ボタン（□に↑）から「ホーム画面に追加」を選び、追加したアイコンから開いてください。
         </p>
         <div class="dialog-buttons">
+          <button id="menu-back" class="hidden">戻る</button>
           <span class="spacer"></span>
-          <button id="menu-close" class="primary">閉じる</button>
+          <button id="menu-close">閉じる</button>
+          <button id="menu-next" class="primary hidden">次へ</button>
         </div>
       </div>
     </div>

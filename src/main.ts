@@ -15,6 +15,7 @@ import { LeaderboardClient, myEntryId, playerId, uploadedTotal } from './net/lea
 import { type GhostData, type GhostPose, GhostRecorder, ghostPoseAt } from './race/ghost';
 import { NPC_LEVELS } from './race/npcDriver';
 import { RIVALS, loadBeatenRivals, markRivalBeaten, rivalLevel } from './race/rivals';
+import { BREAKAWAY_DISTANCE, CHASE_START_GAP, type Runner, SuddenDeath } from './race/suddenDeath';
 import { type RaceRecord, loadRecord, mergeRecord, saveRecord } from './race/records';
 import { TimeAttack, formatTime } from './race/timeAttack';
 import { isRoomCode, normalizeRoomCode } from './net/protocol';
@@ -29,7 +30,7 @@ import { Hud, hideLoading, showError } from './ui/hud';
 import { OnlinePanel, loadPlayerName } from './ui/onlinePanel';
 import { ALL_CARS, RankingPanel } from './ui/rankingPanel';
 import { Minimap } from './ui/minimap';
-import { GameMenu } from './ui/menu';
+import { GameMenu, type MenuMode, type MenuScreen } from './ui/menu';
 import { RaceHud } from './ui/raceHud';
 import { canRequestFullscreen, enterFullscreen, isFullscreen, isStandalone, needsHomeScreenForFullscreen } from './ui/fullscreen';
 import { TouchControls, prefersTouch } from './ui/touchControls';
@@ -58,6 +59,17 @@ function lerpSnapshot(a: CarSnapshot, b: CarSnapshot, t: number): CarSnapshot {
 
 /** レースの種類（タイムアタック・NPC 対戦・ライバルとのバトル） */
 type RaceMode = 'timeAttack' | 'npc' | 'battle';
+/** ライバルとのバトルのルール: 横に並んでスタート・先行後追い（自分が先行から／後追いから） */
+type BattleRule = 'side' | 'leadFirst' | 'chaseFirst';
+
+const BATTLE_RULES: readonly { id: BattleRule; label: string; note: string }[] = [
+  { id: 'side', label: '横に並んでスタート', note: '先にゴールしたほうの勝ち' },
+  { id: 'leadFirst', label: '先行後追い（自分が先行）', note: 'サドンデス方式' },
+  { id: 'chaseFirst', label: '先行後追い（自分が後追い）', note: 'サドンデス方式' },
+];
+
+/** 引き分けのあと、次の1本を始めるまでの時間 [ms] */
+const NEXT_ROUND_DELAY = 3500;
 
 async function main() {
   const rapier = await loadRapier();
@@ -118,6 +130,11 @@ async function main() {
   /** ライバルとのバトルの相手（RIVALS の番号） */
   let battleIndex = 0;
   const battleRival = () => RIVALS[battleIndex];
+  /** バトルのルール */
+  let battleRule: BattleRule = 'side';
+  /** 先行後追いのバトルの進行（それ以外のレースでは null） */
+  let suddenDeath: SuddenDeath | null = null;
+  let nextRoundTimer: number | undefined;
   /** NPC 対戦の NPC たち */
   let npcField: NpcField | null = null;
   /** NPC の強さ（?npc=pro のように指定できる） */
@@ -177,15 +194,22 @@ async function main() {
   };
 
   const raceLabel = () =>
-    raceMode === 'npc' ? `NPC対戦（${NPC_LEVELS[npcLevelIndex].label}）` : raceMode === 'battle' ? `バトル（${battleRival().name}）` : 'タイムアタック';
+    raceMode === 'npc'
+      ? `NPC対戦（${NPC_LEVELS[npcLevelIndex].label}）`
+      : raceMode === 'battle'
+        ? `バトル（${battleRival().name}${battleRule === 'side' ? '' : '・先行後追い'}）`
+        : 'タイムアタック';
 
   /**
    * レース用のコースのスタートラインの手前に並び、カウントダウンから始める。
    * いまのマップがレース用でなければサーキットへ移動する。NPC 対戦では NPC が前に並び、自分は最後尾から。
    * ライバルとのバトルは、ライバルと横に並ぶ。toHome ならライバルの得意なコースへ移動する（他のコースでもバトルできる）
    */
-  function startRace(mode: RaceMode, toHome = false) {
+  function startRace(mode: RaceMode, toHome = false, nextRound = false) {
     raceMode = mode;
+    window.clearTimeout(nextRoundTimer);
+    // 先行後追いは、引き分けで次の1本へ進むときだけ続きから。それ以外は1本目から
+    suddenDeath = mode === 'battle' && battleRule !== 'side' ? (nextRound && suddenDeath ? suddenDeath : new SuddenDeath(battleRule === 'leadFirst')) : null;
     if (mode !== 'timeAttack') setRival(null);
     const target = mode === 'battle' && toHome ? MAPS.findIndex((m) => m.id === battleRival().course) : level.course ? mapIndex : raceMapIndex;
     if (target !== mapIndex) {
@@ -200,7 +224,8 @@ async function main() {
     npcField?.dispose();
     npcField = null;
     const course = level.course!;
-    const laps = level.def.race!.laps;
+    // 先行後追いは周回コースでも1周で1本
+    const laps = suddenDeath ? 1 : level.def.race!.laps;
     // アクセルを踏むまでカウントダウンを始めない（自分のタイミングでスタートする）
     race = new TimeAttack(course, laps, true);
     ghostRecorder = new GhostRecorder();
@@ -218,13 +243,22 @@ async function main() {
       const preset = VEHICLE_PRESETS.find((v) => v.id === r.car) ?? VEHICLE_PRESETS[0];
       const style = carStyle(preset.id);
       const entry = { name: r.name, color: style.color, level: rivalLevel(r), params: paramsForWeather(preset.params, env.weather), style, variation: 1 };
-      npcField = new NpcField(level, view.scene, [entry], laps, [course.gridSpot(6, side)]);
-      placeCar(course.gridSpot(6, -side));
+      if (suddenDeath) {
+        // 先行が前、後追いはその後ろに同じ列で並ぶ
+        const lead = course.gridSpot(6);
+        const chase = course.gridSpot(6 + CHASE_START_GAP);
+        npcField = new NpcField(level, view.scene, [entry], laps, [suddenDeath.playerLeads ? chase : lead]);
+        placeCar(suddenDeath.playerLeads ? lead : chase);
+      } else {
+        npcField = new NpcField(level, view.scene, [entry], laps, [course.gridSpot(6, side)]);
+        placeCar(course.gridSpot(6, -side));
+      }
     } else {
       placeCar(course.gridSpot(6));
     }
     raceHud.show(true);
-    raceHud.showReady(touch.isShown ? 'アクセルを押すとスタート' : 'アクセル（W / ↑）でスタート');
+    const go = touch.isShown ? 'アクセルを押すとスタート' : 'アクセル（W / ↑）でスタート';
+    raceHud.showReady(suddenDeath ? `${suddenDeath.round}本目・あなたが${suddenDeath.playerLeads ? '先行' : '後追い'}　${go}` : go);
     minimap.setCourse(course);
     raceHud.hideResult();
     raceHud.setWarning({ wrongWay: false, offCourse: false });
@@ -243,6 +277,8 @@ async function main() {
   /** レースの表示と NPC を片付ける（車の位置はそのまま） */
   function clearRace() {
     race = null;
+    suddenDeath = null;
+    window.clearTimeout(nextRoundTimer);
     npcField?.dispose();
     npcField = null;
     raceHud.show(false);
@@ -295,6 +331,8 @@ async function main() {
           break;
         }
         case 'finish': {
+          // 先行後追いの勝ち負けは judgeSuddenDeath で決める
+          if (suddenDeath) break;
           if (raceMode !== 'timeAttack') {
             const list = standings();
             if (raceMode === 'battle' && list[0]?.isPlayer) markRivalBeaten(battleRival().id);
@@ -330,6 +368,53 @@ async function main() {
           break;
       }
     }
+  };
+
+  /** 先行後追いの1本の走り（自分と、NPC のライバル） */
+  const runners = (): { player: Runner; rival: Runner } | null => {
+    const npc = npcField?.npcs[0];
+    if (!race || !npc) return null;
+    return {
+      player: { distance: race.distance(curr.x, curr.z), finishTime: race.phase === 'finished' ? race.time : null },
+      rival: { distance: npc.timer.distance(npc.curr.x, npc.curr.z), finishTime: npc.timer.phase === 'finished' ? npc.timer.time : null },
+    };
+  };
+
+  /** 先行後追いの判定。決着がついたら結果を出し、引き分けなら先行と後追いを入れ替えて次の1本へ */
+  const judgeSuddenDeath = () => {
+    const sd = suddenDeath;
+    const r = runners();
+    if (!sd || !r || race?.phase === 'ready' || race?.phase === 'countdown') return;
+    const outcome = sd.update(r.player, r.rival);
+    if (!outcome) return;
+    const name = battleRival().name;
+    const lead = sd.playerLeads ? 'あなた' : name;
+    const chase = sd.playerLeads ? name : 'あなた';
+    sound.beep(true);
+    raceHud.setWarning({ wrongWay: false, offCourse: false });
+    raceHud.showRankingButton(false);
+    if (outcome === 'draw') {
+      raceHud.showBattleResult(`${sd.round}本目は引き分け`, `${lead}（先行）が逃げ切れず、${chase}（後追い）も抜けませんでした。先行と後追いを入れ替えて、${sd.round + 1}本目へ…`);
+      nextRoundTimer = window.setTimeout(() => {
+        if (suddenDeath !== sd) return;
+        sd.nextRound();
+        startRace('battle', false, true);
+      }, NEXT_ROUND_DELAY);
+      return;
+    }
+    const why = outcome === 'leadWins' ? `${lead}（先行）が ${BREAKAWAY_DISTANCE}m 以上引き離した` : `${chase}（後追い）が抜いて先にゴールした`;
+    const won = sd.winner === 'player';
+    if (won) markRivalBeaten(battleRival().id);
+    raceHud.showBattleResult(won ? `勝利！ ${name} に勝った` : `敗北… ${name} の勝ち`, `${sd.round}本目で決着：${why}`);
+  };
+
+  /** 先行後追いの走行中の表示（何本目・先行か後追いか・差） */
+  const battleInfo = (): string | undefined => {
+    const sd = suddenDeath;
+    const r = runners();
+    if (!sd || !r) return undefined;
+    const gap = Math.max(0, Math.round(sd.gap(r.player, r.rival)));
+    return `${sd.round}本目・あなたが${sd.playerLeads ? '先行' : '後追い'}　差 ${gap}m（${BREAKAWAY_DISTANCE}m で先行の勝ち）`;
   };
 
   const loadMap = (index: number, message = `マップ: ${MAPS[index].name}`) => {
@@ -375,7 +460,7 @@ async function main() {
     net.updateJoin({ car: vehicle().id });
   };
   /** 時間帯・天気を変える。天気で車の性能が変わるので、レース中ならやり直す */
-  const setEnvironment = (time: TimeOfDay, weather: Weather) => {
+  const setEnvironment = (time: TimeOfDay, weather: Weather, restart = true) => {
     const weatherChanged = weather !== env.weather;
     env.time = time;
     env.weather = weather;
@@ -383,7 +468,7 @@ async function main() {
     view.setEnvironment(env);
     if (!weatherChanged) return;
     level.car.params = carParams();
-    if (race) startRace(raceMode);
+    if (race && restart) startRace(raceMode);
   };
   const cycleCar = () => {
     selectCar((carIndex + 1) % VEHICLE_PRESETS.length);
@@ -595,98 +680,200 @@ async function main() {
     () => menu.open(),
   );
 
-  // --- メニュー（スマホは ☰、パソコンは Esc）: 走り方・コース・車を一覧から選ぶ ---
-  const raceModeId = () => (race ? raceMode : 'free');
-  const menu = new GameMenu(
-    [
+  // --- メニュー（スマホは ☰、パソコンは Esc）: プレイモードを選び、コース・対戦相手・車などを順に選ぶ ---
+  /** メニューで選んでいる途中の内容（最後に「スタート」を押したときに反映する） */
+  const draft = {
+    map: level.def.id,
+    car: vehicle().id,
+    npc: NPC_LEVELS[npcLevelIndex].id,
+    rival: battleRival().id,
+    rule: battleRule as BattleRule,
+    time: env.time,
+    weather: env.weather,
+  };
+  const draftMap = () => MAPS.find((m) => m.id === draft.map) ?? MAPS[0];
+  const draftCar = () => VEHICLE_PRESETS.find((v) => v.id === draft.car) ?? VEHICLE_PRESETS[0];
+  const draftRival = () => RIVALS.find((r) => r.id === draft.rival) ?? RIVALS[0];
+  const draftNpc = () => NPC_LEVELS.find((l) => l.id === draft.npc) ?? NPC_LEVELS[0];
+  const carLabel = (id: string) => VEHICLE_PRESETS.find((v) => v.id === id)?.label ?? id;
+  const mapLabel = (id: string) => MAPS.find((m) => m.id === id)?.name ?? id;
+  const levelNote = (l: (typeof NPC_LEVELS)[number]) =>
+    `カーブの速さ ${Math.round(l.grip * 100)}%・ブレーキ ${Math.round(l.brake * 100)}%・ライン取り ${Math.round(l.line * 100)}%・最高速 ${Math.round(l.topSpeed * 100)}%`;
+  /** 選び始めるときに、下書きを今の状態にする（レースならレース用のコースから選ぶ） */
+  const beginDraft = (raceOnly: boolean) => {
+    draft.map = raceOnly && !level.def.race ? raceMaps[0].id : level.def.id;
+    draft.car = vehicle().id;
+    draft.npc = NPC_LEVELS[npcLevelIndex].id;
+    draft.rival = battleRival().id;
+    draft.rule = battleRule;
+    draft.time = env.time;
+    draft.weather = env.weather;
+  };
+  /** 選んだ内容を反映して、そのモードで始める */
+  const applyDraft = (mode: RaceMode | 'free') => {
+    setEnvironment(draft.time, draft.weather, false);
+    const car = VEHICLE_PRESETS.findIndex((v) => v.id === draft.car);
+    if (car >= 0 && car !== carIndex) selectCar(car);
+    npcLevelIndex = Math.max(0, NPC_LEVELS.findIndex((l) => l.id === draft.npc));
+    battleIndex = Math.max(0, RIVALS.findIndex((r) => r.id === draft.rival));
+    battleRule = draft.rule;
+    if (mode === 'free') stopRace();
+    const map = MAPS.findIndex((m) => m.id === draft.map);
+    if (map >= 0 && map !== mapIndex) {
+      loadMap(map);
+      // 同じ部屋の全員のマップも切り替える
+      net.send({ t: 'map', map: mapIndex });
+    }
+    if (mode !== 'free') startRace(mode);
+    else resetCar();
+  };
+
+  const courseScreen = (raceOnly: boolean, home?: string): MenuScreen => ({
+    title: 'コース',
+    groups: [
       {
-        title: '走り方',
-        choices: () => [
-          { id: 'free', label: '自由に走る' },
-          { id: 'timeAttack', label: 'タイムアタック' },
-          { id: 'npc', label: 'NPCと対戦' },
-          { id: 'battle', label: 'ライバルとバトル' },
-        ],
-        selected: raceModeId,
-        select: (id) => {
-          if (id === raceModeId()) return;
-          if (id === 'free') stopRace();
-          else startRace(id as RaceMode, true);
+        choices: () => {
+          const maps = MAPS.filter((m) => !raceOnly || m.race);
+          // ライバルの得意なコースを先頭に
+          if (home) maps.sort((a, b) => Number(b.id === home) - Number(a.id === home));
+          return maps.map((m) => ({
+            id: m.id,
+            label: `${m.id === home ? '★ ' : ''}${m.name}`,
+            note: m.id === home ? '得意なコース' : m.race ? (m.race.laps > 1 ? `周回 ${m.race.laps}周` : '一本道') : '自由に走る',
+          }));
         },
-        detail: () => (race ? 'スタートの位置で、アクセルを踏むとカウントダウンが始まります' : ''),
+        selected: () => draft.map,
+        select: (id) => (draft.map = id),
+        detail: () => (home ? '★ はライバルの得意なコース。先行後追いは周回コースでも1周で1本です' : ''),
       },
+    ],
+  });
+  const carScreen: MenuScreen = {
+    title: '自分の車',
+    groups: [
       {
-        title: 'ライバル（1対1・得意なコースで勝負）',
+        choices: () => VEHICLE_PRESETS.map((v) => ({ id: v.id, label: v.label, note: `最高 ${Math.round(v.params.maxForwardSpeed * 3.6)}km/h` })),
+        selected: () => draft.car,
+        select: (id) => (draft.car = id),
+        detail: () => draftCar().description,
+      },
+    ],
+  };
+  const npcScreen: MenuScreen = {
+    title: 'NPCの強さ',
+    groups: [
+      {
+        choices: () => NPC_LEVELS.map((l) => ({ id: l.id, label: l.label })),
+        selected: () => draft.npc,
+        select: (id) => (draft.npc = id),
+        detail: () => `${draftNpc().label}: ${levelNote(draftNpc())}`,
+      },
+    ],
+  };
+  const rivalScreen: MenuScreen = {
+    title: '対戦相手',
+    groups: [
+      {
         choices: () => {
           const beaten = loadBeatenRivals();
-          return RIVALS.map((r) => {
-            const car = VEHICLE_PRESETS.find((v) => v.id === r.car)?.label ?? r.car;
-            const course = MAPS.find((m) => m.id === r.course)?.name ?? r.course;
-            return { id: r.id, label: `${beaten.has(r.id) ? '✓ ' : ''}${r.name}`, note: `${car}・${course}` };
-          });
+          return RIVALS.map((r) => ({
+            id: r.id,
+            label: `${beaten.has(r.id) ? '✓ ' : ''}${r.name}`,
+            note: `${carLabel(r.car)}・${rivalLevel(r).label}`,
+          }));
         },
-        selected: () => battleRival().id,
+        selected: () => draft.rival,
         select: (id) => {
-          battleIndex = Math.max(0, RIVALS.findIndex((r) => r.id === id));
-          startRace('battle', true);
+          draft.rival = id;
+          // コースは、まずライバルの得意なコースにしておく（次の画面で変えられる）
+          draft.map = draftRival().course;
         },
-        visible: () => race !== null && raceMode === 'battle',
-        detail: () => `${battleRival().team}・強さ ${rivalLevel(battleRival()).label}。自分の車は下の「車」で選べます（✓ は勝ったことのある相手）`,
+        detail: () => {
+          const r = draftRival();
+          return `${r.team}・${carLabel(r.car)}・得意なコース「${mapLabel(r.course)}」・強さ ${rivalLevel(r).label}（✓ は勝ったことのある相手）`;
+        },
       },
+    ],
+  };
+  const ruleScreen: MenuScreen = {
+    title: 'ルール',
+    groups: [
       {
-        title: 'NPCの強さ',
-        choices: () => NPC_LEVELS.map((l) => ({ id: l.id, label: l.label })),
-        selected: () => NPC_LEVELS[npcLevelIndex].id,
-        select: (id) => {
-          npcLevelIndex = Math.max(0, NPC_LEVELS.findIndex((l) => l.id === id));
-          if (race && raceMode === 'npc') startRace('npc');
-        },
-        visible: () => race !== null && raceMode === 'npc',
+        choices: () => BATTLE_RULES,
+        selected: () => draft.rule,
+        select: (id) => (draft.rule = id as BattleRule),
+        detail: () =>
+          draft.rule === 'side'
+            ? '2台が横に並んでスタートし、先にゴールしたほうの勝ち'
+            : `先行と後追いに分かれて1本ずつ走る。先行が ${BREAKAWAY_DISTANCE}m 以上引き離せば先行の勝ち、後追いが抜いて先にゴールすれば後追いの勝ち。決着がつかなければ先行と後追いを入れ替えて次の1本へ`,
       },
-      {
-        title: 'マップ・コース',
-        choices: () =>
-          MAPS.filter((m) => !race || m.race).map((m) => ({
-            id: m.id,
-            label: m.name,
-            note: m.race ? (m.race.laps > 1 ? `周回 ${m.race.laps}周` : '一本道') : '自由に走る',
-          })),
-        selected: () => level.def.id,
-        select: (id) => {
-          const index = MAPS.findIndex((m) => m.id === id);
-          if (index < 0 || index === mapIndex) return;
-          loadMap(index);
-          // 同じ部屋の全員のマップも切り替える
-          net.send({ t: 'map', map: mapIndex });
-        },
-      },
-      {
-        title: '車',
-        choices: () => VEHICLE_PRESETS.map((v) => ({ id: v.id, label: v.label, note: `最高 ${Math.round(v.params.maxForwardSpeed * 3.6)}km/h` })),
-        detail: () => vehicle().description,
-        selected: () => vehicle().id,
-        select: (id) => {
-          const index = VEHICLE_PRESETS.findIndex((v) => v.id === id);
-          if (index < 0 || index === carIndex) return;
-          selectCar(index);
-          resetCar();
-        },
-      },
+    ],
+  };
+  const envScreen: MenuScreen = {
+    title: '時間帯・天気',
+    groups: [
       {
         title: '時間帯',
         choices: () => TIMES_OF_DAY,
-        selected: () => env.time,
-        select: (id) => setEnvironment(id as TimeOfDay, env.weather),
+        selected: () => draft.time,
+        select: (id) => (draft.time = id as TimeOfDay),
       },
       {
         title: '天気',
         choices: () => WEATHERS,
-        selected: () => env.weather,
-        select: (id) => setEnvironment(env.time, id as Weather),
-        detail: () => (env.weather === 'rain' ? '雨の日はタイヤが滑りやすく、ブレーキも効きにくくなります' : ''),
+        selected: () => draft.weather,
+        select: (id) => (draft.weather = id as Weather),
+        detail: () => (draft.weather === 'rain' ? '雨の日はタイヤが滑りやすく、ブレーキも効きにくくなります' : ''),
       },
     ],
+  };
+  const envSummary = () => `${TIMES_OF_DAY.find((t) => t.id === draft.time)!.label}・${WEATHERS.find((w) => w.id === draft.weather)!.label}`;
+  const menuModes: MenuMode[] = [
+    {
+      id: 'free',
+      label: '自由に走る',
+      note: '好きなマップを自由にドライブ',
+      begin: () => beginDraft(false),
+      screens: () => [courseScreen(false), carScreen, envScreen],
+      summary: () => `${draftMap().name}・${draftCar().label}・${envSummary()}`,
+      finish: () => applyDraft('free'),
+    },
+    {
+      id: 'timeAttack',
+      label: 'タイムアタック',
+      note: '自己ベストとゴーストに挑戦',
+      begin: () => beginDraft(true),
+      screens: () => [courseScreen(true), carScreen, envScreen],
+      summary: () => `${draftMap().name}・${draftCar().label}・${envSummary()}`,
+      finish: () => applyDraft('timeAttack'),
+    },
+    {
+      id: 'npc',
+      label: 'NPCと対戦',
+      note: `${NPC_COUNT}台のNPCとレース`,
+      begin: () => beginDraft(true),
+      screens: () => [courseScreen(true), npcScreen, carScreen, envScreen],
+      summary: () => `${draftMap().name}・NPC ${draftNpc().label}・${draftCar().label}・${envSummary()}`,
+      finish: () => applyDraft('npc'),
+    },
+    {
+      id: 'battle',
+      label: 'ライバルとバトル',
+      note: '1対1。先行後追いも選べる',
+      begin: () => {
+        beginDraft(true);
+        draft.map = draftRival().course;
+      },
+      screens: () => [rivalScreen, ruleScreen, courseScreen(true, draftRival().course), carScreen, envScreen],
+      summary: () => `VS ${draftRival().name}・${BATTLE_RULES.find((r) => r.id === draft.rule)!.label}・${draftMap().name}・${draftCar().label}・${envSummary()}`,
+      finish: () => applyDraft('battle'),
+    },
+  ];
+  const menu = new GameMenu(
+    menuModes,
     [
+      { label: () => 'やり直す', run: () => race && startRace(raceMode), visible: () => race !== null, closeOnRun: true },
+      { label: () => 'レースをやめる', run: () => stopRace(), visible: () => race !== null, closeOnRun: true },
       { label: () => 'ランキング（ゴーストと対戦）', run: () => openRanking(), visible: () => board !== null, closeOnRun: true },
       { label: () => 'みんなで走る', run: () => onlinePanel.open(), closeOnRun: true },
       { label: () => `カメラ: ${cameraRig.modeName}`, run: () => cycleCamera() },
@@ -695,7 +882,9 @@ async function main() {
       { label: () => `サウンド: ${sound.isMuted ? 'OFF' : 'ON'}`, run: toggleMute },
     ],
     {
-      info: () => `${level.def.name}・${race ? raceLabel() : '自分で運転'}・${vehicle().label}・${TIMES_OF_DAY.find((t) => t.id === env.time)!.label}・${WEATHERS.find((w) => w.id === env.weather)!.label}`,
+      info: () =>
+        `いま: ${level.def.name}・${race ? raceLabel() : '自分で運転'}・${vehicle().label}・${TIMES_OF_DAY.find((t) => t.id === env.time)!.label}・${WEATHERS.find((w) => w.id === env.weather)!.label}`,
+      currentMode: () => (race ? raceMode : 'free'),
       onOpenChange: (open) => {
         keyboard.enabled = !open;
         touch.enabled = !open;
@@ -791,6 +980,7 @@ async function main() {
         r.update(dt, { x: curr.x, z: curr.z, ...velocityOf(curr) });
         if (r.phase === 'racing') ghostRecorder.sample(r.time, curr);
         handleRaceEvents(r);
+        judgeSuddenDeath();
       }
       // タブが裏に回っている間は送らない（他の人からは止まって見え、やがて放置として部屋から外れる）
       if (net.isOnline && !document.hidden && ++stepCount % SEND_EVERY_STEPS === 0) {
@@ -826,9 +1016,10 @@ async function main() {
           position: rank ? { rank: rank.index + 1, total: rank.list.length } : undefined,
           field: rank?.list,
           rival: rival && raceMode === 'timeAttack' ? { name: rival.name, total: rival.total } : undefined,
+          battle: battleInfo(),
         });
-        // ゴールした後も、まだ走っている NPC がゴールするたびに順位表を更新する
-        if (rank && race.phase === 'finished') raceHud.showStandings(rank.list, race.totalLaps, raceMode === 'battle');
+        // ゴールした後も、まだ走っている NPC がゴールするたびに順位表を更新する（先行後追いは別の結果）
+        if (rank && race.phase === 'finished' && !suddenDeath) raceHud.showStandings(rank.list, race.totalLaps, raceMode === 'battle');
         const hex = (c: number) => `#${c.toString(16).padStart(6, '0')}`;
         minimap.draw([
           ...(pose ? [{ x: pose.x, z: pose.z, color: '#7fd4ff' }] : []),
@@ -850,7 +1041,7 @@ async function main() {
   // ?debug を付けるとブラウザの開発者ツールや自動テストから状態を触れる
   if (params.has('debug')) {
     Object.assign(window, {
-      __game: { getLevel: () => level, getRace: () => race, getNpcs: () => npcField, startTimeAttack: () => startRace('timeAttack'), startNpcRace: () => startRace('npc'), stopRace, openRanking, rankingPanel, net, remoteCars, touch, onlinePanel, cameraRig, sound },
+      __game: { getLevel: () => level, getRace: () => race, getNpcs: () => npcField, getSuddenDeath: () => suddenDeath, menu, startTimeAttack: () => startRace('timeAttack'), startNpcRace: () => startRace('npc'), stopRace, openRanking, rankingPanel, net, remoteCars, touch, onlinePanel, cameraRig, sound },
     });
   }
 
