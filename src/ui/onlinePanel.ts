@@ -73,7 +73,11 @@ export class OnlinePanel {
     this.leave.addEventListener('click', () => this.handlers.onLeave());
     el('online-close').addEventListener('click', () => this.close());
     window.addEventListener('keydown', (e) => {
-      if (this.openValue && e.key === 'Escape') this.close();
+      if (this.openValue && e.key === 'Escape') {
+        // 同じ Esc でメニューが開かないように
+        e.preventDefault();
+        this.close();
+      }
     });
     if (!serverConfigured) {
       this.setStatus('このサイトにはオンライン用のサーバーがまだ設定されていません');

@@ -73,12 +73,17 @@ export class NpcField {
         car,
         mesh,
         driver: new NpcDriver(line, params, npcLevel, VARIATIONS[i % VARIATIONS.length], gradient),
-        timer: new TimeAttack(course, totalLaps),
+        timer: new TimeAttack(course, totalLaps, true),
         prev: snap,
         curr: snap,
         fall: new FallRecovery(),
       });
     });
+  }
+
+  /** スタートの合図（プレイヤーと同時にカウントダウンを始める） */
+  begin(): void {
+    for (const n of this.npcs) n.timer.begin();
   }
 
   /** 物理ステップの前に呼ぶ。others はプレイヤーなど NPC 以外の車 */

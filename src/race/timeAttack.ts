@@ -7,7 +7,8 @@ const MAX_SKIP = 3;
 /** 逆走とみなすまでの時間 [s] */
 const WRONG_WAY_SECONDS = 1;
 
-export type RacePhase = 'countdown' | 'racing' | 'finished';
+/** ready = スタートの合図（begin）を待っている */
+export type RacePhase = 'ready' | 'countdown' | 'racing' | 'finished';
 
 export type RaceEvent =
   /** カウントダウンの数字が変わった（0 でスタート） */
@@ -20,7 +21,7 @@ export type RaceEvent =
 
 /**
  * タイムアタックの進行（描画に依存しない）。
- * カウントダウン → 規定周回を走る → ゴール。コースのタイルを順番にたどった場合だけ周回を数える。
+ * （合図を待つ →）カウントダウン → 規定周回を走る → ゴール。コースのタイルを順番にたどった場合だけ周回を数える。
  */
 export class TimeAttack {
   phase: RacePhase = 'countdown';
@@ -37,13 +38,25 @@ export class TimeAttack {
   private wrongWay = false;
   private offCourse = false;
   private events: RaceEvent[] = [];
+  private begun = false;
 
   constructor(
     readonly course: Course,
     readonly totalLaps: number,
+    /** true なら、begin() を呼ぶまでカウントダウンを始めない */
+    waitForStart = false,
   ) {
     // 周回コースはスタートラインの手前（最後のタイル）から、一本道のコースはコースの手前（-1）から
     this.progress = course.closed ? course.tiles.length - 1 : -1;
+    if (waitForStart) this.phase = 'ready';
+    else this.begin();
+  }
+
+  /** カウントダウンを始める（合図を待っているときだけ） */
+  begin(): void {
+    if (this.begun) return;
+    this.begun = true;
+    this.phase = 'countdown';
     this.events.push({ type: 'count', value: COUNTDOWN_SECONDS });
   }
 
@@ -73,12 +86,13 @@ export class TimeAttack {
     return lapsDone * this.course.length + s;
   }
 
-  /** 車を動かしてよいか（カウントダウン中は止めておく） */
+  /** 車を動かしてよいか（スタート前は止めておく） */
   get canDrive(): boolean {
-    return this.phase !== 'countdown';
+    return this.phase !== 'countdown' && this.phase !== 'ready';
   }
 
   update(dt: number, car: { x: number; z: number; vx: number; vz: number }): void {
+    if (this.phase === 'ready') return;
     if (this.phase === 'countdown') {
       const before = Math.ceil(-this.time);
       this.time += dt;

@@ -70,7 +70,7 @@ export class RaceHud {
     if (!on) {
       this.hideResult();
       this.setWarning({ wrongWay: false, offCourse: false });
-      this.countdown.classList.remove('visible');
+      this.countdown.classList.remove('visible', 'ready');
     }
   }
 
@@ -128,8 +128,21 @@ export class RaceHud {
     this.currentLapEl = running ? (this.lapsEl.querySelector('.current td:nth-child(2)') as HTMLElement) : null;
   }
 
+  /** スタートの合図を待っている間の案内（null で消す） */
+  showReady(text: string | null): void {
+    if (text === null) {
+      if (this.countdown.classList.contains('ready')) this.countdown.classList.remove('ready', 'visible');
+      return;
+    }
+    this.countdown.classList.add('ready');
+    window.clearTimeout(this.countdownTimer);
+    this.countdown.textContent = text;
+    this.countdown.classList.add('visible');
+  }
+
   /** カウントダウンの数字（0 で「スタート！」） */
   count(value: number): void {
+    this.countdown.classList.remove('ready');
     this.countdown.textContent = value > 0 ? String(value) : 'スタート！';
     this.countdown.classList.add('visible');
     window.clearTimeout(this.countdownTimer);

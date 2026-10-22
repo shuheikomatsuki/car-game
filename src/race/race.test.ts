@@ -147,6 +147,20 @@ describe('TimeAttack', () => {
     expect(race.time).toBeGreaterThan(0);
   });
 
+  it('waits for the signal before counting down when asked to', () => {
+    const race = new TimeAttack(course, 3, true);
+    expect(race.phase).toBe('ready');
+    expect(race.canDrive).toBe(false);
+    for (let i = 0; i < 100; i++) race.update(0.05, { x: 0, z: 0, vx: 0, vz: 0 });
+    expect(race.phase).toBe('ready');
+    expect(race.time).toBe(-COUNTDOWN_SECONDS);
+    expect(race.drainEvents()).toEqual([]);
+    race.begin();
+    race.begin();
+    expect(race.phase).toBe('countdown');
+    expect(race.drainEvents()).toEqual([{ type: 'count', value: COUNTDOWN_SECONDS }]);
+  });
+
   it('counts laps when following the course and finishes', () => {
     const race = new TimeAttack(course, 3);
     for (let i = 0; i < COUNTDOWN_SECONDS / 0.05; i++) race.update(0.05, { x: 0, z: 0, vx: 0, vz: 0 });

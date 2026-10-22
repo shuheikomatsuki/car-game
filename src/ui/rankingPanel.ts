@@ -72,7 +72,11 @@ export class RankingPanel {
     });
     el('ranking-close').addEventListener('click', () => this.close());
     window.addEventListener('keydown', (e) => {
-      if (this.openValue && e.key === 'Escape') this.close();
+      if (this.openValue && e.key === 'Escape') {
+        // 同じ Esc でメニューが開かないように
+        e.preventDefault();
+        this.close();
+      }
     });
   }
 
