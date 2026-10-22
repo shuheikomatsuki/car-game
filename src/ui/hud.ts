@@ -42,10 +42,8 @@ export class Hud {
     this.carName.textContent = name;
   }
 
-  setMode(assist: boolean, label: string): void {
+  setMode(label: string): void {
     this.modeName.textContent = label;
-    document.body.classList.toggle('mode-assist', assist);
-    document.body.classList.toggle('mode-manual', !assist);
   }
 
   setMuted(muted: boolean): void {

@@ -2,7 +2,7 @@ import * as THREE from 'three';
 import type { CarSnapshot } from '../sim/car';
 import { CABIN } from './carMesh';
 
-export type CameraModeId = 'chaseNear' | 'chaseFar' | 'driver' | 'passenger' | 'faceCam';
+export type CameraModeId = 'chaseNear' | 'chaseFar' | 'driver';
 
 type CameraMode =
   | { id: CameraModeId; kind: 'chase'; name: string; distance: number; height: number }
@@ -13,18 +13,6 @@ const MODES: CameraMode[] = [
   { id: 'chaseNear', kind: 'chase', name: '三人称（近）', distance: 7, height: 2.6 },
   { id: 'chaseFar', kind: 'chase', name: '三人称（遠）', distance: 13, height: 5.5 },
   { id: 'driver', kind: 'cabin', name: '運転席', eye: CABIN.driverEye, lookYaw: 0 },
-  // 助手席からは運転席（右側）のキャラクターが視界に入るよう、少し右を向く
-  { id: 'passenger', kind: 'cabin', name: '助手席', eye: CABIN.passengerEye, lookYaw: -0.5 },
-  // フロントガラスの上から運転席のキャラクターの顔を映す
-  {
-    id: 'faceCam',
-    kind: 'cabin',
-    name: '車内カメラ',
-    eye: new THREE.Vector3(CABIN.driverEye.x + 0.08, CABIN.driverEye.y + 0.02, CABIN.driverEye.z + 0.62),
-    lookYaw: Math.PI - 0.08,
-    lookDrop: 0.6,
-    fov: 58,
-  },
 ];
 
 const CHASE_FOV = 65;
