@@ -450,6 +450,7 @@ body {
 
 #touch.hidden,
 #touch-menu.hidden,
+#touch-install.hidden,
 #touch-menu-items .hidden,
 #touch-quick .hidden,
 body.mode-assist #touch .touch-drive {
@@ -531,6 +532,23 @@ body.mode-assist #touch .touch-drive {
 
 #touch-steer.active #touch-steer-base {
   display: block;
+}
+
+/* 傾きハンドル: 左下に固定したハンドルが、今どれだけ切っているかを表す */
+#touch.tilt #touch-steer-base {
+  display: block;
+  left: calc(env(safe-area-inset-left) + 24px);
+  bottom: calc(env(safe-area-inset-bottom) + 64px);
+  margin: 0;
+}
+
+#touch.tilt #touch-steer-knob {
+  transition: transform 0.05s linear;
+}
+
+#touch.tilt #touch-steer .hint {
+  white-space: normal;
+  max-width: 40vw;
 }
 
 #touch-steer-knob {

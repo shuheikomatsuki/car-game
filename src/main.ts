@@ -22,6 +22,7 @@ import { NEUTRAL_INPUT, VEHICLE_PRESETS } from './sim/vehicle';
 import { AssistPanel, commandLabel } from './ui/assistPanel';
 import { Hud, hideLoading, showError } from './ui/hud';
 import { OnlinePanel } from './ui/onlinePanel';
+import { canRequestFullscreen, enterFullscreen, isFullscreen, isStandalone, needsHomeScreenForFullscreen } from './ui/fullscreen';
 import { TouchControls, prefersTouch } from './ui/touchControls';
 import { VoiceInput } from './voice/recognition';
 import { VoiceOutput } from './voice/speech';
@@ -363,6 +364,16 @@ async function main() {
       },
       { label: () => 'リセット', run: resetCar, quick: true },
       { label: () => (assist ? '自分で運転する' : `${CHARACTER_NAME}に運転してもらう`), run: () => setAssist(!assist) },
+      {
+        label: () => `ハンドル: ${touch.steerMode === 'tilt' ? '傾ける' : 'なぞる'}`,
+        run: () => void toggleSteerMode(),
+        visible: () => !assist,
+      },
+      {
+        label: () => '全画面で遊ぶ',
+        run: () => void enterFullscreen(),
+        visible: () => canRequestFullscreen() && !isFullscreen() && !isStandalone(),
+      },
       { label: () => 'みんなで走る', run: () => onlinePanel.open() },
       { label: () => 'マップを切り替える', run: nextMap },
       { label: () => '車を切り替える', run: cycleCar },
@@ -372,6 +383,17 @@ async function main() {
     ],
     () => `${level.def.name}・${assist ? `${CHARACTER_NAME}に指示` : '自分で運転'}・${vehicle().label}・カメラ: ${cameraRig.modeName}`,
   );
+  touch.refresh();
+  // iPhone の Safari はページから全画面にできないので、ホーム画面に追加する方法を案内する
+  document.getElementById('touch-install')!.classList.toggle('hidden', !needsHomeScreenForFullscreen());
+
+  async function toggleSteerMode() {
+    const next = touch.steerMode === 'tilt' ? 'drag' : 'tilt';
+    const ok = await touch.setSteerMode(next);
+    if (next === 'tilt') hud.toast(ok ? '傾けてハンドル。今の持ち方がまっすぐです' : 'この端末では傾きを使えません');
+    touch.refresh();
+  }
+
   // スマホ・タブレットなら最初から、そうでなくても画面に触れたら操作画面を出す（?touch で強制表示）
   if (prefersTouch() || params.has('touch')) touch.show();
   window.addEventListener('pointerdown', (e) => {
