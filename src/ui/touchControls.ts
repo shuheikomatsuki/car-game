@@ -1,4 +1,5 @@
-import { knobOffset, steerFromDrag } from '../core/touch';
+import { rollAngle, tiltSteer } from '../core/tilt';
+import { STEER_RADIUS_PX, knobOffset, steerFromDrag } from '../core/touch';
 import type { DriverInput } from '../sim/vehicle';
 
 function el<T extends HTMLElement = HTMLElement>(id: string): T {
@@ -17,6 +18,38 @@ export interface TouchAction {
   visible?: () => boolean;
 }
 
+/** ハンドルの操作方法: 画面をなぞる／スマホを傾ける */
+export type SteerMode = 'drag' | 'tilt';
+
+const STEER_MODE_KEY = 'car-game:steer';
+/** 傾きハンドルを滑らかにする強さ（センサーの値が届くたびに、この割合だけ新しい値に寄せる） */
+const TILT_SMOOTHING = 0.35;
+/** 傾きハンドルを ON にしてから、これ [ms] 待ってもセンサーの値が来なければ使えないとみなす */
+const TILT_WAIT_MS = 1000;
+
+/** iOS 13 以降は、傾きセンサーを使う前にユーザーの許可が要る */
+type MotionPermission = { requestPermission?: () => Promise<'granted' | 'denied'> };
+
+function loadSteerMode(): SteerMode {
+  try {
+    return localStorage.getItem(STEER_MODE_KEY) === 'tilt' ? 'tilt' : 'drag';
+  } catch {
+    return 'drag';
+  }
+}
+
+function saveSteerMode(mode: SteerMode): void {
+  try {
+    localStorage.setItem(STEER_MODE_KEY, mode);
+  } catch {
+    // 保存できなくても動作には影響しない
+  }
+}
+
+function needsMotionPermission(): boolean {
+  return typeof (window.DeviceMotionEvent as unknown as MotionPermission | undefined)?.requestPermission === 'function';
+}
+
 /** タッチ操作できる端末か（スマホ・タブレット） */
 export function prefersTouch(): boolean {
   return window.matchMedia?.('(pointer: coarse)').matches ?? false;
@@ -31,6 +64,7 @@ export class TouchControls {
   private readonly steerZone = el('touch-steer');
   private readonly steerBase = el('touch-steer-base');
   private readonly steerKnob = el('touch-steer-knob');
+  private readonly steerHint = el('touch-steer-hint');
   private readonly accel = el('touch-accel');
   private readonly brake = el('touch-brake');
   private readonly menu = el('touch-menu');
@@ -43,6 +77,12 @@ export class TouchControls {
   private readonly pedalPointers = { accel: new Set<number>(), brake: new Set<number>() };
   private enabledValue = true;
   private shown = false;
+  private mode: SteerMode = 'drag';
+  /** 傾きセンサーの最新の角度（まだ届いていない、または平らで測れないときは null） */
+  private tiltAngle: number | null = null;
+  /** まっすぐ走るときの持ち方の角度（null なら次に届いた値を基準にする） */
+  private tiltNeutral: number | null = null;
+  private tiltListening = false;
 
   constructor(
     actions: TouchAction[],
@@ -74,6 +114,11 @@ export class TouchControls {
     this.steerZone.addEventListener('pointerdown', (e) => {
       if (this.steerPointer || !this.enabledValue) return;
       e.preventDefault();
+      if (this.mode === 'tilt') {
+        // 傾きハンドルのときは、触れたときの持ち方を「まっすぐ」にする
+        this.recenterTilt();
+        return;
+      }
       this.steerZone.setPointerCapture(e.pointerId);
       this.steerPointer = { id: e.pointerId, x: e.clientX };
       // 指を置いた場所にハンドルを出す
@@ -98,7 +143,101 @@ export class TouchControls {
     this.bindPedal(this.brake, this.pedalPointers.brake);
     // 長押しでメニュー（コピー等）や拡大鏡が出ないように
     this.root.addEventListener('contextmenu', (e) => e.preventDefault());
-    this.refresh();
+    // 画面の向きが変わったら持ち方も変わるので、基準を取り直す
+    window.addEventListener('orientationchange', () => this.recenterTilt());
+    screen.orientation?.addEventListener?.('change', () => this.recenterTilt());
+
+    // 前回「傾ける」にしていたら続けて使う。iOS は許可を求めるのに画面に触れる必要があるので、最初に触れたときに
+    if (loadSteerMode() === 'tilt') {
+      this.applyMode('tilt');
+      if (needsMotionPermission()) {
+        const resume = () => {
+          window.removeEventListener('touchend', resume);
+          void this.setSteerMode('tilt');
+        };
+        window.addEventListener('touchend', resume);
+      } else {
+        this.listenTilt();
+      }
+    }
+    // ボタンの文字は、作った側の準備ができてから refresh() で入れる（label がこのインスタンスを参照できるように）
+  }
+
+  get steerMode(): SteerMode {
+    return this.mode;
+  }
+
+  /**
+   * ハンドルの操作方法を切り替える。傾きセンサーが使えない・許可されなかったときは
+   * 「なぞる」のままにして false を返す。iOS では画面に触れた操作の中から呼ぶこと。
+   */
+  async setSteerMode(mode: SteerMode): Promise<boolean> {
+    if (mode === 'drag') {
+      this.applyMode('drag');
+      saveSteerMode('drag');
+      return true;
+    }
+    const permission = (window.DeviceMotionEvent as unknown as MotionPermission | undefined)?.requestPermission;
+    if (!window.DeviceMotionEvent) return this.tiltUnavailable();
+    if (permission) {
+      try {
+        if ((await permission()) !== 'granted') return this.tiltUnavailable();
+      } catch {
+        return this.tiltUnavailable();
+      }
+    }
+    this.listenTilt();
+    this.recenterTilt();
+    // センサーの無いパソコンでも DeviceMotionEvent はあるので、値が届くかで判断する
+    for (let waited = 0; this.tiltAngle === null && waited < TILT_WAIT_MS; waited += 50) {
+      await new Promise((r) => setTimeout(r, 50));
+    }
+    if (this.tiltAngle === null) return this.tiltUnavailable();
+    this.applyMode('tilt');
+    saveSteerMode('tilt');
+    return true;
+  }
+
+  /** 今の持ち方を「まっすぐ」にする */
+  recenterTilt(): void {
+    this.tiltNeutral = null;
+    if (this.mode === 'tilt') this.setTiltSteer(0);
+  }
+
+  private tiltUnavailable(): false {
+    this.applyMode('drag');
+    saveSteerMode('drag');
+    return false;
+  }
+
+  private applyMode(mode: SteerMode): void {
+    this.releaseSteer();
+    this.mode = mode;
+    // なぞるときに指の位置へ動かしたハンドルを、決まった位置に戻す
+    this.steerBase.style.left = '';
+    this.steerBase.style.top = '';
+    this.root.classList.toggle('tilt', mode === 'tilt');
+    this.steerHint.textContent = mode === 'tilt' ? '傾けてハンドル・タップでまっすぐに合わせる' : '左右になぞってハンドル';
+  }
+
+  private listenTilt(): void {
+    if (this.tiltListening) return;
+    this.tiltListening = true;
+    window.addEventListener('devicemotion', (e) => {
+      const g = e.accelerationIncludingGravity;
+      if (g?.x == null || g.y == null) return;
+      this.tiltAngle = rollAngle(g.x, g.y);
+      if (this.mode !== 'tilt' || this.tiltAngle === null) return;
+      this.tiltNeutral ??= this.tiltAngle;
+      const target = tiltSteer(this.tiltAngle, this.tiltNeutral);
+      this.setTiltSteer(this.steer + (target - this.steer) * TILT_SMOOTHING);
+    });
+  }
+
+  private setTiltSteer(steer: number): void {
+    this.steer = Math.abs(steer) < 0.01 ? 0 : steer;
+    // つまみは「今どれだけ切っているか」を表す（右に切ると右へ）
+    this.steerKnob.style.transform = `translateX(${-this.steer * STEER_RADIUS_PX}px)`;
   }
 
   /** 操作画面を出す（一度出したら出しっぱなし） */
@@ -124,7 +263,7 @@ export class TouchControls {
     return {
       throttle: this.pedalPointers.accel.size > 0 ? 1 : 0,
       brake: this.pedalPointers.brake.size > 0 ? 1 : 0,
-      steer: this.steer,
+      steer: this.steerInput(),
     };
   }
 
@@ -173,6 +312,12 @@ export class TouchControls {
     this.steerPointer = null;
     this.steerZone.classList.remove('active');
     this.setSteer(0);
+  }
+
+  /** 傾きハンドルで、まだ傾きを測れていない（平らに置いている等）間はまっすぐ */
+  private steerInput(): number {
+    if (this.mode === 'tilt' && this.tiltAngle === null) return 0;
+    return this.steer;
   }
 
   private releaseAll(): void {

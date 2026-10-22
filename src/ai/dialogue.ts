@@ -1,7 +1,7 @@
 import type { DriverEvent } from './driver';
 
 /** キャラクターの名前（仮）。設定が決まったらここを変える */
-export const CHARACTER_NAME = 'ハル';
+export const CHARACTER_NAME = 'アッティー';
 
 export type Mood = 'neutral' | 'happy' | 'nervous' | 'panic' | 'sad';
 

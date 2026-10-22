@@ -8,6 +8,10 @@
     <meta name="apple-mobile-web-app-capable" content="yes" />
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
     <meta name="apple-mobile-web-app-title" content="Car Game" />
+    <meta name="theme-color" content="#000000" />
+    <link rel="manifest" href="/manifest.webmanifest" />
+    <link rel="icon" href="/icons/icon.svg" type="image/svg+xml" />
+    <link rel="apple-touch-icon" href="/icons/apple-touch-icon.png" />
     <title>Car Game</title>
     <link rel="stylesheet" href="/src/ui/style.css" />
   </head>
@@ -22,7 +26,7 @@
       <div class="manual-only"><kbd>W</kbd>/<kbd>↑</kbd> アクセル　<kbd>S</kbd>/<kbd>↓</kbd> ブレーキ・後退</div>
       <div class="manual-only"><kbd>A</kbd><kbd>D</kbd>/<kbd>←</kbd><kbd>→</kbd> ハンドル</div>
       <div class="assist-only"><kbd>1</kbd>〜<kbd>0</kbd> 指示　<kbd>V</kbd> 音声で指示　<kbd>K</kbd> 運転のうまさ　<kbd>F</kbd> 顔写真</div>
-      <div><kbd>Q</kbd> モード切替（自分で運転／ハルに指示）</div>
+      <div><kbd>Q</kbd> モード切替（自分で運転／アッティーに指示）</div>
       <div><kbd>C</kbd> カメラ切替 <span id="camera-name"></span></div>
       <div><kbd>N</kbd> マップ切替　<kbd>P</kbd> 車の切替　<kbd>R</kbd> リセット</div>
       <div><kbd>O</kbd> みんなで走る（オンライン）</div>
@@ -84,7 +88,7 @@
         <span id="touch-quick"></span>
       </div>
       <div id="touch-steer" class="touch-drive">
-        <span class="hint">左右になぞってハンドル</span>
+        <span id="touch-steer-hint" class="hint">左右になぞってハンドル</span>
         <div id="touch-steer-base"><div id="touch-steer-knob"></div></div>
       </div>
       <div id="touch-pedals" class="touch-drive">
@@ -96,6 +100,9 @@
           <h2>メニュー</h2>
           <p id="touch-menu-info" class="note"></p>
           <div id="touch-menu-items"></div>
+          <p id="touch-install" class="note hidden">
+            アドレスバーを消して遊ぶには、Safari の共有ボタン（□に↑）から「ホーム画面に追加」を選び、追加したアイコンから開いてください。
+          </p>
           <div class="dialog-buttons">
             <span class="spacer"></span>
             <button id="touch-menu-close" class="primary">閉じる</button>
