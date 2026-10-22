@@ -479,52 +479,145 @@ export const RIVERSIDE_MAP: MapDefinition = {
   race: { laps: 2 },
 };
 
-/** 1km を超える長いストレートと、奥のくねくねした区間の周回コース。最高速の伸びが大事 */
-export const SPEEDWAY_MAP: MapDefinition = {
-  id: 'speedway',
-  name: 'ロングストレート',
-  tileSize: 40,
-  roadWidth: 16,
-  layout: [
-    '...BB.BBB.BB.BBB.BB.BBB.BB...',
-    '.RRRRRRRRRRRRRRRRRRRRRRRRRRR.',
-    '.R..T...T...T...T...T...T..R.',
-    '.R..T......T.....T.....T...R.',
-    '.RRRRR..RRRRR..RRRRRRR.....R.',
-    'T....R..R...R..R.....R..T..R.',
-    '..T..RRRR...RRRR..T..RRRRRRR.',
-    'T..T..T..T..T..T..T..T..T..T.',
-  ],
-  start: { col: 4, row: 1, heading: 'E' },
+/**
+ * 峠の途中に 900m ほどのロングストレートがある。前後はふつうのコーナーが続く峠道。
+ * 左下の行き止まりがふもと、右下の行き止まりが頂上
+ */
+const STRAIGHT_LAYOUT = [
+    '.T....T.TT................................T.....',
+    '.....T....RRRRRRRRRRRRRRRRRRRRRRRRRRRRRRR.......',
+    '..TT......R.............................R.......',
+    '....RRRRR.R..TTT...TTT........T......RRRR..TT...',
+    'T...R...R.R......T.......T...........R......TTTT',
+    '..T.R...RRR..T......T.T..T.........T.RRR........',
+    '.TT.RRRR.........T.TT.......TT.........R.....T..',
+    '.T.....R.....T.......TT..T.T........RRRR.RRR..T.',
+    '.......RRRR.................TT......R....R.R.T..',
+    'T.........R........T.......TT.T.....RRRRRR.R..T.',
+    '...T.RRR..R.........T...T........T.........R....',
+    '.....R.R..R................T..........T....R....',
+    '.RRRRR.RRRR........T.TTT.T.....T..T..T..RRRR.T.T',
+    'T...............T..T.........T...T..T...R.......',
+    '..T...............T...TT....TT.......T..RRRRRRR.',
+    '.............T..........T........T..............',
+];
+const STRAIGHT_ELEVATION = { from: { col: 1, row: 12 }, rise: 170 };
+
+/** ロングストレートのある峠を上る。ストレートで最高速の伸びの差が出る */
+export const STRAIGHT_UP_MAP: MapDefinition = {
+  id: 'straight-up',
+  name: 'ロングストレート（ヒルクライム）',
+  tileSize: 30,
+  roadWidth: 11,
+  layout: STRAIGHT_LAYOUT,
+  start: { col: 3, row: 12, heading: 'E' },
   guardrails: true,
-  race: { laps: 2 },
+  race: { laps: 1 },
+  elevation: STRAIGHT_ELEVATION,
+};
+
+/** 同じ峠を下る。ストレートの終わりはスピードが乗りきっているので、ブレーキを早めに */
+export const STRAIGHT_DOWN_MAP: MapDefinition = {
+  id: 'straight-down',
+  name: 'ロングストレート（ダウンヒル）',
+  tileSize: 30,
+  roadWidth: 11,
+  layout: STRAIGHT_LAYOUT,
+  start: { col: 44, row: 14, heading: 'W' },
+  guardrails: true,
+  race: { laps: 1 },
+  elevation: STRAIGHT_ELEVATION,
 };
 
 /**
- * 首都高のような高架の周回コース。海の上の 1.2km の直線（湾岸線）と、ビルの間を縫う区間がある。
+ * 首都高のような高架の周回コース（オリジナル）。海の上の 1.2km の直線（湾岸線）、ビルの間のコーナー、
+ * レインボーブリッジのような吊り橋と、その先の右に 540° 回り込んでから左に 540° 回って抜けるループがある。
  * 道路の両側は壁で、3車線
  */
 export const WANGAN_MAP: MapDefinition = {
-  id: 'wangan',
-  name: '首都高（湾岸線）',
+  id: 'shutoko',
+  name: '首都高（湾岸線・ループ）',
   tileSize: 40,
   roadWidth: 15,
   layout: [
-    '~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~',
-    '~RRRRRRRRRRRRRRRRRRRRRRRRRRRRRR~',
-    '~R~~~~~~~~~~~~~~~~~~~~~~~~~~~~R~',
-    '.R.BB.B.BB.B.B..BB.B.BB.B.B.B.R.',
-    'BR.B.BB.B.BB.BB.B.BB.B.BB.BB..RB',
-    '.RRRRRR.B.B..RRRRRR.B.BB.RRRRRR.',
-    'B.B...R.BB.B.R.BB.R.B..B.R.B.B.B',
-    '.B..B.R.B..B.R.B..R.BB.B.R..B...',
-    'B..B..RRRRRRRR.BB.RRRRRRRR.BB.B.',
-    '.BB.B..B.BB.B.B..B.B.BB.B.BB.B.B',
-    '..B..B.B..B..B.B.B..B.B..B.B..B.',
+    '~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~',
+    '~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~',
+    'B.RRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRBB',
+    'B.RB...BB..B...BBB....BBB.B.BB.BBBRB.',
+    'B.RRRRRRRRRRRRRRB....B....BBB.BB..RB.',
+    '...........B...R...BBBRRRRBBBRRRRRR..',
+    '...B.RRRRRRRRR.RB.....R..RB..R.BB....',
+    'B.B.BR.T..TT.R.R....BBR..RRRRRB.B..B.',
+    '.B...RTRRRRR.RTRB..B.BR...B.B.BB...BB',
+    '....BRTRTTTRTR.R.BBBBBRRRRRRR.B.BBB..',
+    'B.B..RTR.RRRTR.R..B.B...B.BBRB..B..BB',
+    'B.B..RTR.R.T.R.R.BBB...BB...RRRRRR..B',
+    'B....R.R.RRRRRTR..B.BBBBBBB..B.BBR..B',
+    '.....R.R.T..T..RB~~~~~~~~~~~~~~~~R.B.',
+    '.....R.RRRRRRRRR.~~~~~~~~~~~~~~~~RB..',
+    '.B...RBB..B...B..~~~~~~~~~~~~~~~~RBB.',
+    '..B..RRRRRRRRRRRRR===========RRRRR.BB',
+    '~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~',
+    '~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~',
   ],
-  start: { col: 4, row: 1, heading: 'E' },
-  race: { laps: 2 },
+  start: { col: 4, row: 2, heading: 'E' },
+  race: { laps: 1 },
   highway: { depth: 14, lanes: 3 },
+};
+
+/**
+ * 谷を橋で渡り、山をトンネルで抜ける 5km あまりの峠。橋は 3 か所（コーナーの続く区間の途中）、
+ * トンネルは短いもの（90m）と長いもの（360m）が 1 本ずつ。左下の行き止まりがふもと、右上の行き止まりが頂上
+ */
+const VALLEY_LAYOUT = [
+    '.T....T.TTT...............................T.....TT.....',
+    '.....T.........T.RRRRRR############RR.T...........RRRR.',
+    '..TTT..T....T....R..................R.T........~..R....',
+    '...T.T.......TTT.RRRR.........T.....R....T.TT..~..RRR..',
+    'T......TT...........R....T........RRR.T........~....R..',
+    '..TT...TT....T......RRR..T........R........RRR===RR.R..',
+    '.TT.T.T...T......T.T..R.....TT....RRRR..T..R...~..R.R.T',
+    '.T...T................R..T.T.........R.....RRR.~..RRR..',
+    '.......T.RRRR###RR..RRR.....TT.......RRR.....R.........',
+    'T........R.......R..R......TT.T....~...R.....RRRR...T..',
+    '...T.....RRRRR...RRRR...T........T.~.RRR........R...TT.',
+    '.......TT....R.............T.......~.R..T..TT...R......',
+    '.T.........RRR.....T.TTT.T......RR===R.......T..R......',
+    'TT.T.......R....T..T.........T..R.........RRR...R.T..T.',
+    '..T........R......T...TT....TT..RRRRR.....R.R...R..TTT.',
+    '...........RRRR.........T...........R.....R.R...R......',
+    '.....RRR......R........T............R.....R.R.RRR......',
+    '.....R.R...~..R...T....T.T.T..T..RRRR..RRRR.R.R..T.T...',
+    '.RRRRR.RRR===RR...T..T..T.T..T...R.....R....R.R.....T..',
+    'T.....T....~...T.........TTT.....RRRRRRR....RRR.T.T.T..',
+    '..T........~.......TT..........TT..........T.....TTT.TT',
+];
+const VALLEY_ELEVATION = { from: { col: 1, row: 18 }, rise: 230 };
+
+/** 橋とトンネルの峠を上る */
+export const VALLEY_UP_MAP: MapDefinition = {
+  id: 'valley-up',
+  name: '橋とトンネルの峠（ヒルクライム）',
+  tileSize: 30,
+  roadWidth: 11,
+  layout: VALLEY_LAYOUT,
+  start: { col: 3, row: 18, heading: 'E' },
+  guardrails: true,
+  race: { laps: 1 },
+  elevation: VALLEY_ELEVATION,
+};
+
+/** 橋とトンネルの峠を下る */
+export const VALLEY_DOWN_MAP: MapDefinition = {
+  id: 'valley-down',
+  name: '橋とトンネルの峠（ダウンヒル）',
+  tileSize: 30,
+  roadWidth: 11,
+  layout: VALLEY_LAYOUT,
+  start: { col: 51, row: 1, heading: 'W' },
+  guardrails: true,
+  race: { laps: 1 },
+  elevation: VALLEY_ELEVATION,
 };
 
 export const MAPS: readonly MapDefinition[] = [
@@ -533,7 +626,6 @@ export const MAPS: readonly MapDefinition[] = [
   CIRCUIT_MAP,
   TECHNICAL_MAP,
   RIVERSIDE_MAP,
-  SPEEDWAY_MAP,
   WANGAN_MAP,
   HILLCLIMB_MAP,
   DOWNHILL_MAP,
@@ -545,4 +637,8 @@ export const MAPS: readonly MapDefinition[] = [
   STEEP_DOWN_MAP,
   LONG_MAP,
   MARATHON_MAP,
+  STRAIGHT_UP_MAP,
+  STRAIGHT_DOWN_MAP,
+  VALLEY_UP_MAP,
+  VALLEY_DOWN_MAP,
 ];

@@ -739,7 +739,7 @@ async function main() {
           return maps.map((m) => ({
             id: m.id,
             label: `${m.id === home ? '★ ' : ''}${m.name}`,
-            note: m.id === home ? '得意なコース' : m.race ? (m.race.laps > 1 ? `周回 ${m.race.laps}周` : '一本道') : '自由に走る',
+            note: m.id === home ? '得意なコース' : m.race ? (m.elevation ? '一本道' : `周回 ${m.race.laps}周`) : '自由に走る',
           }));
         },
         selected: () => draft.map,

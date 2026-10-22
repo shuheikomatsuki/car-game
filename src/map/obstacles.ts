@@ -5,7 +5,7 @@ import { type ParsedMap, type SignType, DIR_OFFSET, DIR_YAW, roadShape, tileCent
  */
 
 export interface BoxObstacle {
-  /** barrier は橋の欄干・高架の壁（コンクリートの低い壁） */
+  /** barrier は橋の欄干・高架の壁・トンネルの壁の下の縁石（コンクリートの低い壁） */
   kind: 'building' | 'wall' | 'guardrail' | 'barrier';
   /** 中心座標 */
   x: number;
@@ -109,7 +109,8 @@ export function buildObstacles(map: ParsedMap): MapObstacles {
 
   if (map.def.guardrails) {
     for (const tile of map.tiles) {
-      if (tile.kind !== 'road' || roadShape(tile) !== 'curve') continue;
+      // 橋とトンネルの中は両側に壁があるので、ガードレールは置かない
+      if (tile.kind !== 'road' || roadShape(tile) !== 'curve' || tile.bridge || tile.tunnel) continue;
       boxes.push(...curveGuardrail(map, tile.col, tile.row, tile.connections, half + rw + 0.8));
     }
     // 行き止まり（一本道のコースの端）は、道路の端をガードレールでふさぐ
@@ -139,11 +140,12 @@ export function buildObstacles(map: ParsedMap): MapObstacles {
       if (tile.kind === 'road') boxes.push(...roadsideBarriers(map, tile.col, tile.row, tile.connections));
     }
   } else {
+    // 橋の欄干とトンネルの壁
     for (const tile of map.tiles) {
-      if (tile.kind === 'road' && tile.bridge) boxes.push(...roadsideBarriers(map, tile.col, tile.row, tile.connections));
+      if (tile.kind === 'road' && (tile.bridge || tile.tunnel)) boxes.push(...roadsideBarriers(map, tile.col, tile.row, tile.connections));
     }
-    // 川岸: 水と陸の境目に柵（橋の上は欄干があるので、橋とのあいだには置かない）
-    for (const tile of map.tiles) {
+    // 川岸: 水と陸の境目に柵（橋の上は欄干があるので、橋とのあいだには置かない）。峠の川は谷の底なので置かない
+    for (const tile of map.def.elevation ? [] : map.tiles) {
       if (tile.kind !== 'water') continue;
       const { x, z } = tileCenter(map, tile.col, tile.row);
       for (const { dc, dr } of Object.values(DIR_OFFSET)) {

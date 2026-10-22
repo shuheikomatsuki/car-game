@@ -20,6 +20,12 @@ const COARSE = 4;
  * いちばん近い道路の点は、この距離までしか探さない
  */
 const REACH = 56;
+/**
+ * 橋の下の谷の深さ [m]。橋と川のタイルの地面を、道路の高さよりこれだけ掘り下げる。
+ * タイルの縁から RAVINE_EDGE [m] かけてなめらかに深くする（橋のたもとは道路の高さのまま）
+ */
+export const RAVINE_DEPTH = 28;
+const RAVINE_EDGE = 12;
 
 /**
  * 高低差のある地形。道路に沿って高さが決まり、道路から離れた場所は周りの道路の高さをなめらかにつなぐ。
@@ -33,6 +39,8 @@ export interface Terrain {
   heightAt(x: number, z: number): number;
   /** 高さの勾配（x・z 方向にそれぞれ 1m 進んだときに上がる高さ） */
   gradientAt(x: number, z: number): { x: number; z: number };
+  /** 地面の見た目の高さ [m]（谷の底など。道路の上では道路の少し下） */
+  groundAt(x: number, z: number): number;
   /** 地形の格子（描画用）。ground は道路の下を少し下げた高さ */
   grid: { minX: number; minZ: number; step: number; nx: number; nz: number; ground: Float32Array };
   /** ヘアピンの内側の近道の帯（MapDefinition.shortcuts のときだけ） */
@@ -274,19 +282,46 @@ export function buildTerrain(map: ParsedMap): Terrain | null {
     }
   }
 
-  const gridHeightAt = (x: number, z: number) => {
+  // 橋の下の谷: 橋と川のタイルの地面（見た目）を掘り下げる。道路の高さ（surface）は変えない
+  const wet = (col: number, row: number) => {
+    const t = map.tileAt(col, row);
+    return t !== undefined && (t.kind === 'water' || t.bridge);
+  };
+  if (map.tiles.some((t) => t.kind === 'water' || t.bridge)) {
+    for (let j = 0; j < nz; j++) {
+      const z = minZ + j * GRID_STEP;
+      for (let i = 0; i < nx; i++) {
+        const x = minX + i * GRID_STEP;
+        const col = Math.round(x / tileSize);
+        const row = Math.round(z / tileSize);
+        if (!wet(col, row)) continue;
+        // 谷ではないタイルとの境目までの距離（谷のタイルどうしの境目は数えない）
+        const lx = x - col * tileSize;
+        const lz = z - row * tileSize;
+        let inside = Infinity;
+        if (!wet(col + 1, row)) inside = Math.min(inside, half - lx);
+        if (!wet(col - 1, row)) inside = Math.min(inside, half + lx);
+        if (!wet(col, row + 1)) inside = Math.min(inside, half - lz);
+        if (!wet(col, row - 1)) inside = Math.min(inside, half + lz);
+        ground[j * nx + i] -= RAVINE_DEPTH * smoothstep(inside / RAVINE_EDGE);
+      }
+    }
+  }
+
+  const sample = (values: Float32Array, x: number, z: number) => {
     const fx = Math.min(nx - 1.001, Math.max(0, (x - minX) / GRID_STEP));
     const fz = Math.min(nz - 1.001, Math.max(0, (z - minZ) / GRID_STEP));
     const i = Math.floor(fx);
     const j = Math.floor(fz);
     const u = fx - i;
     const v = fz - j;
-    const a = surface[j * nx + i];
-    const b = surface[j * nx + i + 1];
-    const c = surface[(j + 1) * nx + i];
-    const e = surface[(j + 1) * nx + i + 1];
+    const a = values[j * nx + i];
+    const b = values[j * nx + i + 1];
+    const c = values[(j + 1) * nx + i];
+    const e = values[(j + 1) * nx + i + 1];
     return (a * (1 - u) + b * u) * (1 - v) + (c * (1 - u) + e * u) * v;
   };
+  const gridHeightAt = (x: number, z: number) => sample(surface, x, z);
 
   // 近道の面の上は、段差がはっきり出るよう格子を使わずにその場で求める
   const heightAt = shortcuts.length ? (x: number, z: number) => shortcutHeightAt(x, z) ?? gridHeightAt(x, z) : gridHeightAt;
@@ -300,6 +335,7 @@ export function buildTerrain(map: ParsedMap): Terrain | null {
         z: (heightAt(x, z + d) - heightAt(x, z - d)) / (2 * d),
       };
     },
+    groundAt: (x, z) => sample(ground, x, z),
     grid: { minX, minZ, step: GRID_STEP, nx, nz, ground },
     shortcuts,
   };
