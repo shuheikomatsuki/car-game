@@ -2,6 +2,7 @@ import { SoundSystem } from './audio/sound';
 import { GamepadInput, KeyboardInput, PAD_BUTTON, mergeInputs } from './core/input';
 import { FixedStepLoop } from './core/loop';
 import { Airborne } from './game/airborne';
+import { TIMES_OF_DAY, type TimeOfDay, WEATHERS, type Weather, loadEnvironment, paramsForWeather, saveEnvironment } from './game/environment';
 import { FallRecovery } from './game/fall';
 import { Level } from './game/level';
 import { NpcField, npcEntries, rankEntrants, velocityOf } from './game/npcRace';
@@ -76,6 +77,15 @@ async function main() {
   // ?car=sport のように開始時の車を指定できる
   let carIndex = Math.max(0, VEHICLE_PRESETS.findIndex((v) => v.id === params.get('car')));
   const vehicle = () => VEHICLE_PRESETS[carIndex];
+  // 時間帯と天気（?time=night&weather=rain のように指定もできる）
+  const env = loadEnvironment();
+  const timeParam = TIMES_OF_DAY.find((t) => t.id === params.get('time'));
+  const weatherParam = WEATHERS.find((w) => w.id === params.get('weather'));
+  if (timeParam) env.time = timeParam.id;
+  if (weatherParam) env.weather = weatherParam.id;
+  view.setEnvironment(env);
+  /** いまの天気での自分の車の性能（雨は滑りやすい） */
+  const carParams = () => paramsForWeather(vehicle().params, env.weather);
   /** オンラインの部屋で割り当てられた色（一人のときは車ごとの色） */
   let assignedColor: number | null = null;
   let carMesh = new CarMesh(undefined, carStyle(vehicle().id));
@@ -87,7 +97,7 @@ async function main() {
     view.scene.add(carMesh.root);
   };
   let level = new Level(rapier, MAPS[mapIndex]);
-  level.car.params = { ...vehicle().params };
+  level.car.params = carParams();
   view.scene.add(level.group);
   let prev = level.car.snapshot();
   let curr = prev;
@@ -201,13 +211,13 @@ async function main() {
     const slot = (i: number) => course.gridSpot(6 + 7 * i, i % 2 === 0 ? side : -side);
     if (mode === 'npc') {
       const grid = Array.from({ length: NPC_COUNT }, (_, i) => slot(i));
-      npcField = new NpcField(level, view.scene, npcEntries(NPC_COUNT, NPC_LEVELS[npcLevelIndex], vehicle().params, carStyle(vehicle().id)), laps, grid);
+      npcField = new NpcField(level, view.scene, npcEntries(NPC_COUNT, NPC_LEVELS[npcLevelIndex], carParams(), carStyle(vehicle().id)), laps, grid);
       placeCar(slot(NPC_COUNT));
     } else if (mode === 'battle') {
       const r = battleRival();
       const preset = VEHICLE_PRESETS.find((v) => v.id === r.car) ?? VEHICLE_PRESETS[0];
       const style = carStyle(preset.id);
-      const entry = { name: r.name, color: style.color, level: rivalLevel(r), params: preset.params, style, variation: 1 };
+      const entry = { name: r.name, color: style.color, level: rivalLevel(r), params: paramsForWeather(preset.params, env.weather), style, variation: 1 };
       npcField = new NpcField(level, view.scene, [entry], laps, [course.gridSpot(6, side)]);
       placeCar(course.gridSpot(6, -side));
     } else {
@@ -331,7 +341,7 @@ async function main() {
     level.dispose();
     mapIndex = index;
     level = new Level(rapier, MAPS[mapIndex]);
-    level.car.params = { ...vehicle().params };
+    level.car.params = carParams();
     view.scene.add(level.group);
     remoteCars.attachLevel(level);
     // レース用でないマップに替わったらレースをやめる（レース用ならそのコースでやり直し）
@@ -356,13 +366,24 @@ async function main() {
   };
   const selectCar = (index: number) => {
     carIndex = index;
-    level.car.params = { ...vehicle().params };
+    level.car.params = carParams();
     rebuildCarMesh();
     // ランキングの人のゴーストは、同じ車のときだけ一緒に走る
     setRival(null);
     hud.setCarName(vehicle().label);
     net.send({ t: 'profile', car: vehicle().id });
     net.updateJoin({ car: vehicle().id });
+  };
+  /** 時間帯・天気を変える。天気で車の性能が変わるので、レース中ならやり直す */
+  const setEnvironment = (time: TimeOfDay, weather: Weather) => {
+    const weatherChanged = weather !== env.weather;
+    env.time = time;
+    env.weather = weather;
+    saveEnvironment(env);
+    view.setEnvironment(env);
+    if (!weatherChanged) return;
+    level.car.params = carParams();
+    if (race) startRace(raceMode);
   };
   const cycleCar = () => {
     selectCar((carIndex + 1) % VEHICLE_PRESETS.length);
@@ -651,6 +672,19 @@ async function main() {
           resetCar();
         },
       },
+      {
+        title: '時間帯',
+        choices: () => TIMES_OF_DAY,
+        selected: () => env.time,
+        select: (id) => setEnvironment(id as TimeOfDay, env.weather),
+      },
+      {
+        title: '天気',
+        choices: () => WEATHERS,
+        selected: () => env.weather,
+        select: (id) => setEnvironment(env.time, id as Weather),
+        detail: () => (env.weather === 'rain' ? '雨の日はタイヤが滑りやすく、ブレーキも効きにくくなります' : ''),
+      },
     ],
     [
       { label: () => 'ランキング（ゴーストと対戦）', run: () => openRanking(), visible: () => board !== null, closeOnRun: true },
@@ -661,7 +695,7 @@ async function main() {
       { label: () => `サウンド: ${sound.isMuted ? 'OFF' : 'ON'}`, run: toggleMute },
     ],
     {
-      info: () => `${level.def.name}・${race ? raceLabel() : '自分で運転'}・${vehicle().label}`,
+      info: () => `${level.def.name}・${race ? raceLabel() : '自分で運転'}・${vehicle().label}・${TIMES_OF_DAY.find((t) => t.id === env.time)!.label}・${WEATHERS.find((w) => w.id === env.weather)!.label}`,
       onOpenChange: (open) => {
         keyboard.enabled = !open;
         touch.enabled = !open;
@@ -768,6 +802,7 @@ async function main() {
       const s = level.ground(lerpSnapshot(prev, curr, alpha));
       s.y += air.gap - fall.drop;
       carMesh.update(s);
+      view.followCar(carMesh.root);
       remoteCars.render(performance.now());
       npcField?.render(alpha);
       if (race) {
@@ -805,6 +840,7 @@ async function main() {
       level.syncProps();
       cameraRig.update(s, frameDt);
       view.followTarget(s.x, s.z, s.y);
+      view.update(frameDt, cameraRig.camera);
       hud.update(s);
       sound.update(s.forwardSpeed, input.throttle, s.lateralSpeed, input.brake > 0 && s.forwardSpeed > 0);
       view.render(cameraRig.camera);

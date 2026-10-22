@@ -4,6 +4,11 @@ import type { Course } from './course';
 export const COUNTDOWN_SECONDS = 3;
 /** 一度に飛ばしてよいタイルの数。これより先へ飛んだら近道とみなして周回を進めない */
 const MAX_SKIP = 3;
+/**
+ * ヘアピンの内側に近道があるコースで一度に飛ばしてよいタイルの数。近道で飛び越すのは
+ * 入口のカーブ・直線・出口のカーブの3枚（と少しの余裕）
+ */
+const SHORTCUT_MAX_SKIP = 5;
 /** 逆走とみなすまでの時間 [s] */
 const WRONG_WAY_SECONDS = 1;
 
@@ -39,6 +44,7 @@ export class TimeAttack {
   private offCourse = false;
   private events: RaceEvent[] = [];
   private begun = false;
+  private readonly maxSkip: number;
 
   constructor(
     readonly course: Course,
@@ -48,6 +54,7 @@ export class TimeAttack {
   ) {
     // 周回コースはスタートラインの手前（最後のタイル）から、一本道のコースはコースの手前（-1）から
     this.progress = course.closed ? course.tiles.length - 1 : -1;
+    this.maxSkip = course.map.def.shortcuts ? SHORTCUT_MAX_SKIP : MAX_SKIP;
     if (waitForStart) this.phase = 'ready';
     else this.begin();
   }
@@ -118,7 +125,7 @@ export class TimeAttack {
     const ahead = (index - this.progress + n) % n;
     // 後ろへ戻ったとき（半周より後ろ）は何もしない
     if (ahead > n / 2) return;
-    if (ahead > MAX_SKIP) {
+    if (ahead > this.maxSkip) {
       // 大きく先へ飛んだのは、コースを外れて近道をしたとき
       this.setOffCourse(true);
       return;
@@ -138,7 +145,7 @@ export class TimeAttack {
   private trackOpen(x: number, z: number): void {
     const index = this.course.indexAt(x, z);
     if (index < 0 || index <= this.progress) return;
-    if (index - this.progress > MAX_SKIP) {
+    if (index - this.progress > this.maxSkip) {
       this.setOffCourse(true);
       return;
     }

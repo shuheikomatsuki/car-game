@@ -26,8 +26,10 @@ export interface CarStyle {
   wing?: 'low' | 'high';
   /** ツートンの下半分の色（パンダトレノなど） */
   lowerColor?: number;
-  /** 丸いテールランプ */
+  /** 丸いテールランプ（左右に2つずつ） */
   roundTail?: boolean;
+  /** 丸いテールランプの半径 [m]（内側・外側） */
+  tailRadii?: [inner: number, outer: number];
   /** 一人で走るときのボディの色 */
   color: number;
 }
@@ -38,14 +40,16 @@ const DEFAULT_STYLE: CarStyle = { roof: 1.42, window: [-1.5, 0.95, 0.4, -1.15], 
 const CAR_STYLES: Record<string, CarStyle> = {
   standard: DEFAULT_STYLE,
   kei: { roof: 1.56, window: [-1.8, 0.95, 0.6, -1.72], color: 0x8fc7e8 },
+  cappuccino: { roof: 1.32, window: [-1.75, 0.55, 0.05, -1.35], color: 0xdc3a5c },
   sport: { roof: 1.34, window: [-1.6, 1.0, 0.2, -0.8], wing: 'low', color: 0xd94141 },
   ae86: { roof: 1.4, window: [-1.95, 0.95, 0.35, -1.05], lowerColor: 0x1d1d1f, color: 0xf2f2ee },
   eg6: { roof: 1.38, window: [-2.0, 0.95, 0.35, -1.85], color: 0xc8202a },
-  ek9: { roof: 1.4, window: [-2.0, 0.95, 0.35, -1.85], wing: 'low', color: 0xf4f4ef },
+  ek9: { roof: 1.4, window: [-2.0, 0.95, 0.35, -1.85], wing: 'low', color: 0xf3d41c },
   fd3s: { roof: 1.34, window: [-1.8, 1.05, 0.15, -0.7], wing: 'low', color: 0xf2c318 },
+  evo3: { roof: 1.43, window: [-1.45, 0.95, 0.4, -1.1], wing: 'high', color: 0x141517 },
   evo: { roof: 1.43, window: [-1.45, 0.95, 0.4, -1.1], wing: 'high', color: 0xe9ecef },
   gtr: { roof: 1.37, window: [-1.6, 0.98, 0.3, -0.9], wing: 'low', roundTail: true, color: 0x2a2c30 },
-  r34: { roof: 1.38, window: [-1.55, 0.98, 0.3, -0.95], wing: 'high', roundTail: true, color: 0x4a3a70 },
+  r34: { roof: 1.38, window: [-1.55, 0.98, 0.3, -0.95], wing: 'high', roundTail: true, tailRadii: [0.08, 0.125], color: 0x4a3a70 },
 };
 
 export function carStyle(carId: string): CarStyle {
@@ -122,7 +126,9 @@ export class CarMesh {
     }
 
     const lightGeo = new THREE.BoxGeometry(0.4, 0.14, 0.05);
-    const roundGeo = new THREE.CylinderGeometry(0.1, 0.1, 0.05, 16).rotateX(Math.PI / 2);
+    const [innerR, outerR] = this.style.tailRadii ?? [0.1, 0.1];
+    const roundGeo = (r: number) => new THREE.CylinderGeometry(r, r, 0.05, 16).rotateX(Math.PI / 2);
+    const tailGeos = [roundGeo(innerR), roundGeo(outerR)];
     const headMat = new THREE.MeshBasicMaterial({ color: 0xfff6d5 });
     const tailMat = new THREE.MeshBasicMaterial({ color: 0xc81e1e });
     for (const s of [-1, 1]) {
@@ -131,11 +137,13 @@ export class CarMesh {
       this.root.add(head);
       if (roundTail) {
         // 丸いテールランプを左右に2つずつ
-        for (const dx of [0.22, 0.48]) {
-          const tail = new THREE.Mesh(roundGeo, tailMat);
+        // 外側の中心は、ランプの縁が車体の端から少し内側に来る位置
+        const outerDx = Math.max(0.22, outerR + 0.1);
+        [outerDx + outerR + innerR + 0.06, outerDx].forEach((dx, i) => {
+          const tail = new THREE.Mesh(tailGeos[i], tailMat);
           tail.position.set(s * (width / 2 - dx), wheelRadius + 0.3, -length / 2 - 0.01);
           this.root.add(tail);
-        }
+        });
       } else {
         const tail = new THREE.Mesh(lightGeo, tailMat);
         tail.position.set(s * (width / 2 - 0.3), wheelRadius + 0.3, -length / 2 - 0.01);
