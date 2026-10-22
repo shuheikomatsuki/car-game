@@ -21,8 +21,8 @@ export class Level extends Track {
     else this.group.add(buildMapMesh(this.map, this.obstacles, this.terrain));
     const surface = this.hasSlopes ? { heightAt: (x: number, z: number) => this.heightAt(x, z, 0), gradientAt: (x: number, z: number) => this.gradientAt(x, z, 0) } : null;
     if (this.course) this.group.add(buildRaceLines(this.course, surface));
-    if (this.terrain?.shortcuts.length) {
-      this.group.add(buildShortcutMesh(this.terrain.shortcuts, this.terrain, (x, z) => this.offRoadDistance(x, z)! < 0));
+    if (this.shortcuts.length) {
+      this.group.add(buildShortcutMesh(this.shortcuts, (x, z) => this.heightAt(x, z, null, undefined, false), (x, z) => this.offRoadDistance(x, z)! < 0));
     }
     this.coneMeshes = this.physics.cones.map(() => {
       const m = createConeMesh();

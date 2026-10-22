@@ -133,3 +133,133 @@ export const RIVERSIDE_MAP: MapDefinition = {
   race: { laps: 2 },
 };
 
+
+const HAIRPIN_LAYOUT = [
+  '.............',
+  '.............',
+  '......RRR....',
+  '..T...R......',
+  '......R...T..',
+  '...RRRR......',
+  '...R.........',
+  '...RRRRRRRR..',
+  'T.........R.T',
+  '....RRRRRRR..',
+  '....R........',
+  '.T..RRRRRR...',
+  '.........R...',
+  '..RRRRRRRR...',
+  '..R..........',
+  '..RRRRRRR....',
+  '........R...T',
+  '...RRRRRR....',
+  '...R.........',
+  '...RRRRRRRR..',
+  '..........R..',
+  '.T...RRRRRR..',
+  '.T...R.......',
+  '..RRRR....T..',
+  '.............',
+  '...T.........',
+];
+
+const HAIRPIN_DOWN_LAYOUT = [
+  '.............',
+  '.............',
+  '......RRRRR..',
+  '..T...R......',
+  '......R...T..',
+  '...RRRR......',
+  '...R.........',
+  '...RRRRRRRR..',
+  'T.........R.T',
+  '....RRRRRRR..',
+  '....R........',
+  '.T..RRRRRR...',
+  '.........R...',
+  '..RRRRRRRR...',
+  '..R..........',
+  '..RRRRRRR....',
+  '........R...T',
+  '...RRRRRR....',
+  '...R.........',
+  '...RRRRRRRR..',
+  '..........R..',
+  '.T...RRRRRR..',
+  '.T...R.......',
+  '..RRRR....T..',
+  '.............',
+  '...T.........',
+];
+
+/** 斜面をつづら折りで上る。ヘアピンが十数個続く */
+export const HAIRPIN_MAP: MapDefinition = {
+  id: 'hairpin',
+  name: 'つづら折り（ヘアピン）',
+  tileSize: 22,
+  roadWidth: 10,
+  layout: HAIRPIN_LAYOUT,
+  start: { col: 4, row: 23, heading: 'E' },
+  guardrails: true,
+  race: { laps: 1 },
+  elevation: { from: { col: 2, row: 23 }, rise: 150 },
+};
+
+/**
+ * つづら折りを上から下る。ヘアピンの内側には段差のある近道の帯があり、
+ * 内側の内側を攻める「地元走り」ができる（段差で少し宙に浮く）
+ */
+export const HAIRPIN_DOWN_MAP: MapDefinition = {
+  id: 'hairpin-down',
+  name: 'つづら折り（ダウンヒル）',
+  tileSize: 22,
+  roadWidth: 10,
+  layout: HAIRPIN_DOWN_LAYOUT,
+  start: { col: 8, row: 2, heading: 'W' },
+  guardrails: true,
+  race: { laps: 1 },
+  elevation: { from: { col: 2, row: 23 }, rise: 160 },
+  shortcuts: true,
+};
+
+/**
+ * 谷を橋で渡り、山をトンネルで抜ける 5km あまりの峠。橋は 3 か所（コーナーの続く区間の途中）、
+ * トンネルは短いもの（90m）と長いもの（360m）が 1 本ずつ。左下の行き止まりがふもと、右上の行き止まりが頂上
+ */
+const VALLEY_LAYOUT = [
+    '.T....T.TTT...............................T.....TT.....',
+    '.....T.........T.RRRRRR############RR.T...........RRRR.',
+    '..TTT..T....T....R..................R.T........~..R....',
+    '...T.T.......TTT.RRRR.........T.....R....T.TT..~..RRR..',
+    'T......TT...........R....T........RRR.T........~....R..',
+    '..TT...TT....T......RRR..T........R........RRR===RR.R..',
+    '.TT.T.T...T......T.T..R.....TT....RRRR..T..R...~..R.R.T',
+    '.T...T................R..T.T.........R.....RRR.~..RRR..',
+    '.......T.RRRR###RR..RRR.....TT.......RRR.....R.........',
+    'T........R.......R..R......TT.T....~...R.....RRRR...T..',
+    '...T.....RRRRR...RRRR...T........T.~.RRR........R...TT.',
+    '.......TT....R.............T.......~.R..T..TT...R......',
+    '.T.........RRR.....T.TTT.T......RR===R.......T..R......',
+    'TT.T.......R....T..T.........T..R.........RRR...R.T..T.',
+    '..T........R......T...TT....TT..RRRRR.....R.R...R..TTT.',
+    '...........RRRR.........T...........R.....R.R...R......',
+    '.....RRR......R........T............R.....R.R.RRR......',
+    '.....R.R...~..R...T....T.T.T..T..RRRR..RRRR.R.R..T.T...',
+    '.RRRRR.RRR===RR...T..T..T.T..T...R.....R....R.R.....T..',
+    'T.....T....~...T.........TTT.....RRRRRRR....RRR.T.T.T..',
+    '..T........~.......TT..........TT..........T.....TTT.TT',
+];
+const VALLEY_ELEVATION = { from: { col: 1, row: 18 }, rise: 230 };
+
+/** 橋とトンネルの峠を上る */
+export const VALLEY_UP_MAP: MapDefinition = {
+  id: 'valley-up',
+  name: '橋とトンネルの峠（ヒルクライム）',
+  tileSize: 30,
+  roadWidth: 11,
+  layout: VALLEY_LAYOUT,
+  start: { col: 3, row: 18, heading: 'E' },
+  guardrails: true,
+  race: { laps: 1 },
+  elevation: VALLEY_ELEVATION,
+};

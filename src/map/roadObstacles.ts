@@ -1,5 +1,6 @@
 import { BARRIER_HEIGHT, type BoxObstacle, type MapObstacles, type TreeObstacle, tileHash } from './obstacles';
 import { FLAG_BRIDGE, FLAG_OLD, FLAG_TUNNEL, LAYER_NONE, PointGrid, type RoadModel } from './road';
+import { type Shortcut, insideShortcut } from './shortcuts';
 
 /** 壁を区切る長さ [m] */
 const WALL_SEGMENT = 4;
@@ -40,7 +41,7 @@ export function makeWallBlocked(road: RoadModel): (x: number, z: number, i: numb
  * 中心線で描く道路の障害物: 道路の両側の壁（首都高とサーキットはすべて、峠は橋とトンネル）と木。
  * 立体交差の所の壁には層（layer）を付け、その層の道路を走る車とだけぶつかるようにする
  */
-export function buildRoadObstacles(road: RoadModel): MapObstacles {
+export function buildRoadObstacles(road: RoadModel, shortcuts: readonly Shortcut[] = []): MapObstacles {
   const boxes: BoxObstacle[] = [];
   const highway = road.spec.scenery === 'highway';
   const gap = wallGap(road);
@@ -80,14 +81,14 @@ export function buildRoadObstacles(road: RoadModel): MapObstacles {
       });
     }
   }
-  return { boxes, trees: highway ? [] : roadTrees(road), cones: [], signs: [] };
+  return { boxes, trees: highway ? [] : roadTrees(road, shortcuts), cones: [], signs: [] };
 }
 
 /**
  * 峠の木。道路の両側の森で、狭い古い道（見通しの悪い区間）は道路のすぐ脇まで木が茂る。
- * 橋の上（谷）・トンネルの上・他の道路の上・U ターンの広場には置かない
+ * 橋の上（谷）・トンネルの上・他の道路の上・U ターンの広場・ヘアピンの内側の近道の帯には置かない
  */
-function roadTrees(road: RoadModel): TreeObstacle[] {
+function roadTrees(road: RoadModel, shortcuts: readonly Shortcut[]): TreeObstacle[] {
   const trees: TreeObstacle[] = [];
   const grid = new PointGrid(road.x, road.z);
   const near: number[] = [];
@@ -100,6 +101,7 @@ function roadTrees(road: RoadModel): TreeObstacle[] {
       if (Math.hypot(x - road.x[k], z - road.z[k]) < road.width[k] / 2 + gap) return false;
       if (road.flags[k] & FLAG_BRIDGE && Math.hypot(x - road.x[k], z - road.z[k]) < 40) return false;
     }
+    if (shortcuts.some((sc) => insideShortcut(sc, x, z))) return false;
     return !(turn && Math.hypot(x - turn.cx, z - turn.cz) < turn.plaza + 4);
   };
   const spacing = 5;
