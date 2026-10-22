@@ -33,8 +33,18 @@ export interface CourseProjection {
   s: number;
   /** 中心線からの左方向へのずれ [m] */
   offset: number;
-  /** いるタイルの番号 */
+  /** いるタイル（中心線で描く道路のマップでは、コースを一定の長さで区切った区間）の番号 */
   index: number;
+  /** コースの上にいるか（false ならコースの外で、index はいちばん近い所） */
+  onCourse: boolean;
+}
+
+/** 車などの位置と、コースのどこにいるかの手がかり */
+export interface ProjectHint {
+  /** 直前にいたコース上の距離 s [m]。近くだけを探すので、立体交差や同じ道の往復でも取り違えない */
+  s?: number | null;
+  /** 進んでいる向き（単位ベクトル）。同じ所を逆向きに通る道のどちらにいるかを見分ける */
+  dir?: { x: number; z: number } | null;
 }
 
 /**
@@ -44,8 +54,10 @@ export interface CourseProjection {
  */
 export interface Course {
   map: ParsedMap;
-  /** tiles[0] がスタートのタイル */
+  /** tiles[0] がスタートのタイル（タイルのマップだけ。中心線で描く道路のマップでは空） */
   tiles: CourseTile[];
+  /** 周回を数えるためにたどる区間の数（タイルのマップではタイルの数） */
+  checkpoints: number;
   closed: boolean;
   /** ゴールラインがあるタイル（その入口がゴール）。周回コースならスタートと同じ 0 */
   finishIndex: number;
@@ -59,14 +71,16 @@ export interface Course {
   end: number;
   /** その位置のタイルがコースの何番目か（コース外なら -1） */
   indexAt(x: number, z: number): number;
-  /** その番目のタイルでの進行方向（単位ベクトル） */
+  /** その番目のタイルでの進行方向（単位ベクトル。U ターンの広場のように向きの決まらない所は長さ 0） */
   directionAt(index: number): { x: number; z: number };
   /** スタートラインから中心線に沿って s [m] 進んだ点 */
   pointAt(s: number): CoursePoint;
   /** 位置を中心線に投影する */
-  project(x: number, z: number): CourseProjection;
-  /** スタートラインの手前に並ぶ位置。back はラインからの距離、side は左方向へのずれ [m] */
-  gridSpot(back: number, side?: number): { x: number; z: number; yaw: number };
+  project(x: number, z: number, hint?: ProjectHint): CourseProjection;
+  /** s での道幅 [m] */
+  widthAt(s: number): number;
+  /** スタートラインの手前に並ぶ位置。back はラインからの距離、side は左方向へのずれ [m]。s はその位置のコース上の距離 */
+  gridSpot(back: number, side?: number): { x: number; z: number; yaw: number; s: number };
 }
 
 /** 方向の単位ベクトル（+X が東、+Z が南） */
@@ -231,16 +245,16 @@ export function buildCourse(map: ParsedMap): Course {
     const index = indexAt(x, z);
     if (index >= 0) {
       const p = segmentProject(segments[index], x, z, half);
-      return { s: segments[index].start + p.u, offset: p.offset, index };
+      return { s: segments[index].start + p.u, offset: p.offset, index, onCourse: true };
     }
     // コースの外（草地など）では、いちばん近いタイルに投影する
-    let best = { s: 0, offset: 0, index: 0 };
+    let best: CourseProjection = { s: 0, offset: 0, index: 0, onCourse: false };
     let bestDist = Infinity;
     segments.forEach((seg, i) => {
       const p = segmentProject(seg, x, z, half);
       if (p.dist < bestDist) {
         bestDist = p.dist;
-        best = { s: seg.start + p.u, offset: p.offset, index: i };
+        best = { s: seg.start + p.u, offset: p.offset, index: i, onCourse: false };
       }
     });
     return best;
@@ -249,6 +263,7 @@ export function buildCourse(map: ParsedMap): Course {
   return {
     map,
     tiles,
+    checkpoints: tiles.length,
     closed,
     finishIndex,
     line,
@@ -281,12 +296,14 @@ export function buildCourse(map: ParsedMap): Course {
       return segmentPoint(seg, Math.min(d, seg.length), half);
     },
     project,
+    widthAt: () => map.def.roadWidth,
     gridSpot(back, side = 0) {
       // 左方向 = (forward.z, -forward.x)（+Y 上から見て反時計回りに90°）
       return {
         x: line.x - forward.x * back + forward.z * side,
         z: line.z - forward.z * back - forward.x * side,
         yaw,
+        s: -back,
       };
     },
   };

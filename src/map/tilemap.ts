@@ -8,6 +8,8 @@
  * 座標: 列(col) → +X、行(row) → +Z。タイル中心 = (col * tileSize, row * tileSize)。
  */
 
+import type { RoadSpec } from './road';
+
 export type Direction = 'N' | 'E' | 'S' | 'W';
 
 export const DIRECTIONS: readonly Direction[] = ['N', 'E', 'S', 'W'];
@@ -72,8 +74,7 @@ export interface MapDefinition {
    *   B 建物   T 木
    *   ~ 水（川・海）   = 橋（水の上の道路）   # トンネル（山の中の道路）
    *
-   * 高低差のあるマップの橋は谷に架かり、川（~）は谷の底を流れる。
-   * 高架のマップ（highway）で、まっすぐ 6 枚以上続く橋は吊り橋（主塔とケーブルのある橋）になる
+   * 高低差のあるマップの橋は谷に架かり、川（~）は谷の底を流れる
    */
   layout: string[];
   start: { col: number; row: number; heading: Direction };
@@ -93,10 +94,10 @@ export interface MapDefinition {
   /** ヘアピンの内側に、段差のある近道の帯を作る（高低差のある下りのコース用。src/map/shortcuts.ts） */
   shortcuts?: boolean;
   /**
-   * 首都高のような高架の道路。道路の両側に壁が続き、周りの地面（街・海）は depth [m] 下にある。
-   * lanes は車線の数（車線の境目に破線を引く）
+   * タイルを使わず、中心線（直線と円弧）で道路を描くマップ（src/map/road.ts）。このときは layout と start は使わない
+   * （layout は空、start はどこでもよい）。tileSize はレーシングラインの終わりの余白、roadWidth はいちばん広い道幅
    */
-  highway?: { depth: number; lanes: number };
+  road?: RoadSpec;
 }
 
 export interface ParsedMap {
@@ -119,6 +120,8 @@ const KIND_BY_CHAR: Record<string, { kind: TileKind; cones?: boolean; bridge?: b
 };
 
 export function parseMap(def: MapDefinition): ParsedMap {
+  // 中心線で描く道路のマップには、タイルがない
+  if (def.road) return { def, cols: 0, rows: 0, tiles: [], tileAt: () => undefined };
   const rows = def.layout.length;
   const cols = Math.max(...def.layout.map((line) => line.length));
   const grid: Tile[][] = [];

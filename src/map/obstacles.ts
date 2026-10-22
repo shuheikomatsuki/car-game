@@ -19,6 +19,8 @@ export interface BoxObstacle {
   yaw?: number;
   /** 見た目用の色番号 */
   variant: number;
+  /** 立体交差の上か下の道路の壁なら、その層（src/map/road.ts の LAYER_*）。その層を走る車とだけぶつかる */
+  layer?: number;
 }
 
 export interface TreeObstacle {
@@ -59,10 +61,10 @@ const WALL_HEIGHT = 1.2;
 const WALL_THICKNESS = 1;
 const GUARDRAIL_SEGMENTS = 6;
 const GUARDRAIL_HEIGHT = 0.8;
-/** 橋の欄干・高架の壁の高さと厚さ [m] */
+/** 橋の欄干・トンネルや高架の壁の高さと厚さ [m] */
 export const BARRIER_HEIGHT = 1.1;
 const BARRIER_THICKNESS = 0.5;
-/** 高架の壁のカーブを区切る数 */
+/** カーブの橋・トンネルの壁を区切る数 */
 const BARRIER_SEGMENTS = 8;
 
 export function buildObstacles(map: ParsedMap): MapObstacles {
@@ -77,14 +79,12 @@ export function buildObstacles(map: ParsedMap): MapObstacles {
   for (const tile of map.tiles) {
     const { x, z } = tileCenter(map, tile.col, tile.row);
     if (tile.kind === 'building') {
-      // 高架の道路のマップでは、下の街から高架より高くそびえるビルにする
-      const depth = map.def.highway?.depth ?? 0;
-      const height = depth + (depth ? 4 + Math.floor(tileHash(tile.col, tile.row) * 6) * 5 : 6 + Math.floor(tileHash(tile.col, tile.row) * 4) * 4);
+      const height = 6 + Math.floor(tileHash(tile.col, tile.row) * 4) * 4;
       const size = half - 2;
       boxes.push({
         kind: 'building',
         x,
-        y: height / 2 - depth,
+        y: height / 2,
         z,
         hx: size,
         hy: height / 2,
@@ -134,35 +134,28 @@ export function buildObstacles(map: ParsedMap): MapObstacles {
     }
   }
 
-  if (map.def.highway) {
-    // 高架: すべての道路の両側に壁
-    for (const tile of map.tiles) {
-      if (tile.kind === 'road') boxes.push(...roadsideBarriers(map, tile.col, tile.row, tile.connections));
-    }
-  } else {
-    // 橋の欄干とトンネルの壁
-    for (const tile of map.tiles) {
-      if (tile.kind === 'road' && (tile.bridge || tile.tunnel)) boxes.push(...roadsideBarriers(map, tile.col, tile.row, tile.connections));
-    }
-    // 川岸: 水と陸の境目に柵（橋の上は欄干があるので、橋とのあいだには置かない）。峠の川は谷の底なので置かない
-    for (const tile of map.def.elevation ? [] : map.tiles) {
-      if (tile.kind !== 'water') continue;
-      const { x, z } = tileCenter(map, tile.col, tile.row);
-      for (const { dc, dr } of Object.values(DIR_OFFSET)) {
-        const next = map.tileAt(tile.col + dc, tile.row + dr);
-        if (!next || next.kind === 'water' || next.bridge) continue;
-        boxes.push({
-          kind: 'guardrail',
-          x: x + dc * (half - 0.3),
-          y: GUARDRAIL_HEIGHT / 2,
-          z: z + dr * (half - 0.3),
-          hx: 0.15,
-          hy: GUARDRAIL_HEIGHT / 2,
-          hz: half,
-          yaw: dc !== 0 ? 0 : Math.PI / 2,
-          variant: 0,
-        });
-      }
+  // 橋の欄干とトンネルの壁
+  for (const tile of map.tiles) {
+    if (tile.kind === 'road' && (tile.bridge || tile.tunnel)) boxes.push(...roadsideBarriers(map, tile.col, tile.row, tile.connections));
+  }
+  // 川岸: 水と陸の境目に柵（橋の上は欄干があるので、橋とのあいだには置かない）。峠の川は谷の底なので置かない
+  for (const tile of map.def.elevation ? [] : map.tiles) {
+    if (tile.kind !== 'water') continue;
+    const { x, z } = tileCenter(map, tile.col, tile.row);
+    for (const { dc, dr } of Object.values(DIR_OFFSET)) {
+      const next = map.tileAt(tile.col + dc, tile.row + dr);
+      if (!next || next.kind === 'water' || next.bridge) continue;
+      boxes.push({
+        kind: 'guardrail',
+        x: x + dc * (half - 0.3),
+        y: GUARDRAIL_HEIGHT / 2,
+        z: z + dr * (half - 0.3),
+        hx: 0.15,
+        hy: GUARDRAIL_HEIGHT / 2,
+        hz: half,
+        yaw: dc !== 0 ? 0 : Math.PI / 2,
+        variant: 0,
+      });
     }
   }
 

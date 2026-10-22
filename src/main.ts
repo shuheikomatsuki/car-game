@@ -15,7 +15,7 @@ import { LeaderboardClient, myEntryId, playerId, uploadedTotal } from './net/lea
 import { type GhostData, type GhostPose, GhostRecorder, ghostPoseAt } from './race/ghost';
 import { NPC_LEVELS } from './race/npcDriver';
 import { RIVALS, loadBeatenRivals, markRivalBeaten, rivalLevel } from './race/rivals';
-import { BREAKAWAY_DISTANCE, CHASE_START_GAP, type Runner, SuddenDeath } from './race/suddenDeath';
+import { CHASE_START_GAP, type Runner, SAFE_SECONDS, SuddenDeath } from './race/suddenDeath';
 import { type RaceRecord, loadRecord, mergeRecord, saveRecord } from './race/records';
 import { TimeAttack, formatTime } from './race/timeAttack';
 import { isRoomCode, normalizeRoomCode } from './net/protocol';
@@ -23,7 +23,7 @@ import { CameraRig } from './render/camera';
 import { CarMesh, carStyle } from './render/carMesh';
 import { createGhostMesh } from './render/raceMesh';
 import { GameScene } from './render/scene';
-import type { CarSnapshot } from './sim/car';
+import type { CarSnapshot, Spawn } from './sim/car';
 import { loadRapier } from './sim/physics';
 import { NEUTRAL_INPUT, VEHICLE_PRESETS } from './sim/vehicle';
 import { Hud, hideLoading, showError } from './ui/hud';
@@ -118,7 +118,7 @@ async function main() {
   const fall = new FallRecovery();
   /** 段差で宙に浮いたとき */
   const air = new Airborne();
-  const groundAt = (s: { x: number; z: number }) => level.terrain?.heightAt(s.x, s.z) ?? 0;
+  const groundAt = (s: CarSnapshot) => level.heightAt(s.x, s.z, s.courseS, s.yaw);
 
   const remoteCars = new RemoteCars(view.scene);
   remoteCars.attachLevel(level);
@@ -168,8 +168,13 @@ async function main() {
     rivalMesh.root.visible = false;
   };
   /** ゴーストの位置を、描画用の車の状態にする */
-  const ghostSnapshot = (p: GhostPose): CarSnapshot =>
-    level.ground({ x: p.x, y: 0.05, z: p.z, yaw: p.yaw, forwardSpeed: 0, lateralSpeed: 0, steerAngle: 0, wheelSpin: 0 });
+  /** ゴーストのコース上の距離（立体交差のどちらの道を走っているかを、前の位置から追う） */
+  const ghostCourseS = { best: null as number | null, rival: null as number | null };
+  const ghostSnapshot = (p: GhostPose, which: keyof typeof ghostCourseS): CarSnapshot => {
+    const courseS = level.locate(p.x, p.z, p.yaw, ghostCourseS[which]);
+    ghostCourseS[which] = courseS;
+    return level.ground({ x: p.x, y: 0.05, z: p.z, yaw: p.yaw, forwardSpeed: 0, lateralSpeed: 0, steerAngle: 0, wheelSpin: 0, ...(courseS !== null ? { courseS } : {}) });
+  };
   const raceMapIndex = MAPS.findIndex((m) => m.race);
   const minimap = new Minimap(document.getElementById('minimap')!);
   const raceHud = new RaceHud({
@@ -178,7 +183,7 @@ async function main() {
     onRanking: () => openRanking(),
   });
 
-  const placeCar = (spawn: { x: number; z: number; yaw: number }) => {
+  const placeCar = (spawn: Spawn) => {
     level.car.reset(spawn);
     fall.cancel();
     prev = curr = level.car.snapshot();
@@ -229,10 +234,11 @@ async function main() {
     // アクセルを踏むまでカウントダウンを始めない（自分のタイミングでスタートする）
     race = new TimeAttack(course, laps, true);
     ghostRecorder = new GhostRecorder();
+    ghostCourseS.best = ghostCourseS.rival = 0;
     // NPC 対戦ではゴーストを出さず、記録も残さない
     best = mode === 'timeAttack' ? loadRecord(level.def.name, vehicle().id) : null;
     // 2列に互い違いに並ぶ。道幅に合わせて左右の間隔を決める
-    const side = Math.min(3, level.def.roadWidth / 4);
+    const side = Math.min(3, course.widthAt(0) / 4);
     const slot = (i: number) => course.gridSpot(6 + 7 * i, i % 2 === 0 ? side : -side);
     if (mode === 'npc') {
       const grid = Array.from({ length: NPC_COUNT }, (_, i) => slot(i));
@@ -385,7 +391,9 @@ async function main() {
     const sd = suddenDeath;
     const r = runners();
     if (!sd || !r || race?.phase === 'ready' || race?.phase === 'countdown') return;
-    const outcome = sd.update(r.player, r.rival);
+    // ゴールした側の時計は止まるので、まだ走っている側の時計で測る
+    const npc = npcField!.npcs[0];
+    const outcome = sd.update(r.player, r.rival, Math.max(race!.time, npc.timer.time));
     if (!outcome) return;
     const name = battleRival().name;
     const lead = sd.playerLeads ? 'あなた' : name;
@@ -394,7 +402,10 @@ async function main() {
     raceHud.setWarning({ wrongWay: false, offCourse: false });
     raceHud.showRankingButton(false);
     if (outcome === 'draw') {
-      raceHud.showBattleResult(`${sd.round}本目は引き分け`, `${lead}（先行）が逃げ切れず、${chase}（後追い）も抜けませんでした。先行と後追いを入れ替えて、${sd.round + 1}本目へ…`);
+      raceHud.showBattleResult(
+        `${sd.round}本目は引き分け`,
+        `${chase}（後追い）が ${SAFE_SECONDS}秒以内に続いてゴールし、抜くこともできませんでした。先行と後追いを入れ替えて、${sd.round + 1}本目へ…`,
+      );
       nextRoundTimer = window.setTimeout(() => {
         if (suddenDeath !== sd) return;
         sd.nextRound();
@@ -402,7 +413,7 @@ async function main() {
       }, NEXT_ROUND_DELAY);
       return;
     }
-    const why = outcome === 'leadWins' ? `${lead}（先行）が ${BREAKAWAY_DISTANCE}m 以上引き離した` : `${chase}（後追い）が抜いて先にゴールした`;
+    const why = outcome === 'leadWins' ? `${lead}（先行）が ${SAFE_SECONDS}秒より大きな差をつけてゴールした` : `${chase}（後追い）が抜いて先にゴールした`;
     const won = sd.winner === 'player';
     if (won) markRivalBeaten(battleRival().id);
     raceHud.showBattleResult(won ? `勝利！ ${name} に勝った` : `敗北… ${name} の勝ち`, `${sd.round}本目で決着：${why}`);
@@ -414,7 +425,7 @@ async function main() {
     const r = runners();
     if (!sd || !r) return undefined;
     const gap = Math.max(0, Math.round(sd.gap(r.player, r.rival)));
-    return `${sd.round}本目・あなたが${sd.playerLeads ? '先行' : '後追い'}　差 ${gap}m（${BREAKAWAY_DISTANCE}m で先行の勝ち）`;
+    return `${sd.round}本目・あなたが${sd.playerLeads ? '先行' : '後追い'}　差 ${gap}m（ゴールで ${SAFE_SECONDS}秒より離れたら先行の勝ち）`;
   };
 
   const loadMap = (index: number, message = `マップ: ${MAPS[index].name}`) => {
@@ -805,7 +816,7 @@ async function main() {
         detail: () =>
           draft.rule === 'side'
             ? '2台が横に並んでスタートし、先にゴールしたほうの勝ち'
-            : `先行と後追いに分かれて1本ずつ走る。先行が ${BREAKAWAY_DISTANCE}m 以上引き離せば先行の勝ち、後追いが抜いて先にゴールすれば後追いの勝ち。決着がつかなければ先行と後追いを入れ替えて次の1本へ`,
+            : `先行と後追いに分かれて1本ずつ走り、ゴールの時点で判定する。後追いが抜いて先にゴールすれば後追いの勝ち、後追いが先行から ${SAFE_SECONDS}秒より遅れてゴールすれば先行の勝ち。${SAFE_SECONDS}秒以内に続いてゴールすれば引き分けで、先行と後追いを入れ替えて次の1本へ`,
       },
     ],
   };
@@ -975,6 +986,9 @@ async function main() {
       // 草地を走るとガタガタ揺れる
       const grass = level.car.offRoad?.(curr.x, curr.z) ?? 0;
       if (grass > 0 && !fall.falling) cameraRig.addShake(grass * Math.min(1, Math.abs(curr.forwardSpeed) / 15) * 0.6);
+      // 荒れた路面でも小刻みに揺れる
+      const rough = level.roughnessAt(curr.x, curr.z, curr.courseS);
+      if (rough > 0 && !fall.falling) cameraRig.addShake(rough * Math.min(1, Math.abs(curr.forwardSpeed) / 25) * 0.3);
       if (race) {
         const r = race;
         r.update(dt, { x: curr.x, z: curr.z, ...velocityOf(curr) });
@@ -1000,10 +1014,10 @@ async function main() {
         const list = npcField ? standings() : null;
         const rank = list ? { list, index: list.findIndex((e) => e.isPlayer) } : null;
         ghostMesh.root.visible = pose !== null;
-        if (pose) ghostMesh.update(ghostSnapshot(pose));
+        if (pose) ghostMesh.update(ghostSnapshot(pose, 'best'));
         const rivalPose = rival && raceMode === 'timeAttack' ? ghostPoseAt(rival.ghost, Math.max(0, race.time)) : null;
         rivalMesh.root.visible = rivalPose !== null;
-        if (rivalPose) rivalMesh.update(ghostSnapshot(rivalPose));
+        if (rivalPose) rivalMesh.update(ghostSnapshot(rivalPose, 'rival'));
         raceHud.update({
           lap: race.lap,
           totalLaps: race.totalLaps,

@@ -59,7 +59,7 @@ function escapeHtml(s: string): string {
 /**
  * ゲームのメニュー（スマホは ☰、パソコンは Esc で開く）。
  * 最初の画面でプレイモードを選び、コース・対戦相手・車などを1枚ずつ選んでいく。
- * 1つだけ選ぶ画面は選ぶとすぐ次の画面へ進み、「戻る」で前の画面に戻れる。最後の画面の「スタート」で始まる
+ * 選んでも次の画面へは進まず、「次へ」で進み「戻る」で前の画面に戻る。最後の画面の「スタート」で始まる
  */
 export class GameMenu {
   private readonly root = el('menu');
@@ -101,9 +101,7 @@ export class GameMenu {
       const screen = this.screen();
       if (!screen) return;
       screen.groups[Number(button.dataset.group)].select(id);
-      // 選ぶものが1つだけの画面は、選んだらすぐ次へ
-      if (screen.groups.length === 1) this.next();
-      else this.refresh();
+      this.refresh();
     });
     this.actionsEl.addEventListener('click', (e) => {
       const button = (e.target as HTMLElement).closest('button[data-action]') as HTMLButtonElement | null;
