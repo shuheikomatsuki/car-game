@@ -1,5 +1,5 @@
 import { beforeAll, describe, expect, it } from 'vitest';
-import { CIRCUIT_MAP } from '../map/maps';
+import { CIRCUIT_MAP } from '../map/testMaps';
 import { buildObstacles } from '../map/obstacles';
 import { parseMap } from '../map/tilemap';
 import { buildCourse } from '../race/course';

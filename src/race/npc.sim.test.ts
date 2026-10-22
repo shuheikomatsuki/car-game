@@ -1,6 +1,7 @@
 import { beforeAll, describe, expect, it } from 'vitest';
 import { Track } from '../game/track';
 import { CIRCUIT_MAP, HAIRPIN_MAP, MAPS, STEEP_DOWN_MAP, TECHNICAL_MAP } from '../map/maps';
+import { TECHNICAL_MAP as TILE_TECHNICAL_MAP } from '../map/testMaps';
 import { type MapDefinition, parseMap } from '../map/tilemap';
 import { type Rapier, loadRapier } from '../sim/physics';
 import { DEFAULT_VEHICLE_PARAMS, VEHICLE_PRESETS, type VehicleParams } from '../sim/vehicle';
@@ -66,11 +67,11 @@ function race(def: MapDefinition, levels: NpcLevel[], params: VehicleParams = DE
 
 describe('racing line', () => {
   it('stays on the road and is faster than the centerline', () => {
-    const course = buildCourse(parseMap(TECHNICAL_MAP));
+    const course = buildCourse(parseMap(TILE_TECHNICAL_MAP));
     const line = buildRacingLine(course);
-    const limit = TECHNICAL_MAP.roadWidth / 2;
+    const limit = TILE_TECHNICAL_MAP.roadWidth / 2;
     for (let i = 0; i < line.count; i++) expect(Math.abs(line.offset[i])).toBeLessThan(limit);
-    const center = buildRacingLine(course, TECHNICAL_MAP.roadWidth / 2);
+    const center = buildRacingLine(course, TILE_TECHNICAL_MAP.roadWidth / 2);
     const opts = { grip: 1, brake: 1 };
     const fast = profileTime(line, buildSpeedProfile(line, DEFAULT_VEHICLE_PARAMS, opts));
     const slow = profileTime(center, buildSpeedProfile(center, DEFAULT_VEHICLE_PARAMS, opts));

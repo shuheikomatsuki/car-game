@@ -52,8 +52,10 @@ export interface RoadSpec {
   turnaround?: { radius: number };
   /** スタートラインの位置（道路の始まりからの距離 [m]）。往復のコースは、戻ってきた同じ位置がゴール */
   start: number;
-  /** 周りの景色: 峠（山・谷・森）か、首都高（高架の下の街と海） */
-  scenery: 'touge' | 'highway';
+  /** 周りの景色: 峠（山・谷・森）、首都高（高架の下の街と海）、サーキット（平らな芝生。道路の外に退避帯と壁） */
+  scenery: 'touge' | 'highway' | 'circuit';
+  /** サーキット: 道路の端から壁までの退避帯の幅 [m] */
+  runoff?: number;
   /** 首都高: 道路の下の地面（街・海）の高さ [m] と車線の数 */
   highway?: { ground: number; lanes: number };
   /** 首都高: 海の範囲（長方形の [minX, minZ, maxX, maxZ]）。ここには建物を置かず、水面を描く */
@@ -67,7 +69,7 @@ const HEIGHT_SMOOTH = 60;
 /** 道幅の変化をなめらかにする幅 [m] */
 const WIDTH_SMOOTH = 30;
 /** 荒れた路面の波の高さ [m] */
-export const BUMP_AMPLITUDE = 0.1;
+export const BUMP_AMPLITUDE = 0.07;
 /**
  * 立体交差を見つける: 道路に沿って CROSS_APART [m] 以上離れた2点が、平面で道幅の半分ずつ＋ CROSS_MARGIN [m]
  * より近く、高さが CROSS_CLEARANCE [m] 以上違えば交差。交差の前後 LAYER_EXTEND [m] を上・下の層にする
@@ -248,8 +250,86 @@ function buildTurnaround(x: number, z: number, yaw: number, radius: number): Tur
   return { x, z, yaw, radius, cx: x + Math.sin(yaw) * d, cz: z + Math.cos(yaw) * d, plaza: radius * 1.9, loop, length };
 }
 
+/** 区間をすべてたどった、道路の終わりの位置と向き */
+function roadEnd(spec: RoadSpec): { x: number; z: number; yaw: number } {
+  let st = { ...(spec.origin ?? ROAD_ORIGIN) };
+  for (const p of spec.pieces) {
+    const { length, curvature } = pieceShape(p);
+    st = advance(st.x, st.z, st.yaw, curvature, length);
+  }
+  return st;
+}
+
+/**
+ * 周回の道路を閉じる3つの区間（直線・半径 radius の円弧・直線）を最後に足す。円弧は side の向き
+ * （1 = 左、-1 = 右）に、道路の始まりの向きに戻るまで曲がる。extra は足す区間に付ける指定（高さなど）。
+ * 直線の長さが負になる（その半径では閉じられない）ときは例外
+ */
+export function closeLoop(
+  origin: { x: number; z: number; yaw: number },
+  pieces: readonly RoadPiece[],
+  radius: number,
+  side: 1 | -1,
+  extra: Omit<RoadPiece, 'straight' | 'arc'> = {},
+): RoadPiece[] {
+  const e = roadEnd({ pieces, origin, width: 0, start: 0, scenery: 'touge' });
+  let turn = (origin.yaw - e.yaw) % (2 * Math.PI);
+  if (side > 0 && turn <= 0) turn += 2 * Math.PI;
+  if (side < 0 && turn >= 0) turn -= 2 * Math.PI;
+  const k = side / radius;
+  const y1 = e.yaw + turn;
+  // 円弧で動く量
+  const dx = (Math.cos(e.yaw) - Math.cos(y1)) / k;
+  const dz = (Math.sin(y1) - Math.sin(e.yaw)) / k;
+  // a (sin e.yaw, cos e.yaw) + b (sin origin.yaw, cos origin.yaw) = 残り
+  const rx = origin.x - e.x - dx;
+  const rz = origin.z - e.z - dz;
+  const [ax, az, bx, bz] = [Math.sin(e.yaw), Math.cos(e.yaw), Math.sin(origin.yaw), Math.cos(origin.yaw)];
+  const det = ax * bz - az * bx;
+  const a = (rx * bz - rz * bx) / det;
+  const b = (ax * rz - az * rx) / det;
+  if (!(a >= 0 && b >= 0)) throw new Error(`Cannot close the road with radius ${radius} (straights ${a.toFixed(1)}, ${b.toFixed(1)})`);
+  const out: RoadPiece[] = [...pieces];
+  if (a > 0.01) out.push({ straight: a, ...extra });
+  out.push({ arc: { radius, turn: (turn * 180) / Math.PI }, ...extra });
+  if (b > 0.01) out.push({ straight: b, ...extra });
+  return out;
+}
+
+/** 道路の始まりの、省略したときの位置と向き（原点から東向き） */
+export const ROAD_ORIGIN = { x: 0, z: 0, yaw: Math.PI / 2 };
+
+/**
+ * 同じ道路を終わりから始まりへ逆向きに走る道路（上りの峠から下りの峠を作る）。形・高さ・道幅は同じで、
+ * スタートラインは逆向きの道路の始まりから start [m]
+ */
+export function reverseRoad(spec: RoadSpec, start: number): RoadSpec {
+  const end = roadEnd(spec);
+  const n = spec.pieces.length;
+  const known = spec.pieces.filter((p) => p.h !== undefined);
+  const pieces = spec.pieces.map((_, j) => {
+    const i = n - 1 - j;
+    const p = spec.pieces[i];
+    // 逆向きの区間の終わり = 元の区間の始まり = 1つ前の区間の終わり
+    const h = i === 0 ? (spec.startHeight ?? 0) : spec.pieces[i - 1].h;
+    const piece: RoadPiece = { ...p, ...(p.arc ? { arc: { radius: p.arc.radius, turn: -p.arc.turn } } : {}) };
+    delete piece.h;
+    if (h !== undefined) piece.h = h;
+    return piece;
+  });
+  return {
+    ...spec,
+    pieces,
+    origin: { x: end.x, z: end.z, yaw: end.yaw + Math.PI },
+    startHeight: known.length ? known[known.length - 1].h : (spec.startHeight ?? 0),
+    start,
+    turnaround: undefined,
+    closed: false,
+  };
+}
+
 export function buildRoad(spec: RoadSpec): RoadModel {
-  const origin = spec.origin ?? { x: 0, z: 0, yaw: Math.PI / 2 };
+  const origin = spec.origin ?? ROAD_ORIGIN;
   const closed = spec.closed ?? false;
   // 区間の始まりの状態
   const states: PieceState[] = [];
@@ -403,7 +483,7 @@ export function buildRoad(spec: RoadSpec): RoadModel {
 /**
  * 荒れた路面の波の高さ [m]。s は道路に沿った距離、offset は中心から左へのずれ。
  * 長さの違う波を重ね、左右でも少しずらして、車が前後・左右に揺すられるようにする。
- * 80km/h くらいまでは路面に張り付いたまま揺すられ、それより速いと波の頂上で少し跳ねる（src/game/airborne.ts）
+ * 110km/h くらいまでは路面に張り付いたまま揺すられ、それより速いと波の頂上で少し跳ねる（src/game/airborne.ts）
  */
 export function bumpHeight(road: RoadModel, s: number, offset: number): number {
   const e = road.bump[road.indexAt(s)];

@@ -1,3 +1,4 @@
+import { ROAD_ORIGIN, type RoadPiece, type RoadSpec, closeLoop, reverseRoad } from './road';
 import type { MapDefinition } from './tilemap';
 
 /** 最初の練習用の小さな街 */
@@ -55,124 +56,250 @@ export const SCHOOL_MAP: MapDefinition = {
   ],
 };
 
+
+
+
+
+
+/** 中心線で描く道路のマップ（タイルのレイアウトは使わない） */
+function roadMap(id: string, name: string, road: RoadSpec, laps = 1): MapDefinition {
+  return { id, name, tileSize: 20, roadWidth: road.width, layout: [], start: { col: 0, row: 0, heading: 'E' }, race: { laps }, road };
+}
+
+/** ごく僅かに左右へくねりながら続く直線（半径 radius [m] の円弧で ±turn [度] ずつ、count 回） */
+function wiggle(count: number, radius: number, turn: number, extra: Omit<RoadPiece, 'straight' | 'arc'> = {}): RoadPiece[] {
+  // 最初と最後は半分だけ曲げて、入る向きと出る向きを直線と同じにする
+  return Array.from({ length: count }, (_, i) => {
+    const t = i === 0 || i === count - 1 ? turn / 2 : turn;
+    return { arc: { radius, turn: i % 2 === 0 ? t : -t }, ...extra };
+  });
+}
+
 /**
- * タイムアタック用の周回サーキット。交差点はなく、一周が1本道。
- * 速度を出せるよう、タイルを大きく（カーブの半径 20m）、道幅を広くしている。
+ * 周回のサーキット（約 3.5km）。1km のメインストレートの先の低速のヘアピン、退避帯の広い高速の S 字、
+ * バックストレート、複合コーナー、半径 200m の高速コーナーと、速さの違うコーナーがそろう
  */
-export const CIRCUIT_MAP: MapDefinition = {
-  id: 'circuit',
-  name: 'サーキット',
-  tileSize: 40,
-  roadWidth: 16,
-  layout: [
-    '...............',
-    '.RRRRRRRRRRRRR.',
-    '.R..T.....T..R.',
-    '.R..RRRRR....R.',
-    '.R..R.T.R..T.R.',
-    '.RRRR...R..RRR.',
-    '..T.....R..R...',
-    '...RRRRRR..R.T.',
-    '...R..B..T.R...',
-    '...RRRRRRRRR...',
-    '...............',
-  ],
-  start: { col: 6, row: 1, heading: 'E' },
-  guardrails: true,
-  race: { laps: 3 },
-};
-
-/** 短い直線とコーナーが続く周回コース。カーブの半径は 15m と小さめ */
-export const TECHNICAL_MAP: MapDefinition = {
-  id: 'technical',
-  name: 'テクニカルコース',
-  tileSize: 30,
-  roadWidth: 14,
-  layout: [
-    '.................',
-    '.RRRRR..T..RRRRR.',
-    '.R.T.R.....R.T.R.',
-    '.R...RRR.RRR...R.',
-    '.R..T..R.R..T..R.',
-    '.RRR...RRR...RRR.',
-    '...R..T...T..R...',
-    '.RRR..RRRRR..RRR.',
-    '.R....R.B.R....R.',
-    '.R..RRR...RRR..R.',
-    '.R..R..T.T..R..R.',
-    '.RRRR.......RRRR.',
-    '.................',
-  ],
-  start: { col: 8, row: 7, heading: 'E' },
-  guardrails: true,
-  race: { laps: 2 },
-};
-
-/** 峠道のレイアウト。左下の行き止まりがふもと、左上の行き止まりが頂上 */
-const PASS_LAYOUT = [
-  '...................',
-  '.RRRRRR..T....T....',
-  '..T...R..RRRR...T..',
-  '......R..R..R......',
-  '.T....RRRR..R..T...',
-  '....T.......R......',
-  '..RRRRRR..RRR...T..',
-  '..R....R..R...T....',
-  '..R..T.RRRR.....T..',
-  '..R.........T......',
-  '..RRRR..RRRRRRRRR..',
-  '.T...R..R..T....R..',
-  '.....RRRR...RRRRR..',
-  '..T.....T...R...T..',
-  '..RRRRRRRRRRR......',
-  '...................',
+const CIRCUIT_PIECES: RoadPiece[] = [
+  { straight: 700 },
+  // 1コーナー: 低速のヘアピン
+  { arc: { radius: 28, turn: -150 } },
+  { straight: 160 },
+  // 高速の S 字
+  { arc: { radius: 130, turn: 55 } },
+  { arc: { radius: 110, turn: -70 } },
+  { straight: 120 },
+  // 中速の左
+  { arc: { radius: 55, turn: 80 } },
+  // バックストレート
+  { straight: 420 },
+  // 複合の右（2つの頂点）
+  { arc: { radius: 40, turn: -80 } },
+  { straight: 40 },
+  { arc: { radius: 50, turn: -70 } },
+  { straight: 200 },
+  // 高速の左
+  { arc: { radius: 200, turn: 60 } },
+  { straight: 150 },
+  { arc: { radius: 70, turn: -90 } },
+  // 500m のストレートの先の右で、メインストレートに戻る
 ];
-const PASS_ELEVATION = { from: { col: 2, row: 14 }, rise: 150 };
 
-/** ふもとから頂上まで上る一本道。坂で車が重くなる */
-export const HILLCLIMB_MAP: MapDefinition = {
-  id: 'hillclimb',
-  name: '峠（ヒルクライム）',
-  tileSize: 30,
-  roadWidth: 11,
-  layout: PASS_LAYOUT,
-  start: { col: 5, row: 14, heading: 'E' },
-  guardrails: true,
-  race: { laps: 1 },
-  elevation: PASS_ELEVATION,
-};
+export const CIRCUIT_MAP = roadMap(
+  'circuit-gp',
+  'サーキット',
+  { scenery: 'circuit', width: 14, runoff: 8, start: 200, closed: true, pieces: closeLoop(ROAD_ORIGIN, CIRCUIT_PIECES, 80, -1) },
+  3,
+);
 
-/** 同じ峠を頂上から下る。スピードが乗るので早めのブレーキが大事 */
-export const DOWNHILL_MAP: MapDefinition = {
-  id: 'downhill',
-  name: '峠（ダウンヒル）',
-  tileSize: 30,
-  roadWidth: 11,
-  layout: PASS_LAYOUT,
-  start: { col: 4, row: 1, heading: 'E' },
-  guardrails: true,
-  race: { laps: 1 },
-  elevation: PASS_ELEVATION,
-};
-
-const OVER_LAYOUT = [
-  '....................T.......',
-  '............................',
-  '.T.......RRRRRR..RRRR.......',
-  '...T.....R....R..R..R..T...T',
-  '.....RRRRR....R..R..R......T',
-  '..T..R........RRRR..R.......',
-  '.T...R............RRR.......',
-  '.....RRRR.........R........T',
-  '........R..T......R.........',
-  '.T.T....R.........RRRRR.T...',
-  '......RRR.............R.....',
-  '......R..........T..RRR.....',
-  '.T....R.............R.......',
-  'T.RRRRR.............RRRRRR..',
-  '.......T...T................',
-  '.....TT......T....T.......T.',
+/** 低速のコーナーが続く周回のテクニカルサーキット（約 2.4km）。クランク、ヘアピン、シケイン、180° 回り込むコーナー */
+const TECHNICAL_PIECES: RoadPiece[] = [
+  { straight: 260 },
+  { arc: { radius: 30, turn: 90 } },
+  { straight: 60 },
+  // クランク
+  { arc: { radius: 18, turn: -90 } },
+  { arc: { radius: 18, turn: 90 } },
+  { straight: 140 },
+  // ヘアピン
+  { arc: { radius: 16, turn: 175 } },
+  { straight: 90 },
+  // シケイン
+  { arc: { radius: 22, turn: -60 } },
+  { arc: { radius: 22, turn: 60 } },
+  { straight: 70 },
+  // 180° 回り込む右
+  { arc: { radius: 35, turn: -180 } },
+  { straight: 60 },
+  { arc: { radius: 25, turn: 110 } },
+  { straight: 150 },
+  { arc: { radius: 20, turn: -120 } },
+  { arc: { radius: 45, turn: 50 } },
+  { straight: 80 },
+  { arc: { radius: 25, turn: 100 } },
+  { straight: 90 },
+  // シケイン
+  { arc: { radius: 20, turn: -75 } },
+  { arc: { radius: 20, turn: 75 } },
+  { straight: 40 },
 ];
+
+export const TECHNICAL_MAP = roadMap(
+  'technical-circuit',
+  'テクニカルサーキット',
+  { scenery: 'circuit', width: 12, runoff: 5, start: 150, closed: true, pieces: closeLoop(ROAD_ORIGIN, TECHNICAL_PIECES, 35, 1) },
+  2,
+);
+
+/**
+ * 峠（約 2km・高低差 150m）。ふもとから頂上まで、半径の大きな高速コーナー、S 字、低速のヘアピンが
+ * 混じる。下りは同じ道を頂上から
+ */
+const PASS_ROAD: RoadSpec = {
+  scenery: 'touge',
+  width: 9,
+  start: 60,
+  pieces: [
+    { straight: 150 },
+    { arc: { radius: 120, turn: 35 } },
+    { straight: 100 },
+    { arc: { radius: 40, turn: -80 } },
+    { straight: 60 },
+    // ヘアピン
+    { arc: { radius: 18, turn: 170 }, h: 30 },
+    { straight: 120 },
+    { arc: { radius: 80, turn: -60 } },
+    { arc: { radius: 80, turn: 45 } },
+    { straight: 90 },
+    { arc: { radius: 22, turn: -165 } },
+    { straight: 80, h: 70 },
+    // 高速コーナー
+    { arc: { radius: 150, turn: 40 } },
+    { straight: 150 },
+    { arc: { radius: 35, turn: 95 } },
+    { arc: { radius: 45, turn: -110 } },
+    { straight: 70 },
+    { arc: { radius: 20, turn: 175 }, h: 110 },
+    { straight: 100 },
+    { arc: { radius: 100, turn: -50 } },
+    { arc: { radius: 60, turn: 70 } },
+    { straight: 170, h: 150 },
+  ],
+};
+
+export const HILLCLIMB_MAP = roadMap('pass-up', '峠（ヒルクライム）', PASS_ROAD);
+export const DOWNHILL_MAP = roadMap('pass-down', '峠（ダウンヒル）', reverseRoad(PASS_ROAD, 60));
+
+/** 上って峠を越え、反対側へ下る（約 2.1km）。頂上の前後で上りと下りが入れ替わる */
+export const PASS_OVER_MAP = roadMap('pass-over-r', '峠（山越え）', {
+  scenery: 'touge',
+  width: 9,
+  start: 60,
+  pieces: [
+    { straight: 120 },
+    { arc: { radius: 60, turn: 70 } },
+    { straight: 80 },
+    { arc: { radius: 25, turn: -150 } },
+    { straight: 100 },
+    { arc: { radius: 90, turn: 60 } },
+    { arc: { radius: 30, turn: -90 }, h: 60 },
+    { straight: 140 },
+    { arc: { radius: 20, turn: 170 } },
+    { straight: 90, h: 95 },
+    // 頂上: 見通しのよい高速の左右
+    { arc: { radius: 160, turn: -35 }, h: 105 },
+    { arc: { radius: 160, turn: 35 } },
+    { straight: 100, h: 100 },
+    // 下り
+    { arc: { radius: 35, turn: 120 } },
+    { straight: 120 },
+    { arc: { radius: 22, turn: -160 } },
+    { straight: 80, h: 60 },
+    { arc: { radius: 70, turn: 80 } },
+    { arc: { radius: 45, turn: -100 } },
+    { straight: 150 },
+    { arc: { radius: 120, turn: 50 } },
+    { straight: 160, h: 15 },
+  ],
+});
+
+/** 上りと下りを何度もくり返す、全長 2.9km ほどの長い峠 */
+export const LONG_MAP = roadMap('long-r', '峠（ロング）', {
+  scenery: 'touge',
+  width: 9,
+  start: 60,
+  pieces: [
+    { straight: 140 },
+    { arc: { radius: 100, turn: -45 } },
+    { straight: 90 },
+    { arc: { radius: 30, turn: 120 } },
+    { straight: 70 },
+    { arc: { radius: 45, turn: -90 }, h: 40 },
+    { straight: 160 },
+    { arc: { radius: 200, turn: 40 } },
+    { straight: 120, h: 55 },
+    { arc: { radius: 20, turn: 170 } },
+    { straight: 110 },
+    { arc: { radius: 50, turn: -70 }, h: 25 },
+    { straight: 140 },
+    { arc: { radius: 35, turn: -110 } },
+    { straight: 80 },
+    { arc: { radius: 70, turn: 90 }, h: 70 },
+    { straight: 120 },
+    { arc: { radius: 25, turn: -165 } },
+    { straight: 100, h: 95 },
+    { arc: { radius: 130, turn: 50 } },
+    { straight: 200, h: 70 },
+    { arc: { radius: 40, turn: 100 } },
+    { arc: { radius: 40, turn: -100 } },
+    { straight: 130 },
+    { arc: { radius: 22, turn: 170 }, h: 110 },
+    { straight: 120 },
+    { arc: { radius: 90, turn: -60 } },
+    { straight: 150, h: 125 },
+  ],
+});
+
+/**
+ * 峠の途中に、まっすぐな 800m のロングストレートと、ごく僅かに左右へくねる 650m のロングストレートがある
+ * （約 2.9km・高低差 170m）。ストレートの前後と間は、ふつうの峠のコーナーが続く
+ */
+const STRAIGHT_ROAD: RoadSpec = {
+  scenery: 'touge',
+  width: 9,
+  start: 60,
+  pieces: [
+    { straight: 100 },
+    { arc: { radius: 35, turn: 90 } },
+    { straight: 60 },
+    { arc: { radius: 25, turn: -150 } },
+    { straight: 80 },
+    { arc: { radius: 60, turn: 60 }, h: 25 },
+    // まっすぐなロングストレート
+    { straight: 800, h: 75 },
+    // 間の峠のコーナー
+    { arc: { radius: 30, turn: 120 } },
+    { straight: 70 },
+    { arc: { radius: 20, turn: -170 } },
+    { straight: 90 },
+    { arc: { radius: 80, turn: 70 } },
+    { arc: { radius: 40, turn: -100 }, h: 100 },
+    { straight: 60 },
+    // ごく僅かに左右へくねるロングストレート
+    ...wiggle(12, 450, 7),
+    { straight: 60, h: 140 },
+    // ふつうの峠のコーナー
+    { arc: { radius: 35, turn: 110 } },
+    { straight: 80 },
+    { arc: { radius: 22, turn: -160 } },
+    { straight: 90 },
+    { arc: { radius: 100, turn: 45 } },
+    { straight: 150, h: 170 },
+  ],
+};
+
+export const STRAIGHT_UP_MAP = roadMap('straight-up-r', 'ロングストレート（ヒルクライム）', STRAIGHT_ROAD);
+export const STRAIGHT_DOWN_MAP = roadMap('straight-down-r', 'ロングストレート（ダウンヒル）', reverseRoad(STRAIGHT_ROAD, 60));
+
 const UTURN_LAYOUT = [
   '....................',
   '....................',
@@ -247,36 +374,6 @@ const STEEP_LAYOUT = [
   'T..............',
   '...............',
 ];
-const LONG_LAYOUT = [
-  '........T......................',
-  'T...........T..................',
-  '.............RRRRRRRRR........T',
-  '.............R.......R.........',
-  '.......T.....R.....T.RRRR...TTT',
-  '........T....RRRRRR.....R.T.T..',
-  '..................R.....R......',
-  'T.....T...T.T.....RRRRR.R......',
-  '......................R.R..T...',
-  '...............T......R.RRR....',
-  '........T......T.RRRRRR...R.T..',
-  '........T........R........R....',
-  '...T...T.........R........R....',
-  '........RRRRRRR..RRRR.....R....',
-  '........R.....R.....R..RRRR....',
-  '.....RRRR.T...R..T..R..R.......',
-  '.T...R........RRR...R..R.......',
-  '.....R..........R.T.R..RRRRRR..',
-  '.....RRRRRR.....R...R.......R..',
-  '..........R..TT.RRRRR.TT.T..R..',
-  '..........R....T......T.....R..',
-  '..........R.................R..',
-  '.......RRRR....................',
-  '.......R.........T............T',
-  '.......R.......................',
-  '..RRRRRR.................T.....',
-  '.......................T.......',
-  '..T...T.......T.....T.....T.T..',
-];
 
 const HAIRPIN_DOWN_LAYOUT = [
   '.............',
@@ -344,18 +441,6 @@ const MARATHON_LAYOUT = [
   '..............T...........T..T.....',
 ];
 
-/** 上って峠を越え、反対側へ下る。頂上の前後で上りと下りが入れ替わる */
-export const PASS_OVER_MAP: MapDefinition = {
-  id: 'pass-over',
-  name: '峠（山越え）',
-  tileSize: 30,
-  roadWidth: 11,
-  layout: OVER_LAYOUT,
-  start: { col: 4, row: 13, heading: 'E' },
-  guardrails: true,
-  race: { laps: 1 },
-  elevation: { from: { col: 2, row: 13 }, rise: 110, profile: [0, 0.5, 1, 0.55, 0.1] },
-};
 
 /** 谷沿いに上り、頂上のヘアピンで折り返して隣の道を下る。ゴールはスタートのすぐそば */
 export const UTURN_MAP: MapDefinition = {
@@ -411,18 +496,6 @@ export const STEEP_DOWN_MAP: MapDefinition = {
   elevation: STEEP_ELEVATION,
 };
 
-/** 上りと下りを何度もくり返す、全長 3km ほどの長いコース */
-export const LONG_MAP: MapDefinition = {
-  id: 'long',
-  name: '峠（ロング）',
-  tileSize: 30,
-  roadWidth: 11,
-  layout: LONG_LAYOUT,
-  start: { col: 4, row: 25, heading: 'E' },
-  guardrails: true,
-  race: { laps: 1 },
-  elevation: { from: { col: 2, row: 25 }, rise: 125, profile: [0, 0.45, 0.3, 0.8, 0.6, 1, 0.5, 0.15] },
-};
 
 /**
  * つづら折りを上から下る。ヘアピンの内側には段差のある近道の帯があり、
@@ -454,80 +527,9 @@ export const MARATHON_MAP: MapDefinition = {
   elevation: { from: { col: 17, row: 17 }, rise: 200, profile: [0, 0.3, 0.15, 0.45, 0.35, 0.7, 0.5, 0.85, 1, 0.75, 0.55, 0.3, 0.1] },
 };
 
-/** 川を4回渡る周回コース。橋の上は欄干に囲まれ、川岸には柵がある */
-export const RIVERSIDE_MAP: MapDefinition = {
-  id: 'riverside',
-  name: '川と橋のコース',
-  tileSize: 30,
-  roadWidth: 12,
-  layout: [
-    '.........~~.........',
-    '.RRRRRRRR==RRRRRRRR.',
-    '.R.......~~.......R.',
-    '.R..T....~~...T...R.',
-    '.R.RRRRRR==RRRRRRRR.',
-    '.R.R.....~~.....T...',
-    '.R.R..T..~~.........',
-    '.R.RRRRRR==RRRRRRRR.',
-    '.R.......~~.......R.',
-    '.R...T...~~...T...R.',
-    '.RRRRRRRR==RRRRRRRR.',
-    '.........~~.........',
-  ],
-  start: { col: 4, row: 1, heading: 'E' },
-  guardrails: true,
-  race: { laps: 2 },
-};
 
-/**
- * 峠の途中に 900m ほどのロングストレートがある。前後はふつうのコーナーが続く峠道。
- * 左下の行き止まりがふもと、右下の行き止まりが頂上
- */
-const STRAIGHT_LAYOUT = [
-    '.T....T.TT................................T.....',
-    '.....T....RRRRRRRRRRRRRRRRRRRRRRRRRRRRRRR.......',
-    '..TT......R.............................R.......',
-    '....RRRRR.R..TTT...TTT........T......RRRR..TT...',
-    'T...R...R.R......T.......T...........R......TTTT',
-    '..T.R...RRR..T......T.T..T.........T.RRR........',
-    '.TT.RRRR.........T.TT.......TT.........R.....T..',
-    '.T.....R.....T.......TT..T.T........RRRR.RRR..T.',
-    '.......RRRR.................TT......R....R.R.T..',
-    'T.........R........T.......TT.T.....RRRRRR.R..T.',
-    '...T.RRR..R.........T...T........T.........R....',
-    '.....R.R..R................T..........T....R....',
-    '.RRRRR.RRRR........T.TTT.T.....T..T..T..RRRR.T.T',
-    'T...............T..T.........T...T..T...R.......',
-    '..T...............T...TT....TT.......T..RRRRRRR.',
-    '.............T..........T........T..............',
-];
-const STRAIGHT_ELEVATION = { from: { col: 1, row: 12 }, rise: 170 };
 
-/** ロングストレートのある峠を上る。ストレートで最高速の伸びの差が出る */
-export const STRAIGHT_UP_MAP: MapDefinition = {
-  id: 'straight-up',
-  name: 'ロングストレート（ヒルクライム）',
-  tileSize: 30,
-  roadWidth: 11,
-  layout: STRAIGHT_LAYOUT,
-  start: { col: 3, row: 12, heading: 'E' },
-  guardrails: true,
-  race: { laps: 1 },
-  elevation: STRAIGHT_ELEVATION,
-};
 
-/** 同じ峠を下る。ストレートの終わりはスピードが乗りきっているので、ブレーキを早めに */
-export const STRAIGHT_DOWN_MAP: MapDefinition = {
-  id: 'straight-down',
-  name: 'ロングストレート（ダウンヒル）',
-  tileSize: 30,
-  roadWidth: 11,
-  layout: STRAIGHT_LAYOUT,
-  start: { col: 44, row: 14, heading: 'W' },
-  guardrails: true,
-  race: { laps: 1 },
-  elevation: STRAIGHT_ELEVATION,
-};
 
 /**
  * 首都高のような高架の周回コース（オリジナル・約 5.9km）。中心線で描く道路（src/map/road.ts）なので、
@@ -651,7 +653,7 @@ export const VALLEY_DOWN_MAP: MapDefinition = {
  * - 第1セクション: 道幅の狭い古い道。木が道路のすぐ脇まで茂り、コーナーの先が見えない
  * - 第2セクション: 拡幅工事を終えた広くきれいな道。ただし路面は荒れていて、細かく波打って車が跳ねる
  * - ハイポイントコーナーを過ぎた第3セクション: きついダウンヒル。その先で高さ 55m の谷に架かる大きな橋を渡る
- * - 第4セクション: きついヒルクライム。330° 回り込むループ橋（自分の下をくぐってきた道の上を越える）、
+ * - 第4セクション: きついヒルクライム（道幅 10m で追い抜きやすい）。330° 回り込むループ橋（自分の下をくぐってきた道の上を越える）、
  *   カーブの途中にある 240m のトンネルを抜け、さらに上って頂上の広場へ
  */
 export const HAPPOGAHARA_MAP: MapDefinition = {
@@ -705,24 +707,24 @@ export const HAPPOGAHARA_MAP: MapDefinition = {
       { arc: { radius: 45, turn: -80 } },
       { straight: 50, h: 4 },
       // 谷に架かる高い橋
-      { straight: 240, bridge: true, valley: 55, h: 0 },
+      { straight: 240, bridge: true, valley: 55, h: 0, width: 9 },
       // 第4セクション: きついヒルクライム
-      { straight: 70 },
-      { arc: { radius: 60, turn: -40 } },
-      { straight: 50, h: 10 },
+      { straight: 70, width: 10 },
+      { arc: { radius: 60, turn: -40 }, width: 10 },
+      { straight: 50, h: 10, width: 10 },
       // 330° 回り込むループ橋（くぐってきた道の上を越える）
-      { arc: { radius: 22, turn: -330 }, bridge: true },
-      { straight: 40, bridge: true },
-      { straight: 20, h: 32 },
+      { arc: { radius: 22, turn: -330 }, bridge: true, width: 10 },
+      { straight: 40, bridge: true, width: 10 },
+      { straight: 20, h: 32, width: 10 },
       // カーブの途中のトンネル
-      { arc: { radius: 80, turn: 110 }, tunnel: true },
-      { straight: 90, tunnel: true },
-      { arc: { radius: 45, turn: -70 } },
-      { straight: 60 },
-      { arc: { radius: 35, turn: 90 } },
-      { straight: 50 },
-      { arc: { radius: 50, turn: -60 } },
-      { straight: 60, h: 95 },
+      { arc: { radius: 80, turn: 110 }, tunnel: true, width: 10 },
+      { straight: 90, tunnel: true, width: 10 },
+      { arc: { radius: 45, turn: -70 }, width: 10 },
+      { straight: 60, width: 10 },
+      { arc: { radius: 35, turn: 90 }, width: 10 },
+      { straight: 50, width: 10 },
+      { arc: { radius: 50, turn: -60 }, width: 10 },
+      { straight: 60, h: 95, width: 10 },
     ],
   },
 };
@@ -732,7 +734,6 @@ export const MAPS: readonly MapDefinition[] = [
   SCHOOL_MAP,
   CIRCUIT_MAP,
   TECHNICAL_MAP,
-  RIVERSIDE_MAP,
   SHUTOKO_MAP,
   HILLCLIMB_MAP,
   DOWNHILL_MAP,

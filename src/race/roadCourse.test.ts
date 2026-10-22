@@ -31,6 +31,15 @@ describe('out-and-back course', () => {
     expect(c.gradeAt(500)).toBeCloseTo(-c.gradeAt(c.length - 500), 2);
   });
 
+  it('changes the height smoothly along the course, also on the way back', () => {
+    // 道路の点の間で高さが段になっていると、坂で車が跳ね続ける
+    for (const from of [700, c.length - 700]) {
+      let maxStep = 0;
+      for (let s = from; s < from + 20; s += 0.1) maxStep = Math.max(maxStep, Math.abs(c.heightAt(s + 0.1) - c.heightAt(s)));
+      expect(maxStep).toBeLessThan(0.03);
+    }
+  });
+
   it('tells the way up from the way back at the same place', () => {
     const p = c.pointAt(500);
     expect(c.project(p.x, p.z, { s: 490 }).s).toBeCloseTo(500, 0);

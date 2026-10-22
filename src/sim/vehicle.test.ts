@@ -4,8 +4,10 @@ import {
   type VehicleState,
   DEFAULT_VEHICLE_PARAMS as P,
   NEUTRAL_INPUT,
+  VEHICLE_PRESETS,
   steerLimitAt,
   stepVehicle,
+  topSpeedOf,
 } from './vehicle';
 
 const DT = 1 / 60;
@@ -96,5 +98,29 @@ describe('steering feel', () => {
     const fast = stepVehicle({ ...REST, forwardSpeed: 28 }, { ...NEUTRAL_INPUT, steer: 1 }, P, DT);
     expect(fast.steerAngle).toBeLessThan(slow.steerAngle);
     expect(fast.steerAngle).toBeGreaterThan(0);
+  });
+});
+
+describe('top speeds of the cars', () => {
+  const top = (id: string) => topSpeedOf(VEHICLE_PRESETS.find((v) => v.id === id)!.params) * 3.6;
+
+  it('settles at the top speed with the throttle held on a flat straight', () => {
+    for (const v of VEHICLE_PRESETS) {
+      let s = { ...REST, yawRate: 0 };
+      for (let i = 0; i < 120 / DT; i++) s = stepVehicle(s, { ...NEUTRAL_INPUT, throttle: 1 }, v.params, DT);
+      expect(s.forwardSpeed).toBeCloseTo(topSpeedOf(v.params), 0);
+    }
+  });
+
+  it('matches the speeds estimated from the anime', () => {
+    expect(top('ae86')).toBeCloseTo(210, 0);
+    expect(top('fd3s')).toBeCloseTo(260, 0);
+    expect(top('r34')).toBeCloseTo(285, 0);
+    // 非力な AE85 と軽自動車より、AE86 やシビックは速く、GT-R がいちばん速い
+    expect(top('ae85')).toBeLessThan(top('ae86'));
+    expect(top('kei')).toBeLessThan(top('ae85'));
+    expect(top('ae86')).toBeLessThan(top('eg6'));
+    expect(top('gtr')).toBeLessThan(top('r34'));
+    expect(Math.max(...VEHICLE_PRESETS.map((v) => top(v.id)))).toBeCloseTo(top('r34'), 5);
   });
 });
