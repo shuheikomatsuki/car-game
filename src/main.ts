@@ -383,7 +383,8 @@ async function main() {
       curr = level.car.snapshot();
       // マップ外に落ちた場合の保険
       if (curr.y < -5) resetCar();
-      if (net.isOnline && ++stepCount % SEND_EVERY_STEPS === 0) {
+      // タブが裏に回っている間は送らない（他の人からは止まって見え、やがて放置として部屋から外れる）
+      if (net.isOnline && !document.hidden && ++stepCount % SEND_EVERY_STEPS === 0) {
         net.send({ t: 'state', time: performance.now(), s: carStateOf(curr) });
       }
 

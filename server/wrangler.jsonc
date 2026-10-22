@@ -8,5 +8,10 @@
   },
   // 無料プランでは SQLite 版の Durable Object を使う
   "migrations": [{ "tag": "v1", "new_sqlite_classes": ["Room"] }],
+  // 接続を受け付けるページと国（カンマ区切り、"*" で制限なし）。localhost のページは常に通す
+  "vars": {
+    "ALLOWED_ORIGINS": "https://shuheikomatsuki.github.io",
+    "ALLOWED_COUNTRIES": "JP"
+  },
   "observability": { "enabled": true }
 }

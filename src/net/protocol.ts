@@ -41,7 +41,7 @@ export type ServerMessage =
   | { t: 'state'; id: number; time: number; s: CarState }
   | { t: 'map'; map: number; by: number }
   | { t: 'pong'; time: number }
-  | { t: 'error'; reason: 'full' | 'version' | 'badRequest' };
+  | { t: 'error'; reason: 'full' | 'version' | 'badRequest' | 'idle' | 'origin' | 'region' };
 
 export function isRoomCode(code: string): boolean {
   return code.length === ROOM_CODE_LENGTH && [...code].every((c) => ROOM_CODE_CHARS.includes(c));
