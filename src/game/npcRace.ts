@@ -5,6 +5,7 @@ import { TimeAttack } from '../race/timeAttack';
 import { CarMesh } from '../render/carMesh';
 import type { Car, CarSnapshot } from '../sim/car';
 import { NEUTRAL_INPUT, type VehicleParams } from '../sim/vehicle';
+import { FallRecovery } from './fall';
 import type { Level } from './level';
 import { PLAYER_COLORS, createLabel } from './remoteCars';
 
@@ -24,6 +25,8 @@ export interface Npc {
   timer: TimeAttack;
   prev: CarSnapshot;
   curr: CarSnapshot;
+  /** 峠で道路から落ちたとき */
+  fall: FallRecovery;
 }
 
 /** 前方 (sin, cos)・左 (cos, -sin) の速度を足して、地面に対する速度にする */
@@ -73,6 +76,7 @@ export class NpcField {
         timer: new TimeAttack(course, totalLaps),
         prev: snap,
         curr: snap,
+        fall: new FallRecovery(),
       });
     });
   }
@@ -81,7 +85,7 @@ export class NpcField {
   applyInputs(dt: number, canDrive: boolean, others: readonly CarSnapshot[]): void {
     const all = [...this.npcs.map((n) => n.curr), ...others];
     this.npcs.forEach((n, i) => {
-      if (!canDrive) {
+      if (!canDrive || n.fall.falling) {
         n.car.applyInput(NEUTRAL_INPUT, dt);
         return;
       }
@@ -96,13 +100,17 @@ export class NpcField {
     for (const n of this.npcs) {
       n.prev = n.curr;
       n.curr = n.car.snapshot();
+      if (n.fall.update(dt, this.level, n.car, n.curr) === 'recovered') n.prev = n.curr = n.car.snapshot();
       n.timer.update(dt, { x: n.curr.x, z: n.curr.z, ...velocityOf(n.curr) });
       n.timer.drainEvents();
     }
   }
 
   render(alpha: number): void {
-    for (const n of this.npcs) n.mesh.update(this.level.ground(lerpSnap(n.prev, n.curr, alpha)));
+    for (const n of this.npcs) {
+      const s = this.level.ground(lerpSnap(n.prev, n.curr, alpha));
+      n.mesh.update({ ...s, y: s.y - n.fall.drop });
+    }
   }
 
   dispose(): void {

@@ -32,6 +32,7 @@ function race(def: MapDefinition, levels: NpcLevel[], params: VehicleParams = DE
   const racers = levels.map((level, i) => {
     const car = new Car(physics, course.gridSpot(6 + 8 * i, i % 2 === 0 ? 2.5 : -2.5), params);
     if (gradient) car.slope = gradient;
+    car.offRoad = (x, z) => Math.min(1, Math.max(0, (Math.abs(course.project(x, z).offset) - def.roadWidth / 2 + 0.95) / 1.9));
     return { car, driver: new NpcDriver(line, params, level, 1, gradient), timer: new TimeAttack(course, laps), maxOffset: 0, maxImpact: 0 };
   });
   const limit = 60 * 60 * 6;
@@ -86,7 +87,8 @@ describe('NPC race', () => {
       console.log(def.name, NPC_LEVELS.map((l, i) => `${l.label} ${times[i]?.toFixed(2)} off ${racers[i].maxOffset.toFixed(1)} hit ${racers[i].maxImpact.toFixed(1)}`).join(' / '));
       for (const r of racers) {
         expect(r.timer.phase).toBe('finished');
-        expect(r.maxOffset).toBeLessThan(def.roadWidth / 2 + 2);
+        // 押し合って路肩の草地へはみ出すことはあっても、崖から落ちるほどは外れない
+        expect(r.maxOffset).toBeLessThan(def.roadWidth / 2 + 3);
       }
     },
     60000,

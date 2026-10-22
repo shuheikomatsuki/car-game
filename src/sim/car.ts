@@ -45,6 +45,11 @@ export interface CarSnapshot {
 const GRAVITY = 9.81;
 /** この速度未満でアクセルを踏んでいなければ、坂道でも止まっていられる（坂道発進の補助） */
 const HILL_HOLD_SPEED = 0.5;
+/** 草地では、グリップがこの割合まで落ちる */
+const GRASS_GRIP = 0.55;
+/** 草地の転がり抵抗: 減速度 = GRASS_DRAG_BASE + GRASS_DRAG_PER_SPEED * v [m/s^2]（普通車は 40km/h くらいまでしか出ない） */
+const GRASS_DRAG_BASE = 1.5;
+const GRASS_DRAG_PER_SPEED = 0.45;
 
 /**
  * 物理ワールド内の1台の車。
@@ -58,6 +63,11 @@ export class Car {
   private wheelSpin = 0;
   /** 坂道のマップなら、その位置の地形の勾配。物理は平らなまま、坂の重力だけを前後の速度に加える */
   slope: ((x: number, z: number) => { x: number; z: number }) | null = null;
+  /**
+   * その位置がどれだけ道路の外か（0 = 舗装の上、1 = タイヤがすべて草地）。
+   * 草地ではグリップが落ち、転がり抵抗で速度が出なくなる
+   */
+  offRoad: ((x: number, z: number) => number) | null = null;
   /** 直前のステップで剛体に指示した水平速度（衝突の強さを測るため） */
   private commanded = { x: 0, z: 0 };
 
@@ -112,14 +122,23 @@ export class Car {
     const forwardSpeed = vel.x * fx + vel.z * fz;
     const lateralSpeed = vel.x * lx + vel.z * lz;
 
-    const next = stepVehicle(
-      { forwardSpeed, lateralSpeed, steerAngle: this.steerAngle },
-      input,
-      this.params,
-      dt,
-    );
+    const t = this.body.translation();
+    const grass = this.offRoad ? this.offRoad(t.x, t.z) : 0;
+    const params =
+      grass > 0
+        ? {
+            ...this.params,
+            maxLateralAccel: this.params.maxLateralAccel * (1 - (1 - GRASS_GRIP) * grass),
+            lateralGrip: this.params.lateralGrip * (1 - (1 - GRASS_GRIP) * grass),
+          }
+        : this.params;
+    const next = stepVehicle({ forwardSpeed, lateralSpeed, steerAngle: this.steerAngle }, input, params, dt);
+    if (grass > 0) {
+      const v = next.forwardSpeed;
+      const drag = grass * (GRASS_DRAG_BASE + GRASS_DRAG_PER_SPEED * Math.abs(v)) * dt;
+      next.forwardSpeed = Math.sign(v) * Math.max(0, Math.abs(v) - drag);
+    }
     if (this.slope && !(Math.abs(next.forwardSpeed) < HILL_HOLD_SPEED && input.throttle === 0)) {
-      const t = this.body.translation();
       const g = this.slope(t.x, t.z);
       // 進行方向の勾配 → 坂を下る向きの加速度 g・sinθ
       const grade = g.x * fx + g.z * fz;
