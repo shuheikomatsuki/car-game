@@ -23,51 +23,14 @@
     </div>
     <div id="help">
       <div class="map"><span id="map-name"></span>・<span id="mode-name"></span>・<span id="car-name"></span></div>
-      <div class="manual-only"><kbd>W</kbd>/<kbd>↑</kbd> アクセル　<kbd>S</kbd>/<kbd>↓</kbd> ブレーキ・後退</div>
-      <div class="manual-only"><kbd>A</kbd><kbd>D</kbd>/<kbd>←</kbd><kbd>→</kbd> ハンドル</div>
-      <div class="assist-only"><kbd>1</kbd>〜<kbd>0</kbd> 指示　<kbd>V</kbd> 音声で指示　<kbd>K</kbd> 運転のうまさ　<kbd>F</kbd> 顔写真</div>
-      <div><kbd>Q</kbd> モード切替（自分で運転／アッティーに指示）</div>
+      <div><kbd>W</kbd>/<kbd>↑</kbd> アクセル　<kbd>S</kbd>/<kbd>↓</kbd> ブレーキ・後退</div>
+      <div><kbd>A</kbd><kbd>D</kbd>/<kbd>←</kbd><kbd>→</kbd> ハンドル</div>
       <div><kbd>C</kbd> カメラ切替 <span id="camera-name"></span></div>
       <div><kbd>T</kbd> タイムアタック　<kbd>Y</kbd> NPCと対戦（<kbd>K</kbd> 強さ・<kbd>N</kbd> コース）</div>
       <div><kbd>N</kbd> マップ切替　<kbd>P</kbd> 車の切替　<kbd>R</kbd> リセット</div>
       <div><kbd>O</kbd> みんなで走る（オンライン）</div>
       <div><kbd>M</kbd> サウンド <span id="sound-state"></span>　<kbd>H</kbd> ヘルプ表示</div>
       <div id="gamepad-state" class="hidden">🎮 ゲームパッド: 左スティック / RT / LT・Y カメラ・START リセット・BACK マップ</div>
-    </div>
-    <div id="assist" class="hidden">
-      <div id="heard"></div>
-      <div id="subtitle"><span id="subtitle-name"></span><span id="subtitle-text"></span></div>
-      <div id="commands"></div>
-      <div id="assist-bar">
-        <button id="mic"></button>
-        <button id="face-button">顔写真<kbd>F</kbd></button>
-        <span id="assist-status"></span>
-      </div>
-    </div>
-    <div id="face-editor" class="hidden" role="dialog" aria-label="顔写真">
-      <div class="dialog-panel">
-        <h2>キャラクターの顔写真</h2>
-        <p class="note">写真はこのブラウザの中だけで処理・保存され、どこにも送信されません。</p>
-        <div class="face-body">
-          <div class="face-crop">
-            <canvas id="face-canvas"></canvas>
-            <div id="face-empty">「写真を選ぶ」から正面を向いた顔写真を選んでください</div>
-          </div>
-          <div class="face-side">
-            <p class="note">ドラッグで移動、ホイールかスライダーで拡大。点線の枠に顔を、<span class="eye">青い線</span>に目を、<span class="mouth">赤い線</span>に口を合わせます。</p>
-            <input id="face-zoom" type="range" min="0" value="0" aria-label="拡大" />
-            <label class="check"><input id="face-3d" type="checkbox" checked />写真から顔の形を読み取って立体にする（外すと写真をそのまま貼ります）</label>
-            <p id="face-status" class="note" aria-live="polite"></p>
-            <div class="dialog-buttons">
-              <label class="face-file">写真を選ぶ<input id="face-file" type="file" accept="image/*" /></label>
-              <button id="face-clear">顔写真をはずす</button>
-              <span class="spacer"></span>
-              <button id="face-cancel">キャンセル</button>
-              <button id="face-ok" class="primary">決定</button>
-            </div>
-          </div>
-        </div>
-      </div>
     </div>
     <div id="online" class="hidden" role="dialog" aria-label="みんなで走る">
       <div class="dialog-panel">

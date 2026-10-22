@@ -1,3 +1,4 @@
+import { ordinal } from '../ui/raceHud';
 import { describe, expect, it } from 'vitest';
 import { CIRCUIT_MAP, DOWNHILL_MAP, HILLCLIMB_MAP, SCHOOL_MAP, TECHNICAL_MAP } from '../map/maps';
 import { parseMap } from '../map/tilemap';
@@ -277,5 +278,13 @@ describe('race standings', () => {
     expect(ranked.map((r) => r.name)).toEqual(['c', 'a', 'b']);
     expect(ranked[2].total).toBeNull();
     expect(ranked[0].total).toBeLessThan(ranked[1].total!);
+  });
+});
+
+describe('ordinal', () => {
+  it('formats race positions in English', () => {
+    expect([1, 2, 3, 4, 11, 12, 13, 21, 22, 23, 101].map(ordinal)).toEqual([
+      '1st', '2nd', '3rd', '4th', '11th', '12th', '13th', '21st', '22nd', '23rd', '101st',
+    ]);
   });
 });

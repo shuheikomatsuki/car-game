@@ -1,11 +1,4 @@
-import { type Command, COMMAND_BUTTONS, isEmergency, parseCommandOptions } from './ai/commands';
-import { CHARACTER_NAME, Dialogue, type DialogueTrigger } from './ai/dialogue';
-import { CharacterDriver } from './ai/driver';
-import { PERSONALITIES, createRng } from './ai/personality';
 import { SoundSystem } from './audio/sound';
-import { FaceEditor, readFacePoints } from './face/editor';
-import { buildFaceMesh, decodeFacePoints, encodeFacePoints, type FacePoints } from './face/shape';
-import { loadFace, loadFace3d, loadFaceShape, saveFace, saveFace3d, saveFaceShape } from './face/store';
 import { GamepadInput, KeyboardInput, PAD_BUTTON, mergeInputs } from './core/input';
 import { FixedStepLoop } from './core/loop';
 import { Level } from './game/level';
@@ -20,26 +13,20 @@ import { TimeAttack, formatTime } from './race/timeAttack';
 import { isRoomCode, normalizeRoomCode } from './net/protocol';
 import { CameraRig } from './render/camera';
 import { CarMesh } from './render/carMesh';
-import { CharacterMesh, HEAD_RADIUS } from './render/character';
 import { createGhostMesh } from './render/raceMesh';
 import { GameScene } from './render/scene';
 import type { CarSnapshot } from './sim/car';
 import { loadRapier } from './sim/physics';
 import { NEUTRAL_INPUT, VEHICLE_PRESETS } from './sim/vehicle';
-import { AssistPanel, commandLabel } from './ui/assistPanel';
 import { Hud, hideLoading, showError } from './ui/hud';
 import { OnlinePanel } from './ui/onlinePanel';
 import { Minimap } from './ui/minimap';
 import { RaceHud } from './ui/raceHud';
 import { canRequestFullscreen, enterFullscreen, isFullscreen, isStandalone, needsHomeScreenForFullscreen } from './ui/fullscreen';
 import { TouchControls, prefersTouch } from './ui/touchControls';
-import { VoiceInput } from './voice/recognition';
-import { VoiceOutput } from './voice/speech';
 
 /** この強さ [m/s] 以上の速度変化を「衝突」として音・揺れを出す */
 const IMPACT_THRESHOLD = 2.5;
-/** キャラクターが黙っている時間がこれを超えたら、何か話す [s] */
-const IDLE_CHAT_SECONDS = 25;
 /** 自分の車の状態を送る間隔（物理ステップ数。60Hz / 3 = 20Hz） */
 const SEND_EVERY_STEPS = 3;
 
@@ -65,12 +52,9 @@ async function main() {
   const view = new GameScene(document.getElementById('app')!);
   const carMesh = new CarMesh();
   view.scene.add(carMesh.root);
-  const character = new CharacterMesh();
-  carMesh.root.add(character.root);
   const cameraRig = new CameraRig(window.innerWidth / window.innerHeight);
   const hud = new Hud();
   const sound = new SoundSystem();
-  const voiceOut = new VoiceOutput();
   window.addEventListener('resize', () => view.resize(cameraRig.camera));
 
   // ?map=1 のように開始マップを指定できる
@@ -85,68 +69,6 @@ async function main() {
   let prev = level.car.snapshot();
   let curr = prev;
   let input = { ...NEUTRAL_INPUT };
-
-  // --- キャラクター運転（音声指示モード） ---
-  let assist = params.has('assist');
-  let personalityIndex = 0;
-  const rng = createRng(Date.now());
-  const dialogue = new Dialogue(rng);
-  const createDriver = () => new CharacterDriver(level.map, PERSONALITIES[personalityIndex], rng, vehicle().params);
-  let driver = createDriver();
-  let lastLinePriority = 0;
-  let lastLineAt = 0;
-  let clock = 0;
-
-  const speak = (trigger: DialogueTrigger) => {
-    const line = dialogue.lineFor(trigger);
-    if (!line) return;
-    // 優先度の低いセリフは、直前のセリフを話している最中なら飛ばす
-    const busy = clock - lastLineAt < 1.8;
-    if (busy && line.priority < lastLinePriority) return;
-    lastLinePriority = line.priority;
-    lastLineAt = clock;
-    panel.say(CHARACTER_NAME, line.text);
-    character.setMood(line.mood, 1.2 + line.text.length * 0.08);
-    voiceOut.speak(line.text);
-  };
-
-  const giveCommand = (command: Command, spoken?: string) => {
-    if (!assist) return;
-    // 「3秒後に左」「30度右」のような数値は、話した言葉から読み取る
-    driver.command(command, spoken ? parseCommandOptions(spoken) : {});
-    panel.showHeard(spoken ?? commandLabel(command), command, true);
-  };
-
-  const panel = new AssistPanel(
-    (c) => giveCommand(c),
-    () => voiceIn.toggle(),
-  );
-  const voiceIn = new VoiceInput({
-    onCommand: (command, text) => {
-      // 自分（キャラクター）の声を拾った可能性があるときは、緊急の指示以外は無視する
-      if (voiceOut.speaking && !isEmergency(command)) return;
-      giveCommand(command, text);
-    },
-    onTranscript: (text, final, command) => {
-      if (!assist || (voiceOut.speaking && !command)) return;
-      // 指示でない言葉は字幕に「聞き取れず」と出すだけにする（毎回聞き返されると進まないので）
-      if (!command || !final) panel.showHeard(text, command, final);
-    },
-    onError: (message) => hud.toast(message),
-    onListeningChange: (listening) => panel.setMic(listening),
-  });
-  panel.setMic(false);
-
-  const updateAssistStatus = () => {
-    const pending = driver.pendingTurn;
-    const turn =
-      driver.mode === 'route'
-        ? `道なりに走行中${pending === 'left' ? '（次は左）' : pending === 'right' ? '（次は右）' : ''}`
-        : '';
-    panel.setStatus(
-      `運転のうまさ: ${PERSONALITIES[personalityIndex].label}（K）　巡航 ${driver.speedKmh}km/h${turn ? `　${turn}` : ''}`,
-    );
-  };
 
   const remoteCars = new RemoteCars(view.scene);
   remoteCars.attachLevel(level);
@@ -177,7 +99,6 @@ async function main() {
   const placeCar = (spawn: { x: number; z: number; yaw: number }) => {
     level.car.reset(spawn);
     prev = curr = level.car.snapshot();
-    driver.reset();
     cameraRig.snap();
     // スタート地点で他の車と重なっても弾き飛ばされないように
     remoteCars.ghost(performance.now());
@@ -185,7 +106,7 @@ async function main() {
   const resetCar = () => {
     // レース中のリセットは、スタートからやり直し
     if (race) startRace(raceMode);
-    else placeCar(assist ? level.laneSpawn : level.spawn);
+    else placeCar(level.spawn);
   };
 
   const raceLabel = () => (raceMode === 'npc' ? `NPC対戦（${NPC_LEVELS[npcLevelIndex].label}）` : 'タイムアタック');
@@ -195,7 +116,6 @@ async function main() {
    * いまのマップがレース用でなければサーキットへ移動する。NPC 対戦では NPC が前に並び、自分は最後尾から
    */
   function startRace(mode: 'timeAttack' | 'npc') {
-    if (assist) setAssist(false);
     raceMode = mode;
     if (!level.course) {
       loadMap(raceMapIndex);
@@ -224,7 +144,7 @@ async function main() {
     minimap.setCourse(course);
     raceHud.hideResult();
     raceHud.setWarning({ wrongWay: false, offCourse: false });
-    hud.setMode(false, raceLabel());
+    hud.setMode(raceLabel());
     touch.refresh();
   }
 
@@ -241,7 +161,7 @@ async function main() {
   function stopRace() {
     if (!race) return;
     clearRace();
-    hud.setMode(false, '自分で運転');
+    hud.setMode('自分で運転');
     resetCar();
     touch.refresh();
   }
@@ -312,27 +232,6 @@ async function main() {
     }
   };
 
-  const setAssist = (on: boolean) => {
-    if (on && race) clearRace();
-    assist = on;
-    character.root.visible = on;
-    panel.show(on);
-    hud.setMode(on, on ? `${CHARACTER_NAME}に指示` : '自分で運転');
-    driver = createDriver();
-    resetCar();
-    if (on || cameraRig.modeId === 'passenger' || cameraRig.modeId === 'faceCam') {
-      cameraRig.select(on ? 'passenger' : 'chaseNear');
-    }
-    hud.setCameraName(cameraRig.modeName);
-    if (on) {
-      updateAssistStatus();
-      speak({ type: 'greeting' });
-    } else {
-      voiceIn.stop();
-      voiceOut.cancel();
-    }
-  };
-
   const loadMap = (index: number, message = `マップ: ${MAPS[index].name}`) => {
     // NPC の車は古いマップの物理ワールドにいるので先に片付ける（レース中ならこの後で並び直す）
     npcField?.dispose();
@@ -343,11 +242,10 @@ async function main() {
     level.car.params = { ...vehicle().params };
     view.scene.add(level.group);
     remoteCars.attachLevel(level);
-    driver = createDriver();
     // レース用でないマップに替わったらレースをやめる（レース用ならそのコースでやり直し）
     if (race && !level.course) {
       clearRace();
-      hud.setMode(false, '自分で運転');
+      hud.setMode('自分で運転');
       touch.refresh();
     }
     resetCar();
@@ -366,114 +264,20 @@ async function main() {
   const cycleCar = () => {
     carIndex = (carIndex + 1) % VEHICLE_PRESETS.length;
     level.car.params = { ...vehicle().params };
-    // キャラクターも新しい車の性能（ハンドルの効き・最高速）に合わせて運転し直す
-    driver = createDriver();
     resetCar();
     hud.setCarName(vehicle().label);
     net.send({ t: 'profile', car: vehicle().id });
     net.updateJoin({ car: vehicle().id });
     hud.toast(`車: ${vehicle().label}（最高 ${Math.round(vehicle().params.maxForwardSpeed * 3.6)}km/h）`);
-    if (assist) updateAssistStatus();
   };
   const cycleCamera = () => {
-    cameraRig.cycle(assist ? [] : ['faceCam']);
+    cameraRig.cycle();
     hud.setCameraName(cameraRig.modeName);
   };
   const toggleMute = () => {
     const muted = sound.toggleMute();
-    voiceOut.enabled = !muted;
-    if (muted) voiceOut.cancel();
     hud.setMuted(muted);
   };
-  const cyclePersonality = () => {
-    if (race && raceMode === 'npc') {
-      cycleNpcLevel();
-      return;
-    }
-    if (!assist) return;
-    personalityIndex = (personalityIndex + 1) % PERSONALITIES.length;
-    driver = createDriver();
-    driver.reset();
-    hud.toast(`運転のうまさ: ${PERSONALITIES[personalityIndex].label}`);
-    updateAssistStatus();
-  };
-
-  // --- 顔写真 ---
-  // 顔の立体を作るのに使う三角形の表は MediaPipe の中にあるので、必要になったときだけ読み込む
-  const applyFaceShape = async (points: FacePoints | null) => {
-    if (!points) {
-      character.setFaceShape(null);
-      return;
-    }
-    try {
-      const { faceTriangles } = await import('./face/landmarks');
-      character.setFaceShape(buildFaceMesh(points, faceTriangles(), HEAD_RADIUS));
-    } catch {
-      character.setFaceShape(null);
-    }
-  };
-  /** いま貼っている顔写真（立体にするかを切り替えたときに、形を読み取り直すのに使う） */
-  let currentFace: HTMLCanvasElement | HTMLImageElement | null = null;
-  const savedFace = loadFace();
-  if (savedFace) {
-    const img = new Image();
-    img.onload = () => {
-      currentFace = img;
-      character.setFace(img);
-    };
-    img.src = savedFace;
-    void applyFaceShape(loadFace3d() ? decodeFacePoints(loadFaceShape()) : null);
-  }
-  const faceEditor = new FaceEditor(
-    {
-      onApply: (texture, points) => {
-        currentFace = texture;
-        character.setFace(texture);
-        void applyFaceShape(points);
-        const saved = saveFace(texture ? texture.toDataURL('image/jpeg', 0.9) : null);
-        saveFaceShape(points ? encodeFacePoints(points) : null);
-        if (texture && !saved) hud.toast('このブラウザでは保存できないため、ページを閉じるまでの間だけ使います');
-        else if (texture && !points && loadFace3d()) hud.toast('顔の形を読み取れなかったので、写真をそのまま貼りました');
-        else if (texture) hud.toast(points ? '顔写真を立体の顔にしました' : '顔写真を貼りました');
-        else hud.toast('顔写真をはずしました');
-      },
-      onShapeModeChange: async (enabled) => {
-        saveFace3d(enabled);
-        if (!currentFace) return;
-        if (!enabled) {
-          void applyFaceShape(null);
-          saveFaceShape(null);
-          hud.toast('写真をそのまま貼る顔にしました');
-          return;
-        }
-        hud.toast('顔の形を読み取っています…');
-        const canvas = document.createElement('canvas');
-        canvas.width = currentFace.width;
-        canvas.height = currentFace.height;
-        canvas.getContext('2d')!.drawImage(currentFace, 0, 0);
-        const points = await readFacePoints(canvas);
-        if (!loadFace3d()) return;
-        void applyFaceShape(points);
-        saveFaceShape(points ? encodeFacePoints(points) : null);
-        hud.toast(points ? '顔写真を立体の顔にしました' : '顔の形を読み取れませんでした');
-      },
-      onOpenChange: (open) => {
-        keyboard.enabled = !open;
-        touch.enabled = !open;
-        // 貼った顔を確認しやすいよう、顔を映す視点にする
-        if (open && assist) {
-          cameraRig.select('faceCam');
-          hud.setCameraName(cameraRig.modeName);
-        }
-      },
-    },
-    loadFace3d(),
-  );
-  const openFaceEditor = () => assist && faceEditor.open();
-  const faceButton = document.getElementById('face-button')!;
-  faceButton.addEventListener('mousedown', (e) => e.preventDefault());
-  faceButton.addEventListener('click', openFaceEditor);
-
   // --- オンライン ---
   const serverUrl: string = params.get('server') ?? import.meta.env.VITE_SERVER_URL ?? '';
   const netStatus = document.getElementById('net-status')!;
@@ -571,11 +375,7 @@ async function main() {
   keyboard.onAction('KeyP', cycleCar);
   keyboard.onAction('KeyM', toggleMute);
   keyboard.onAction('KeyH', () => hud.toggleHelp());
-  keyboard.onAction('KeyQ', () => setAssist(!assist));
-  keyboard.onAction('KeyV', () => assist && voiceIn.toggle());
-  keyboard.onAction('KeyK', cyclePersonality);
-  keyboard.onAction('KeyF', openFaceEditor);
-  for (const b of COMMAND_BUTTONS) keyboard.onAction(/\d/.test(b.key) ? `Digit${b.key}` : `Key${b.key}`, () => giveCommand(b.command));
+  keyboard.onAction('KeyK', () => race && raceMode === 'npc' && cycleNpcLevel());
 
   const gamepad = new GamepadInput();
   gamepad.onButton(PAD_BUTTON.north, cycleCamera);
@@ -597,11 +397,9 @@ async function main() {
       { label: () => (race && raceMode === 'timeAttack' ? 'タイムアタックをやめる' : 'タイムアタック'), run: () => toggleRace('timeAttack') },
       { label: () => (race && raceMode === 'npc' ? 'NPC対戦をやめる' : 'NPCと対戦'), run: () => toggleRace('npc') },
       { label: () => `NPCの強さ: ${NPC_LEVELS[npcLevelIndex].label}`, run: cycleNpcLevel, visible: () => race !== null && raceMode === 'npc' },
-      { label: () => (assist ? '自分で運転する' : `${CHARACTER_NAME}に運転してもらう`), run: () => setAssist(!assist) },
       {
         label: () => `ハンドル: ${touch.steerMode === 'tilt' ? '傾ける' : 'なぞる'}`,
         run: () => void toggleSteerMode(),
-        visible: () => !assist,
       },
       {
         label: () => '全画面で遊ぶ',
@@ -611,11 +409,9 @@ async function main() {
       { label: () => 'みんなで走る', run: () => onlinePanel.open() },
       { label: () => (race ? 'コースを切り替える' : 'マップを切り替える'), run: nextMap },
       { label: () => '車を切り替える', run: cycleCar },
-      { label: () => `運転のうまさ: ${PERSONALITIES[personalityIndex].label}`, run: cyclePersonality, visible: () => assist },
-      { label: () => '顔写真', run: openFaceEditor, visible: () => assist },
       { label: () => `サウンド: ${sound.isMuted ? 'OFF' : 'ON'}`, run: toggleMute },
     ],
-    () => `${level.def.name}・${race ? raceLabel() : assist ? `${CHARACTER_NAME}に指示` : '自分で運転'}・${vehicle().label}・カメラ: ${cameraRig.modeName}`,
+    () => `${level.def.name}・${race ? raceLabel() : '自分で運転'}・${vehicle().label}・カメラ: ${cameraRig.modeName}`,
   );
   touch.refresh();
   // iPhone の Safari はページから全画面にできないので、ホーム画面に追加する方法を案内する
@@ -635,10 +431,7 @@ async function main() {
   });
 
   // ブラウザの制約で、音はユーザー操作の後でないと鳴らせない（タッチは指を離したときが操作とみなされる）
-  const unlockAudio = () => {
-    sound.start();
-    voiceOut.unlock();
-  };
+  const unlockAudio = () => sound.start();
   window.addEventListener('keydown', unlockAudio);
   window.addEventListener('pointerdown', unlockAudio);
   window.addEventListener('pointerup', unlockAudio);
@@ -649,22 +442,16 @@ async function main() {
   hud.setMapName(level.def.name);
   hud.setCarName(vehicle().label);
   hud.setMuted(sound.isMuted);
-  voiceOut.enabled = !sound.isMuted;
-  setAssist(assist);
+  hud.setMode('自分で運転');
   if (touch.isShown && window.innerHeight > window.innerWidth) hud.toast('横向きにすると遊びやすくなります');
 
   const loop = new FixedStepLoop(
     (dt) => {
-      clock += dt;
       const pad = gamepad.read();
       hud.setGamepadConnected(gamepad.isConnected);
-      if (assist) {
-        input = driver.update(dt, curr, level.sense);
-      } else {
-        input = mergeInputs(mergeInputs(keyboard.read(), pad), touch.read());
-        // カウントダウン中は発進させない（ハンドルだけ切れる）
-        if (race && !race.canDrive) input = { ...NEUTRAL_INPUT, steer: input.steer };
-      }
+      input = mergeInputs(mergeInputs(keyboard.read(), pad), touch.read());
+      // カウントダウン中は発進させない（ハンドルだけ切れる）
+      if (race && !race.canDrive) input = { ...NEUTRAL_INPUT, steer: input.steer };
       remoteCars.step(performance.now());
       level.physics.world.timestep = dt;
       level.car.applyInput(input, dt);
@@ -676,7 +463,6 @@ async function main() {
       if (impact > IMPACT_THRESHOLD) {
         sound.impact(impact);
         cameraRig.addShake(impact);
-        if (assist) driver.notifyCollision();
       }
 
       prev = curr;
@@ -694,10 +480,6 @@ async function main() {
         net.send({ t: 'state', time: performance.now(), s: carStateOf(curr) });
       }
 
-      if (assist) {
-        for (const e of driver.drainEvents()) speak(e);
-        if (driver.state === 'driving' && clock - lastLineAt > IDLE_CHAT_SECONDS) speak({ type: 'idle' });
-      }
     },
     (alpha, frameDt) => {
       const s = level.ground(lerpSnapshot(prev, curr, alpha));
@@ -730,12 +512,10 @@ async function main() {
           { x: s.x, z: s.z, yaw: s.yaw, color: '#ff5a4f', size: 5 },
         ]);
       }
-      character.update(frameDt, s.steerAngle);
       level.syncProps();
       cameraRig.update(s, frameDt);
       view.followTarget(s.x, s.z, s.y);
       hud.update(s);
-      if (assist) updateAssistStatus();
       sound.update(s.forwardSpeed, input.throttle, s.lateralSpeed, input.brake > 0 && s.forwardSpeed > 0);
       view.render(cameraRig.camera);
     },
@@ -744,7 +524,7 @@ async function main() {
   // ?debug を付けるとブラウザの開発者ツールや自動テストから状態を触れる
   if (params.has('debug')) {
     Object.assign(window, {
-      __game: { getLevel: () => level, getRace: () => race, getNpcs: () => npcField, startTimeAttack: () => startRace('timeAttack'), startNpcRace: () => startRace('npc'), stopRace, getDriver: () => driver, faceEditor, net, remoteCars, touch, onlinePanel, cameraRig, sound, giveCommand, setAssist },
+      __game: { getLevel: () => level, getRace: () => race, getNpcs: () => npcField, startTimeAttack: () => startRace('timeAttack'), startNpcRace: () => startRace('npc'), stopRace, net, remoteCars, touch, onlinePanel, cameraRig, sound },
     });
   }
 

@@ -19,6 +19,13 @@ export interface RaceResult {
   notSaved: boolean;
 }
 
+/** 順位を英語の序数にする（1st, 2nd, 3rd, 4th, …, 11th, 12th, 13th, 21st） */
+export function ordinal(n: number): string {
+  const teen = n % 100 >= 11 && n % 100 <= 13;
+  const suffix = teen ? 'th' : ['th', 'st', 'nd', 'rd'][n % 10] ?? 'th';
+  return `${n}${suffix}`;
+}
+
 /** タイムアタックの表示（周回・タイム・カウントダウン・結果） */
 export class RaceHud {
   private readonly panel = el('race');
@@ -26,6 +33,7 @@ export class RaceHud {
   private readonly posEl = el('race-pos');
   private readonly resultTitle = el('race-result-title');
   private standingsHtml = '';
+  private shownPos = '';
   private readonly timeEl = el('race-time');
   private readonly bestEl = el('race-best');
   private readonly splitEl = el('race-split');
@@ -78,7 +86,12 @@ export class RaceHud {
     /** NPC 対戦の順位 */
     position?: { rank: number; total: number };
   }): void {
-    this.posEl.textContent = s.position ? `${s.position.rank}位/${s.position.total}` : '';
+    // レースゲームでよく見る「3rd」の形にし、台数は小さく添える
+    const pos = s.position ? `${ordinal(s.position.rank)}<small>/${s.position.total}</small>` : '';
+    if (pos !== this.shownPos) {
+      this.shownPos = pos;
+      this.posEl.innerHTML = pos;
+    }
     // 一本道のコース（1本だけ走る）では周回を出さない
     this.lapEl.textContent = s.totalLaps > 1 ? `LAP ${s.lap}/${s.totalLaps}` : '';
     this.timeEl.textContent = formatTime(s.time);
