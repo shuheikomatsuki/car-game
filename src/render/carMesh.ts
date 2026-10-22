@@ -40,9 +40,12 @@ const CAR_STYLES: Record<string, CarStyle> = {
   kei: { roof: 1.56, window: [-1.8, 0.95, 0.6, -1.72], color: 0x8fc7e8 },
   sport: { roof: 1.34, window: [-1.6, 1.0, 0.2, -0.8], wing: 'low', color: 0xd94141 },
   ae86: { roof: 1.4, window: [-1.95, 0.95, 0.35, -1.05], lowerColor: 0x1d1d1f, color: 0xf2f2ee },
+  eg6: { roof: 1.38, window: [-2.0, 0.95, 0.35, -1.85], color: 0xc8202a },
+  ek9: { roof: 1.4, window: [-2.0, 0.95, 0.35, -1.85], wing: 'low', color: 0xf4f4ef },
   fd3s: { roof: 1.34, window: [-1.8, 1.05, 0.15, -0.7], wing: 'low', color: 0xf2c318 },
   evo: { roof: 1.43, window: [-1.45, 0.95, 0.4, -1.1], wing: 'high', color: 0xe9ecef },
   gtr: { roof: 1.37, window: [-1.6, 0.98, 0.3, -0.9], wing: 'low', roundTail: true, color: 0x2a2c30 },
+  r34: { roof: 1.38, window: [-1.55, 0.98, 0.3, -0.95], wing: 'high', roundTail: true, color: 0x4a3a70 },
 };
 
 export function carStyle(carId: string): CarStyle {

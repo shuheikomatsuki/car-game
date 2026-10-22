@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { BOARD_SIZE, STORED_ENTRIES, type StoredEntry, type Submission, applySubmission, isBoardKey, parseSubmission } from './leaderboard';
+import { BOARD_SIZE, STORED_ENTRIES, type StoredEntry, type Submission, applySubmission, isBoardKey, mergeBoards, parseSubmission } from './leaderboard';
 
 const sub = (player: string, total: number, name = player): Submission => ({ player, name, total, laps: [total / 2, total / 2], ghost: [0, 0, 0, 1, 1, 0] });
 const PLAYER_A = 'aaaaaaaa-1';
@@ -67,5 +67,23 @@ describe('applySubmission', () => {
     expect(isBoardKey('standard')).toBe(true);
     expect(isBoardKey('サーキット')).toBe(false);
     expect(isBoardKey('../x')).toBe(false);
+  });
+});
+
+describe('mergeBoards', () => {
+  it('lists records of every car fastest first, tagged with the car', () => {
+    const e = (id: string, total: number, date = 0) => ({ id, name: id, total, laps: [total], date });
+    const merged = mergeBoards(
+      [
+        { car: 'ae86', entries: [e('a', 90), e('b', 100)] },
+        { car: 'gtr', entries: [e('c', 85), e('d', 90, 1)] },
+      ],
+      3,
+    );
+    expect(merged.map((m) => [m.id, m.car])).toEqual([
+      ['c', 'gtr'],
+      ['a', 'ae86'],
+      ['d', 'gtr'],
+    ]);
   });
 });

@@ -82,6 +82,8 @@ export interface MapDefinition {
    * profile を書くと、上ってから下るなどの形にできる（from から反対の端までの等間隔の点の高さ。rise に対する割合）
    */
   elevation?: { from: { col: number; row: number }; rise: number; profile?: readonly number[] };
+  /** ヘアピンの内側に、段差のある近道の帯を作る（高低差のある下りのコース用。src/map/shortcuts.ts） */
+  shortcuts?: boolean;
 }
 
 export interface ParsedMap {

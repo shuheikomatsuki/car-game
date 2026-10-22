@@ -76,12 +76,17 @@ export interface VehiclePreset {
 
 /** 選べる車（P キーで切り替え） */
 export const VEHICLE_PRESETS: readonly VehiclePreset[] = [
-  { id: 'standard', label: '普通車', description: '扱いやすいふつうの車', params: DEFAULT_VEHICLE_PARAMS },
+  {
+    id: 'standard',
+    label: '普通車',
+    description: '扱いやすいふつうの車',
+    params: { ...DEFAULT_VEHICLE_PARAMS, maxForwardSpeed: 38, engineAccel: 11.5, dragCoef: 0.0013 },
+  },
   {
     id: 'kei',
     label: '軽自動車',
     description: '遅いけれど小回りがきく',
-    params: { ...DEFAULT_VEHICLE_PARAMS, maxForwardSpeed: 24, engineAccel: 7, brakeDecel: 14, wheelBase: 2.4, maxLateralAccel: 12 },
+    params: { ...DEFAULT_VEHICLE_PARAMS, maxForwardSpeed: 32, engineAccel: 8.5, brakeDecel: 14, wheelBase: 2.4, maxLateralAccel: 12 },
   },
   {
     id: 'sport',
@@ -114,6 +119,42 @@ export const VEHICLE_PRESETS: readonly VehiclePreset[] = [
       steerReturnRate: 3.8,
       maxLateralAccel: 20,
       lateralGrip: 9.5,
+    },
+  },
+  {
+    id: 'eg6',
+    label: 'シビック (EG6)',
+    description: 'FF・軽い。パワーは控えめだが曲がりやすい',
+    params: {
+      ...DEFAULT_VEHICLE_PARAMS,
+      maxForwardSpeed: 48,
+      engineAccel: 13.5,
+      brakeDecel: 22,
+      dragCoef: 0.0011,
+      wheelBase: 2.45,
+      maxSteerAngle: 0.62,
+      steerRate: 2.9,
+      steerReturnRate: 3.8,
+      maxLateralAccel: 19,
+      lateralGrip: 10.5,
+    },
+  },
+  {
+    id: 'ek9',
+    label: 'シビック タイプR (EK9)',
+    description: 'FF・高回転のVTEC。軽くて立ち上がりが鋭い',
+    params: {
+      ...DEFAULT_VEHICLE_PARAMS,
+      maxForwardSpeed: 51,
+      engineAccel: 15,
+      brakeDecel: 23,
+      dragCoef: 0.001,
+      wheelBase: 2.5,
+      maxSteerAngle: 0.62,
+      steerRate: 2.9,
+      steerReturnRate: 3.8,
+      maxLateralAccel: 19,
+      lateralGrip: 11,
     },
   },
   {
@@ -162,6 +203,22 @@ export const VEHICLE_PRESETS: readonly VehiclePreset[] = [
       steerRate: 2.3,
       maxLateralAccel: 17,
       lateralGrip: 11,
+    },
+  },
+  {
+    id: 'r34',
+    label: 'GT-R (R34)',
+    description: '4WD・ツインターボ。R32より速く、高速コーナーも安定',
+    params: {
+      ...DEFAULT_VEHICLE_PARAMS,
+      maxForwardSpeed: 63,
+      engineAccel: 19.5,
+      brakeDecel: 21,
+      dragCoef: 0.0007,
+      wheelBase: 2.66,
+      steerRate: 2.3,
+      maxLateralAccel: 17.5,
+      lateralGrip: 11.5,
     },
   },
 ];
