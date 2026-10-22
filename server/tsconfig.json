@@ -9,5 +9,5 @@
     "noEmit": true,
     "skipLibCheck": true
   },
-  "include": ["src", "../src/net/protocol.ts"]
+  "include": ["src", "../src/net/protocol.ts", "../src/net/leaderboard.ts"]
 }

@@ -125,7 +125,8 @@ kbd {
   opacity: 1;
 }
 
-#online {
+#online,
+#ranking {
   position: fixed;
   inset: 0;
   /* 画面に収まらないとき（スマホの横向きなど）はスクロールできるようにする */
@@ -139,7 +140,8 @@ kbd {
   z-index: 10;
 }
 
-#online.hidden {
+#online.hidden,
+#ranking.hidden {
   display: none;
 }
 
@@ -876,4 +878,60 @@ body.racing #toast {
     right: calc(env(safe-area-inset-right) + 10px);
     top: calc(env(safe-area-inset-top) + 200px);
   }
+}
+
+/* ランキング */
+#ranking .row select {
+  flex: 1;
+  min-width: 0;
+  font: inherit;
+  font-size: 13px;
+  color: #fff;
+  padding: 6px;
+  border: 1px solid rgba(255, 255, 255, 0.25);
+  border-radius: 8px;
+  background: rgba(40, 46, 58, 0.9);
+}
+
+#ranking-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13px;
+  font-variant-numeric: tabular-nums;
+}
+
+#ranking-table td {
+  padding: 4px 4px;
+  border-top: 1px solid rgba(255, 255, 255, 0.08);
+  white-space: nowrap;
+}
+
+#ranking-table td.name {
+  max-width: 120px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+#ranking-table tr.me {
+  background: rgba(255, 215, 94, 0.15);
+}
+
+#ranking-table button {
+  font: inherit;
+  font-size: 12px;
+  color: #fff;
+  padding: 3px 8px;
+  border: 1px solid rgba(255, 160, 64, 0.7);
+  border-radius: 6px;
+  background: rgba(120, 60, 10, 0.6);
+  cursor: pointer;
+}
+
+#ranking-table .note,
+#race-result .note.rank {
+  opacity: 0.7;
+}
+
+#race-ranking.hidden {
+  display: none;
 }

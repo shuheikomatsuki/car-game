@@ -2,10 +2,13 @@ import { DurableObject } from 'cloudflare:workers';
 import type { PlayerInfo, ServerMessage } from '../../src/net/protocol';
 import { isRoomCode } from '../../src/net/protocol';
 import { type DenyReason, checkAccess } from './access';
+import { isBoardKey } from '../../src/net/leaderboard';
+import { Leaderboard } from './leaderboard';
 import { type Activity, type Connection, type RoomStore, closeIdle, handleClose, handleMessage, newActivity } from './room';
 
 export interface Env {
   ROOM: DurableObjectNamespace<Room>;
+  BOARD: DurableObjectNamespace<Leaderboard>;
   /** wrangler.jsonc の vars を参照 */
   ALLOWED_ORIGINS: string;
   ALLOWED_COUNTRIES: string;
@@ -135,9 +138,45 @@ function deny(request: Request, reason: DenyReason): Response {
   return new Response(null, { status: 101, webSocket: pair[0] });
 }
 
+export { Leaderboard };
+
+/** ランキングはゲームのページから fetch で読み書きするので、許可したページにだけ CORS を返す */
+function withCors(response: Response, origin: string | null): Response {
+  const r = new Response(response.body, response);
+  if (origin) {
+    r.headers.set('Access-Control-Allow-Origin', origin);
+    r.headers.set('Vary', 'Origin');
+  }
+  return r;
+}
+
+async function handleBoard(request: Request, env: Env, course: string, car: string): Promise<Response> {
+  const origin = request.headers.get('Origin');
+  const denied = checkAccess(origin, request.cf?.country as string | undefined, {
+    allowedOrigins: env.ALLOWED_ORIGINS,
+    allowedCountries: env.ALLOWED_COUNTRIES,
+  });
+  if (denied) return new Response(denied, { status: 403 });
+  if (request.method === 'OPTIONS') {
+    return withCors(
+      new Response(null, {
+        status: 204,
+        headers: { 'Access-Control-Allow-Methods': 'GET, POST', 'Access-Control-Allow-Headers': 'content-type', 'Access-Control-Max-Age': '86400' },
+      }),
+      origin,
+    );
+  }
+  if (!isBoardKey(course) || !isBoardKey(car)) return withCors(new Response('Bad board', { status: 400 }), origin);
+  const board = env.BOARD.get(env.BOARD.idFromName(`${course}:${car}`));
+  return withCors(await board.fetch(request), origin);
+}
+
 export default {
   async fetch(request: Request, env: Env): Promise<Response> {
     const url = new URL(request.url);
+    // /boards/<コース>/<車>（一覧・記録の送信）、/boards/<コース>/<車>/ghosts/<記録の id>（ゴースト）
+    const board = url.pathname.match(/^\/boards\/([^/]+)\/([^/]+)(\/ghosts\/[A-Za-z0-9-]+)?$/);
+    if (board) return handleBoard(request, env, board[1], board[2]);
     const match = url.pathname.match(/^\/rooms\/([A-Za-z0-9]+)$/);
     if (match) {
       const code = match[1].toUpperCase();

@@ -50,7 +50,9 @@ export class RaceHud {
   private wrongWay = false;
   private offCourse = false;
 
-  constructor(handlers: { onRetry: () => void; onQuit: () => void }) {
+  private readonly rankingButton = el('race-ranking');
+
+  constructor(handlers: { onRetry: () => void; onQuit: () => void; onRanking: () => void }) {
     const button = (id: string, run: () => void) => {
       const b = el(id);
       b.addEventListener('mousedown', (e) => e.preventDefault());
@@ -58,6 +60,7 @@ export class RaceHud {
     };
     button('race-retry', handlers.onRetry);
     button('race-quit', handlers.onQuit);
+    button('race-ranking', handlers.onRanking);
   }
 
   show(on: boolean): void {
@@ -85,6 +88,8 @@ export class RaceHud {
     finished: boolean;
     /** NPC 対戦の順位 */
     position?: { rank: number; total: number };
+    /** ランキングから選んだ、一緒に走るゴーストの人 */
+    rival?: { name: string; total: number };
   }): void {
     // レースゲームでよく見る「3rd」の形にし、台数は小さく添える
     const pos = s.position ? `${ordinal(s.position.rank)}<small>/${s.position.total}</small>` : '';
@@ -96,7 +101,8 @@ export class RaceHud {
     this.lapEl.textContent = s.totalLaps > 1 ? `LAP ${s.lap}/${s.totalLaps}` : '';
     this.timeEl.textContent = formatTime(s.time);
     // NPC 対戦では自己ベストを比べないので出さない
-    this.bestEl.textContent = s.position ? '' : s.best === null ? 'ベスト --:--.--' : `ベスト ${formatTime(s.best)}`;
+    const best = s.best === null ? 'ベスト --:--.--' : `ベスト ${formatTime(s.best)}`;
+    this.bestEl.textContent = s.position ? '' : s.rival ? `VS ${s.rival.name} ${formatTime(s.rival.total)}　${best}` : best;
     if (s.laps.length !== this.shownLaps || (s.finished && this.currentLapEl)) this.renderLaps(s.laps, s.refLaps, s.finished, s.totalLaps);
     if (this.currentLapEl) this.currentLapEl.textContent = formatTime(s.lapTime);
   }
@@ -147,6 +153,17 @@ export class RaceHud {
     this.warning.classList.toggle('visible', text !== '');
   }
 
+  /** 結果の下に、ランキングに送った結果などを出す */
+  setResultNote(text: string): void {
+    const note = this.resultBody.querySelector('.rank');
+    if (note) note.textContent = text;
+  }
+
+  /** 結果の「ランキング」ボタンを出すか */
+  showRankingButton(on: boolean): void {
+    this.rankingButton.classList.toggle('hidden', !on);
+  }
+
   showResult(r: RaceResult): void {
     const lapRows = r.laps
       .map((t, i) => `<tr><td>${i + 1}周目</td><td>${formatTime(t)}${t === r.bestLap && r.newLap ? ' <span class="new">最速ラップ</span>' : ''}</td></tr>`)
@@ -159,7 +176,8 @@ export class RaceHud {
       <p class="total">${formatTime(r.total)}</p>
       ${best}
       <table>${lapRows}</table>
-      ${r.notSaved ? '<p class="note">このブラウザでは記録を保存できませんでした</p>' : ''}`;
+      ${r.notSaved ? '<p class="note">このブラウザでは記録を保存できませんでした</p>' : ''}
+      <p class="note rank"></p>`;
     this.result.classList.remove('hidden');
   }
 

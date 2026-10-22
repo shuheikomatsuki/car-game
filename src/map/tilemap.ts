@@ -53,6 +53,11 @@ export interface SignPlacement {
 }
 
 export interface MapDefinition {
+  /**
+   * 変わらない id（オンラインのランキングの区別に使う）。表示名 name は変えてもよいが、
+   * id を変えるとそのコースのランキングは別のものになる
+   */
+  id: string;
   name: string;
   tileSize: number;
   /** 道路の幅 [m] */

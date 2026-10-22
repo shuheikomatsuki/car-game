@@ -26,6 +26,7 @@
       <div><kbd>W</kbd>/<kbd>↑</kbd> アクセル　<kbd>S</kbd>/<kbd>↓</kbd> ブレーキ・後退</div>
       <div><kbd>A</kbd><kbd>D</kbd>/<kbd>←</kbd><kbd>→</kbd> ハンドル</div>
       <div><kbd>C</kbd> カメラ切替 <span id="camera-name"></span></div>
+      <div><kbd>L</kbd> ランキング（ゴーストと対戦）</div>
       <div><kbd>T</kbd> タイムアタック　<kbd>Y</kbd> NPCと対戦（<kbd>K</kbd> 強さ・<kbd>N</kbd> コース）</div>
       <div><kbd>N</kbd> マップ切替　<kbd>P</kbd> 車の切替　<kbd>R</kbd> リセット</div>
       <div><kbd>O</kbd> みんなで走る（オンライン）</div>
@@ -49,6 +50,20 @@
           <span class="spacer"></span>
           <button id="online-close">閉じる</button>
           <button id="online-join" class="primary">参加する</button>
+        </div>
+      </div>
+    </div>
+    <div id="ranking" class="hidden" role="dialog" aria-label="ランキング">
+      <div class="dialog-panel">
+        <h2>ランキング</h2>
+        <div class="row"><select id="ranking-course" aria-label="コース"></select><select id="ranking-car" aria-label="車"></select></div>
+        <label class="field">名前（ランキングに出ます）<input id="ranking-name" type="text" placeholder="名前" autocomplete="nickname" /></label>
+        <p id="ranking-status" class="note"></p>
+        <table id="ranking-table"></table>
+        <p class="note">タイムアタックでゴールすると、自己ベストが走り（ゴースト）と一緒に自動で送られます。「対戦」でその人のゴーストと走れます。</p>
+        <div class="dialog-buttons">
+          <span class="spacer"></span>
+          <button id="ranking-close" class="primary">閉じる</button>
         </div>
       </div>
     </div>
@@ -94,6 +109,7 @@
       <div id="race-result-body"></div>
       <div class="dialog-buttons">
         <button id="race-quit">やめる</button>
+        <button id="race-ranking" class="hidden">ランキング<kbd>L</kbd></button>
         <span class="spacer"></span>
         <button id="race-retry" class="primary">もう一度<kbd>R</kbd></button>
       </div>
