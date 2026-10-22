@@ -30,7 +30,11 @@ import { Hud, hideLoading, showError } from './ui/hud';
 import { OnlinePanel, loadPlayerName } from './ui/onlinePanel';
 import { ALL_CARS, RankingPanel } from './ui/rankingPanel';
 import { Minimap } from './ui/minimap';
-import { GameMenu, type MenuMode, type MenuScreen } from './ui/menu';
+import { GameMenu, type MenuItem, type MenuMode, type MenuScreen } from './ui/menu';
+import { carDetail, conditionsDetail, courseDetail, npcDetail, rivalDetail, textDetail } from './ui/menuDetails';
+import { courseProfile } from './ui/courseInfo';
+import { driveOf } from './ui/carStats';
+import { CarPreview } from './render/carPreview';
 import { RaceHud } from './ui/raceHud';
 import { canRequestFullscreen, enterFullscreen, isFullscreen, isStandalone, needsHomeScreenForFullscreen } from './ui/fullscreen';
 import { TouchControls, prefersTouch } from './ui/touchControls';
@@ -688,10 +692,10 @@ async function main() {
       },
       { label: () => (race ? 'やり直す' : 'リセット'), run: resetCar },
     ],
-    () => menu.open(),
+    () => menu.openPause(),
   );
 
-  // --- メニュー（スマホは ☰、パソコンは Esc）: プレイモードを選び、コース・対戦相手・車などを順に選ぶ ---
+  // --- メニュー: タイトル → トップ画面でプレイモードを選び、コース・対戦相手・車などを順に選ぶ（走っている間は Esc / ☰ でポーズ） ---
   /** メニューで選んでいる途中の内容（最後に「スタート」を押したときに反映する） */
   const draft = {
     map: level.def.id,
@@ -708,8 +712,8 @@ async function main() {
   const draftNpc = () => NPC_LEVELS.find((l) => l.id === draft.npc) ?? NPC_LEVELS[0];
   const carLabel = (id: string) => VEHICLE_PRESETS.find((v) => v.id === id)?.label ?? id;
   const mapLabel = (id: string) => MAPS.find((m) => m.id === id)?.name ?? id;
-  const levelNote = (l: (typeof NPC_LEVELS)[number]) =>
-    `カーブの速さ ${Math.round(l.grip * 100)}%・ブレーキ ${Math.round(l.brake * 100)}%・ライン取り ${Math.round(l.line * 100)}%・最高速 ${Math.round(l.topSpeed * 100)}%`;
+  /** 車の見た目（メニューの右側で回して見せる） */
+  const carPreview = new CarPreview();
   /** 選び始めるときに、下書きを今の状態にする（レースならレース用のコースから選ぶ） */
   const beginDraft = (raceOnly: boolean) => {
     draft.map = raceOnly && !level.def.race ? raceMaps[0].id : level.def.id;
@@ -741,87 +745,117 @@ async function main() {
 
   const courseScreen = (raceOnly: boolean, home?: string): MenuScreen => ({
     title: 'コース',
+    en: 'COURSE',
     groups: [
       {
         choices: () => {
           const maps = MAPS.filter((m) => !raceOnly || m.race);
           // ライバルの得意なコースを先頭に
           if (home) maps.sort((a, b) => Number(b.id === home) - Number(a.id === home));
-          return maps.map((m) => ({
-            id: m.id,
-            label: `${m.id === home ? '★ ' : ''}${m.name}`,
-            note: m.id === home ? '得意なコース' : m.race ? (m.elevation ? '一本道' : `周回 ${m.race.laps}周`) : '自由に走る',
-          }));
+          return maps.map((m) => {
+            const p = courseProfile(m);
+            return {
+              id: m.id,
+              label: m.name,
+              badge: m.id === home ? 'HOME' : undefined,
+              note: p.kind === 'free' ? '自由に走る' : `${(p.length / 1000).toFixed(1)}km・${p.kind === 'loop' ? `周回 ${p.laps}周` : p.kind === 'roundtrip' ? '往復' : '一本道'}`,
+            };
+          });
         },
         selected: () => draft.map,
         select: (id) => (draft.map = id),
-        detail: () => (home ? '★ はライバルの得意なコース。先行後追いは周回コースでも1周で1本です' : ''),
       },
     ],
+    detail: () =>
+      courseDetail(
+        draftMap(),
+        carLabel,
+        home
+          ? { badge: draftMap().id === home ? `${draftRival().name}のホーム` : undefined, note: '先行後追いは、周回コースでも1周で1本です' }
+          : undefined,
+      ),
   });
   const carScreen: MenuScreen = {
     title: '自分の車',
+    en: 'MACHINE',
     groups: [
       {
-        choices: () => VEHICLE_PRESETS.map((v) => ({ id: v.id, label: v.label, note: `最高 ${Math.round(topSpeedOf(v.params) * 3.6)}km/h` })),
+        choices: () => VEHICLE_PRESETS.map((v) => ({ id: v.id, label: v.label, note: `${driveOf(v) ?? ''}${driveOf(v) ? '・' : ''}最高 ${Math.round(topSpeedOf(v.params) * 3.6)}km/h` })),
         selected: () => draft.car,
         select: (id) => (draft.car = id),
-        detail: () => draftCar().description,
       },
     ],
+    detail: () => carDetail(draftCar(), carPreview),
   };
   const npcScreen: MenuScreen = {
     title: 'NPCの強さ',
+    en: 'OPPONENTS',
     groups: [
       {
         choices: () => NPC_LEVELS.map((l) => ({ id: l.id, label: l.label })),
         selected: () => draft.npc,
         select: (id) => (draft.npc = id),
-        detail: () => `${draftNpc().label}: ${levelNote(draftNpc())}`,
       },
     ],
+    detail: () => npcDetail(draftNpc(), NPC_COUNT),
   };
   const rivalScreen: MenuScreen = {
     title: '対戦相手',
+    en: 'RIVAL',
     groups: [
       {
         choices: () => {
           const beaten = loadBeatenRivals();
           return RIVALS.map((r) => ({
             id: r.id,
-            label: `${beaten.has(r.id) ? '✓ ' : ''}${r.name}`,
+            label: r.name,
+            badge: beaten.has(r.id) ? 'WIN' : undefined,
             note: `${carLabel(r.car)}・${rivalLevel(r).label}`,
           }));
         },
         selected: () => draft.rival,
         select: (id) => {
           draft.rival = id;
-          // コースは、まずライバルの得意なコースにしておく（次の画面で変えられる）
+          // コースは、まずライバルの得意なコースにしておく（後の画面で変えられる）
           draft.map = draftRival().course;
-        },
-        detail: () => {
-          const r = draftRival();
-          return `${r.team}・${carLabel(r.car)}・得意なコース「${mapLabel(r.course)}」・強さ ${rivalLevel(r).label}（✓ は勝ったことのある相手）`;
         },
       },
     ],
+    detail: () => {
+      const r = draftRival();
+      return rivalDetail(r, rivalLevel(r), { car: carLabel(r.car), course: mapLabel(r.course), beaten: loadBeatenRivals().has(r.id) }, carPreview);
+    },
   };
   const ruleScreen: MenuScreen = {
     title: 'ルール',
+    en: 'RULE',
     groups: [
       {
         choices: () => BATTLE_RULES,
         selected: () => draft.rule,
         select: (id) => (draft.rule = id as BattleRule),
-        detail: () =>
-          draft.rule === 'side'
-            ? '2台が横に並んでスタートし、先にゴールしたほうの勝ち'
-            : `先行と後追いに分かれて1本ずつ走り、ゴールの時点で判定する。後追いが抜いて先にゴールすれば後追いの勝ち、後追いが先行から ${SAFE_SECONDS}秒より遅れてゴールすれば先行の勝ち。${SAFE_SECONDS}秒以内に続いてゴールすれば引き分けで、先行と後追いを入れ替えて次の1本へ`,
       },
     ],
+    detail: () => {
+      const rule = BATTLE_RULES.find((r) => r.id === draft.rule)!;
+      return textDetail({
+        kicker: `VS ${draftRival().name}`,
+        title: rule.label,
+        big: draft.rule === 'side' ? '1:1' : 'SD',
+        lines:
+          draft.rule === 'side'
+            ? ['2台が横に並んでスタートし、先にゴールしたほうの勝ち。']
+            : [
+                `先行と後追いに分かれて1本ずつ走り、ゴールの時点で判定する（サドンデス）。`,
+                `後追いが抜いて先にゴールすれば後追いの勝ち。後追いが先行から ${SAFE_SECONDS}秒より遅れてゴールすれば先行の勝ち。`,
+                `${SAFE_SECONDS}秒以内に続いてゴールすれば引き分けで、先行と後追いを入れ替えて次の1本へ。`,
+              ],
+      });
+    },
   };
   const envScreen: MenuScreen = {
     title: '時間帯・天気',
+    en: 'CONDITIONS',
     groups: [
       {
         title: '時間帯',
@@ -834,78 +868,155 @@ async function main() {
         choices: () => WEATHERS,
         selected: () => draft.weather,
         select: (id) => (draft.weather = id as Weather),
-        detail: () => (draft.weather === 'rain' ? '雨の日はタイヤが滑りやすく、ブレーキも効きにくくなります' : ''),
       },
     ],
+    detail: () =>
+      conditionsDetail(TIMES_OF_DAY.find((t) => t.id === draft.time)!, WEATHERS.find((w) => w.id === draft.weather)!, [
+        ['コース', draftMap().name],
+        ['車', draftCar().label],
+      ]),
   };
   const envSummary = () => `${TIMES_OF_DAY.find((t) => t.id === draft.time)!.label}・${WEATHERS.find((w) => w.id === draft.weather)!.label}`;
+  const modeDetail = (title: string, en: string, lines: string[]) => () =>
+    textDetail({
+      kicker: en,
+      title,
+      big: en.split(' ')[0],
+      lines,
+      specs: [
+        ['コース', level.def.name],
+        ['車', vehicle().label],
+        ['時間帯・天気', `${TIMES_OF_DAY.find((t) => t.id === env.time)!.label}・${WEATHERS.find((w) => w.id === env.weather)!.label}`],
+      ],
+    });
   const menuModes: MenuMode[] = [
     {
       id: 'free',
       label: '自由に走る',
+      en: 'FREE RUN',
       note: '好きなマップを自由にドライブ',
+      detail: modeDetail('自由に走る', 'FREE RUN', ['街・峠・サーキット・首都高を、時間を気にせず走る。', 'オンラインの部屋に入れば、友だちと同じマップを走れます。']),
       begin: () => beginDraft(false),
       screens: () => [courseScreen(false), carScreen, envScreen],
-      summary: () => `${draftMap().name}・${draftCar().label}・${envSummary()}`,
+      summary: () => `${draftMap().name} ／ ${draftCar().label} ／ ${envSummary()}`,
       finish: () => applyDraft('free'),
     },
     {
       id: 'timeAttack',
       label: 'タイムアタック',
+      en: 'TIME ATTACK',
       note: '自己ベストとゴーストに挑戦',
+      detail: modeDetail('タイムアタック', 'TIME ATTACK', ['アクセルを踏むとカウントダウン。自己ベストの走りがゴーストになって一緒に走る。', 'ゴールすると記録はランキングにも送られます。']),
       begin: () => beginDraft(true),
       screens: () => [courseScreen(true), carScreen, envScreen],
-      summary: () => `${draftMap().name}・${draftCar().label}・${envSummary()}`,
+      summary: () => `${draftMap().name} ／ ${draftCar().label} ／ ${envSummary()}`,
       finish: () => applyDraft('timeAttack'),
     },
     {
       id: 'npc',
       label: 'NPCと対戦',
+      en: 'RACE',
       note: `${NPC_COUNT}台のNPCとレース`,
+      detail: modeDetail('NPCと対戦', 'RACE', [`${NPC_COUNT}台のNPCが前に並び、最後尾からスタートして順位を競う。`, '強さは5段階から選べます。']),
       begin: () => beginDraft(true),
       screens: () => [courseScreen(true), npcScreen, carScreen, envScreen],
-      summary: () => `${draftMap().name}・NPC ${draftNpc().label}・${draftCar().label}・${envSummary()}`,
+      summary: () => `${draftMap().name} ／ NPC ${draftNpc().label} ／ ${draftCar().label} ／ ${envSummary()}`,
       finish: () => applyDraft('npc'),
     },
     {
       id: 'battle',
       label: 'ライバルとバトル',
+      en: 'BATTLE',
       note: '1対1。先行後追いも選べる',
+      detail: modeDetail('ライバルとバトル', 'BATTLE', [`${RIVALS.length}人のライバルと1対1。横に並んでのスタートか、先行後追いのサドンデスで勝負する。`, `勝った相手: ${loadBeatenRivals().size} / ${RIVALS.length}`]),
       begin: () => {
         beginDraft(true);
         draft.map = draftRival().course;
       },
       screens: () => [rivalScreen, ruleScreen, courseScreen(true, draftRival().course), carScreen, envScreen],
-      summary: () => `VS ${draftRival().name}・${BATTLE_RULES.find((r) => r.id === draft.rule)!.label}・${draftMap().name}・${draftCar().label}・${envSummary()}`,
+      summary: () => `VS ${draftRival().name} ／ ${BATTLE_RULES.find((r) => r.id === draft.rule)!.label} ／ ${draftMap().name} ／ ${draftCar().label}`,
       finish: () => applyDraft('battle'),
     },
   ];
+  const settingDetail = (title: string, lines: string[]) => () => textDetail({ kicker: 'OPTIONS', title, lines });
+  const settingItems: MenuItem[] = [
+    { label: () => 'カメラ', value: () => cameraRig.modeName, run: () => cycleCamera(), detail: settingDetail('カメラ', ['走っているときの視点。走行中は C キーでも切り替えられます。']) },
+    { label: () => 'サウンド', value: () => (sound.isMuted ? 'OFF' : 'ON'), run: toggleMute, detail: settingDetail('サウンド', ['エンジン音・タイヤの音・ぶつかった音。M キーでも切り替えられます。']) },
+    {
+      label: () => 'ハンドル',
+      value: () => (touch.steerMode === 'tilt' ? '傾ける' : 'なぞる'),
+      run: () => void toggleSteerMode(),
+      visible: () => touch.isShown,
+      detail: settingDetail('ハンドル（スマホ）', ['画面を左右になぞるか、スマホを傾けてハンドルを切る。']),
+    },
+    {
+      label: () => '全画面',
+      value: () => (isFullscreen() ? 'ON' : 'OFF'),
+      run: () => void enterFullscreen(),
+      visible: () => canRequestFullscreen() && !isStandalone(),
+      detail: settingDetail('全画面', ['ブラウザのアドレスバーなどを隠して、画面いっぱいで遊ぶ。']),
+    },
+    {
+      label: () => 'ホーム画面に追加',
+      value: () => '案内',
+      run: () => hud.toast('共有ボタン（□に↑）から「ホーム画面に追加」'),
+      visible: () => needsHomeScreenForFullscreen(),
+      detail: settingDetail('ホーム画面に追加（iPhone）', [
+        'アドレスバーを消して遊ぶには、Safari の共有ボタン（□に↑）から「ホーム画面に追加」を選び、追加したアイコンから開いてください。',
+      ]),
+    },
+  ];
+  const openSettings = { label: () => '設定', en: 'OPTIONS', run: () => menu.openSettings(), detail: settingDetail('設定', ['カメラ・サウンド・ハンドルなど。']) };
+  const onlineItem: MenuItem = {
+    label: () => 'みんなで走る',
+    en: 'ONLINE',
+    run: () => {
+      menu.close();
+      onlinePanel.open();
+    },
+    detail: settingDetail('みんなで走る（オンライン）', ['同じ部屋コードを入れた人と、同じマップを一緒に走れます（最大8人）。']),
+  };
+  const rankingItem: MenuItem = {
+    label: () => 'ランキング',
+    en: 'RANKING',
+    run: () => {
+      menu.close();
+      openRanking();
+    },
+    visible: () => board !== null,
+    detail: settingDetail('ランキング', ['タイムアタックの記録の一覧。上位の人のゴーストと対戦できます。']),
+  };
+  const nowInfo = () =>
+    `${level.def.name} ／ ${race ? raceLabel() : '自分で運転'} ／ ${vehicle().label} ／ ${TIMES_OF_DAY.find((t) => t.id === env.time)!.label}・${WEATHERS.find((w) => w.id === env.weather)!.label}`;
+  /** ポーズ画面の右側: いま走っているコースの地図 */
+  const pauseDetail = () => courseDetail(level.def, carLabel, { badge: race ? raceLabel() : '自由に走る' });
   const menu = new GameMenu(
     menuModes,
-    [
-      { label: () => 'やり直す', run: () => race && startRace(raceMode), visible: () => race !== null, closeOnRun: true },
-      { label: () => 'レースをやめる', run: () => stopRace(), visible: () => race !== null, closeOnRun: true },
-      { label: () => 'ランキング（ゴーストと対戦）', run: () => openRanking(), visible: () => board !== null, closeOnRun: true },
-      { label: () => 'みんなで走る', run: () => onlinePanel.open(), closeOnRun: true },
-      { label: () => `カメラ: ${cameraRig.modeName}`, run: () => cycleCamera() },
-      { label: () => `ハンドル: ${touch.steerMode === 'tilt' ? '傾ける' : 'なぞる'}`, run: () => void toggleSteerMode(), visible: () => touch.isShown },
-      { label: () => '全画面で遊ぶ', run: () => void enterFullscreen(), visible: () => canRequestFullscreen() && !isFullscreen() && !isStandalone() },
-      { label: () => `サウンド: ${sound.isMuted ? 'OFF' : 'ON'}`, run: toggleMute },
-    ],
     {
-      info: () =>
-        `いま: ${level.def.name}・${race ? raceLabel() : '自分で運転'}・${vehicle().label}・${TIMES_OF_DAY.find((t) => t.id === env.time)!.label}・${WEATHERS.find((w) => w.id === env.weather)!.label}`,
-      currentMode: () => (race ? raceMode : 'free'),
+      home: [rankingItem, onlineItem, openSettings],
+      pause: [
+        { label: () => '走りに戻る', en: 'RESUME', run: () => menu.close(), detail: pauseDetail },
+        { label: () => 'やり直す', en: 'RETRY', run: () => (menu.close(), race ? startRace(raceMode) : resetCar()), detail: pauseDetail },
+        { label: () => 'レースをやめる', en: 'QUIT RACE', run: () => (menu.close(), stopRace()), visible: () => race !== null, detail: pauseDetail },
+        { label: () => 'トップメニュー', en: 'MAIN MENU', run: () => menu.openHome(), detail: settingDetail('トップメニュー', ['プレイモード・コース・車を選び直す。']) },
+        rankingItem,
+        onlineItem,
+        openSettings,
+      ],
+      settings: settingItems,
+    },
+    {
+      info: nowInfo,
       onOpenChange: (open) => {
         keyboard.enabled = !open;
         touch.enabled = !open;
+        document.body.classList.toggle('menu-open', open);
+        if (!open) cameraRig.snap();
       },
       canOpen: () => !onlinePanel.isOpen && !rankingPanel.isOpen,
     },
   );
   touch.refresh();
-  // iPhone の Safari はページから全画面にできないので、ホーム画面に追加する方法を案内する
-  document.getElementById('touch-install')!.classList.toggle('hidden', !needsHomeScreenForFullscreen());
 
   async function toggleSteerMode() {
     const next = touch.steerMode === 'tilt' ? 'drag' : 'tilt';
@@ -1043,7 +1154,9 @@ async function main() {
         ]);
       }
       level.syncProps();
-      cameraRig.update(s, frameDt);
+      // タイトル・メニューの間は、止まっている車の周りをカメラが回る
+      if (menu.showcase) cameraRig.orbit(s, frameDt);
+      else cameraRig.update(s, frameDt);
       view.followTarget(s.x, s.z, s.y);
       view.update(frameDt, cameraRig.camera);
       hud.update(s);
@@ -1061,6 +1174,8 @@ async function main() {
 
   hideLoading();
   loop.start();
+  // タイトル画面から始める（?map= でマップを指定して開いたときは、すぐに走れるようにする）
+  if (!params.has('map') && !params.has('room')) menu.openTitle();
 
   // 招待リンク（?room=XXXX）から開いたら、参加画面を出す
   const invited = normalizeRoomCode(params.get('room') ?? '');

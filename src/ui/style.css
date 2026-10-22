@@ -2,14 +2,28 @@
   box-sizing: border-box;
 }
 
+/* 色と文字（メニュー・ダイアログ・走行中の表示で共通） */
+:root {
+  --ink: #0b0c0f;
+  --text: #eeece6;
+  --muted: #8f949c;
+  --line: rgba(255, 255, 255, 0.1);
+  --line-strong: rgba(255, 255, 255, 0.24);
+  --panel: rgba(17, 19, 23, 0.96);
+  --accent: #ff4a1c;
+  --accent-2: #ffb21c;
+  /* 英数字の見出し用の細長い書体（なければふつうの書体） */
+  --display: 'Arial Narrow', 'Roboto Condensed', 'Helvetica Neue', Arial, system-ui, sans-serif;
+}
+
 html,
 body {
   margin: 0;
   height: 100%;
   overflow: hidden;
-  background: #0f1115;
+  background: var(--ink);
   font-family: system-ui, -apple-system, 'Hiragino Sans', 'Noto Sans JP', sans-serif;
-  color: #fff;
+  color: var(--text);
   user-select: none;
 }
 
@@ -442,123 +456,1083 @@ body {
   font-size: 16px;
 }
 
-/* --- メニュー（走り方・コース・車を一覧から選ぶ） --- */
+/* --- メニュー: タイトル → トップ画面 → 1枚ずつ選んでいく画面（左に一覧、右に詳しい説明）。走っている間はポーズ画面 --- */
 
-#menu .dialog-panel {
-  width: min(560px, calc(100vw - 32px));
+#menu {
+  padding: 0;
+  overflow: hidden;
+  /* 後ろの 3D の景色（車の周りを回るカメラ）が右に透けて見える */
+  background: linear-gradient(90deg, rgba(7, 8, 10, 0.94) 0%, rgba(7, 8, 10, 0.8) 42%, rgba(7, 8, 10, 0.5) 100%);
 }
 
-#menu section {
-  margin: 10px 0;
+#menu[data-stage='pause'] {
+  background: rgba(7, 8, 10, 0.78);
+  -webkit-backdrop-filter: blur(6px);
+  backdrop-filter: blur(6px);
 }
 
-#menu h3 {
-  margin: 0 0 6px;
-  font-size: 12px;
-  font-weight: 600;
-  opacity: 0.7;
-}
-
-/* 選択肢は文字の量によらず同じ大きさにそろえる（同じ幅の列に並べ、行の高さもそろえる） */
-#menu .chips {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
-  grid-auto-rows: 1fr;
-  gap: 6px;
+#menu[data-stage='title'] {
+  background: linear-gradient(90deg, rgba(7, 8, 10, 0.92) 0%, rgba(7, 8, 10, 0.55) 55%, rgba(7, 8, 10, 0.15) 100%);
 }
 
 #menu button {
   font: inherit;
-  color: #fff;
+  color: inherit;
   cursor: pointer;
   touch-action: manipulation;
 }
 
-#menu .chip {
+#menu .hidden {
+  display: none !important;
+}
+
+/* タイトル画面 */
+#menu-title-screen {
+  position: absolute;
+  inset: 0;
   display: flex;
   flex-direction: column;
-  align-items: flex-start;
   justify-content: center;
-  gap: 1px;
-  min-width: 0;
-  min-height: 44px;
-  padding: 7px 11px;
-  border: 1px solid rgba(255, 255, 255, 0.22);
-  border-radius: 8px;
-  background: rgba(40, 46, 58, 0.9);
-  font-size: 13px;
-  text-align: left;
+  padding: 0 max(28px, 8vw);
+  cursor: pointer;
+  overflow: hidden;
 }
 
-#menu .chip small {
-  font-size: 10px;
-  opacity: 0.7;
-}
-
-#menu .chip.selected {
-  border-color: #6aa8ff;
-  background: #2f5fa8;
-}
-
-/* 最初の画面のプレイモードは大きめのボタン */
-#menu .chips.modes {
-  display: grid;
-  grid-template-columns: repeat(2, 1fr);
-}
-
-#menu .chips.modes .chip {
-  padding: 12px 14px;
-  font-size: 15px;
-}
-
-/* 何枚目の画面か（選び終えた画面は薄く、いまの画面は強調） */
-#menu-steps {
+.title-stripes {
+  position: absolute;
+  left: -6vw;
+  bottom: 14vh;
   display: flex;
-  flex-wrap: wrap;
-  gap: 4px;
-  margin: 0 0 4px;
-  padding: 0;
-  list-style: none;
-  font-size: 11px;
-}
-
-#menu-steps li {
-  padding: 2px 8px;
-  border-radius: 10px;
-  background: rgba(255, 255, 255, 0.08);
-  opacity: 0.6;
-}
-
-#menu-steps li.done {
+  gap: 10px;
+  transform: skewX(-24deg);
   opacity: 0.9;
 }
 
-#menu-steps li.current {
-  background: #2f5fa8;
-  opacity: 1;
+.title-stripes i {
+  display: block;
+  width: 26vw;
+  height: 6px;
+  background: var(--accent);
 }
 
-#menu-actions.hidden,
-#menu .dialog-buttons .hidden {
+.title-stripes i:nth-child(2) {
+  width: 14vw;
+  background: var(--accent-2);
+}
+
+.title-stripes i:nth-child(3) {
+  width: 6vw;
+  background: var(--text);
+}
+
+.title-logo {
+  animation: title-in 0.7s cubic-bezier(0.2, 0.8, 0.2, 1) both;
+}
+
+.title-kicker {
+  margin: 0 0 10px;
+  font-family: var(--display);
+  font-size: clamp(11px, 1.1vw, 15px);
+  letter-spacing: 0.32em;
+  color: var(--muted);
+}
+
+.title-logo h1 {
+  margin: 0;
+  font-family: var(--display);
+  font-style: italic;
+  font-weight: 900;
+  font-size: clamp(64px, 12vw, 180px);
+  line-height: 0.86;
+  letter-spacing: -0.03em;
+}
+
+.title-logo h1 span {
+  display: block;
+  color: transparent;
+  -webkit-text-stroke: 2px var(--accent);
+  padding-left: 0.5em;
+}
+
+.title-sub {
+  margin: 18px 0 0;
+  font-size: clamp(13px, 1.4vw, 18px);
+  font-weight: 700;
+  letter-spacing: 0.2em;
+}
+
+.title-press {
+  position: absolute;
+  left: max(28px, 8vw);
+  bottom: max(28px, 7vh);
+  margin: 0;
+  font-family: var(--display);
+  font-weight: 700;
+  font-size: clamp(14px, 1.4vw, 18px);
+  letter-spacing: 0.4em;
+  animation: blink 1.6s steps(1) infinite;
+}
+
+.title-press .tap,
+body.touch .title-press .pc {
   display: none;
 }
 
-#menu-actions {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
-  gap: 6px;
-  margin: 12px 0 8px;
-  padding-top: 10px;
-  border-top: 1px solid rgba(255, 255, 255, 0.12);
+body.touch .title-press .tap {
+  display: inline;
 }
 
-#menu-actions button {
-  min-height: 40px;
-  padding: 9px 8px;
-  border: 1px solid rgba(255, 255, 255, 0.22);
-  border-radius: 8px;
-  background: rgba(40, 46, 58, 0.9);
+@keyframes blink {
+  60% {
+    opacity: 0.15;
+  }
+}
+
+@keyframes title-in {
+  from {
+    opacity: 0;
+    transform: translateX(-40px);
+  }
+}
+
+/* 選んでいく画面の枠 */
+#menu-frame {
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr) auto;
+  gap: 18px;
+  width: 100%;
+  max-width: 1560px;
+  height: 100%;
+  margin: 0 auto;
+  padding: max(24px, env(safe-area-inset-top)) max(40px, env(safe-area-inset-right)) max(20px, env(safe-area-inset-bottom))
+    max(40px, env(safe-area-inset-left));
+  animation: frame-in 0.25s ease-out both;
+}
+
+@keyframes frame-in {
+  from {
+    opacity: 0;
+  }
+}
+
+.menu-head {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  align-items: end;
+  column-gap: 32px;
+  row-gap: 6px;
+}
+
+#menu-crumb {
+  grid-column: 1 / -1;
+  margin: 0;
+  font-family: var(--display);
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.28em;
+  color: var(--accent);
+  text-transform: uppercase;
+}
+
+.menu-head h2 {
+  display: flex;
+  flex-direction: column;
+  margin: 0;
+}
+
+#menu-title-en {
+  font-family: var(--display);
+  font-style: italic;
+  font-size: 14px;
+  font-weight: 700;
+  letter-spacing: 0.18em;
+  color: var(--muted);
+  white-space: pre;
+}
+
+#menu-title {
+  font-size: clamp(28px, 3vw, 44px);
+  font-weight: 900;
+  line-height: 1.1;
+  letter-spacing: 0.02em;
+}
+
+/* 何枚目の画面か: 細い線の区切り */
+#menu-steps {
+  display: flex;
+  gap: 6px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  align-self: end;
+  max-width: 720px;
+  justify-self: end;
+  width: 100%;
+}
+
+#menu-steps li {
+  flex: 1;
+  min-width: 0;
+  padding-top: 8px;
+  border-top: 3px solid var(--line-strong);
+  font-size: 12px;
+  color: var(--muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+#menu-steps li span {
+  margin-right: 6px;
+  font-family: var(--display);
+  font-style: italic;
+  font-weight: 700;
+}
+
+#menu-steps li.done {
+  border-color: rgba(255, 74, 28, 0.45);
+  color: var(--text);
+}
+
+#menu-steps li.current {
+  border-color: var(--accent);
+  color: var(--text);
+  font-weight: 700;
+}
+
+#menu-summary {
+  grid-column: 1 / -1;
+  margin: 4px 0 0;
+  padding-top: 10px;
+  border-top: 1px solid var(--line);
   font-size: 13px;
+  color: var(--muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.menu-body {
+  display: grid;
+  grid-template-columns: minmax(300px, 5fr) 7fr;
+  gap: 32px;
+  min-height: 0;
+}
+
+#menu-list {
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  padding: 2px 14px 2px 0;
+  scrollbar-width: thin;
+  scrollbar-color: rgba(255, 255, 255, 0.2) transparent;
+}
+
+/* 項目（トップ・ポーズ・設定）と選択肢: 右端を斜めに切った帯 */
+#menu .item,
+#menu .choice {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  width: 100%;
+  margin: 0 0 4px;
+  padding: 12px 34px 12px 18px;
+  border: 0;
+  border-left: 3px solid transparent;
+  background: linear-gradient(90deg, rgba(255, 255, 255, 0.06), rgba(255, 255, 255, 0.015));
+  clip-path: polygon(0 0, 100% 0, calc(100% - 16px) 100%, 0 100%);
+  text-align: left;
+  transition:
+    background 0.15s,
+    transform 0.15s,
+    border-color 0.15s;
+}
+
+#menu .item:hover,
+#menu .choice:hover {
+  background: linear-gradient(90deg, rgba(255, 255, 255, 0.12), rgba(255, 255, 255, 0.03));
+}
+
+#menu .item.cursor,
+#menu .choice.selected {
+  border-left-color: #fff;
+  background: linear-gradient(90deg, var(--accent) 0%, rgba(255, 74, 28, 0.78) 60%, rgba(255, 74, 28, 0.35) 100%);
+  transform: translateX(8px);
+}
+
+#menu .text {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  flex: 1;
+}
+
+#menu .label {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 16px;
+  font-weight: 700;
+}
+
+#menu .en {
+  font-family: var(--display);
+  font-style: italic;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.2em;
+  opacity: 0.55;
+}
+
+#menu .item small,
+#menu .choice small {
+  margin-top: 2px;
+  font-size: 12px;
+  opacity: 0.7;
+}
+
+#menu .choice {
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 0;
+  padding: 10px 34px 10px 18px;
+}
+
+#menu .badge {
+  padding: 1px 7px;
+  font-family: var(--display);
+  font-style: italic;
+  font-size: 10px;
+  letter-spacing: 0.12em;
+  color: #111;
+  background: var(--accent-2);
+  transform: skewX(-12deg);
+}
+
+/* トップ画面のプレイモードは大きく、番号を付ける */
+#menu .item.major {
+  padding: 16px 40px 16px 18px;
+}
+
+#menu .item.major .label {
+  font-size: clamp(18px, 1.7vw, 24px);
+  font-weight: 900;
+}
+
+#menu .idx {
+  width: 44px;
+  font-family: var(--display);
+  font-style: italic;
+  font-weight: 900;
+  font-size: 30px;
+  line-height: 1;
+  color: var(--muted);
+}
+
+#menu .item.cursor .idx {
+  color: #fff;
+}
+
+#menu .items.home .item:not(.major) {
+  display: inline-flex;
+  width: calc(33.3% - 6px);
+  margin-right: 4px;
+  padding: 10px 26px 10px 14px;
+}
+
+#menu .items.home .item.major + .item:not(.major) {
+  margin-top: 14px;
+}
+
+#menu .arrow::after {
+  content: '';
+  display: block;
+  width: 8px;
+  height: 8px;
+  border-top: 2px solid currentColor;
+  border-right: 2px solid currentColor;
+  transform: rotate(45deg);
+  opacity: 0;
+}
+
+#menu .item.cursor .arrow::after {
+  opacity: 1;
+}
+
+#menu .value {
+  font-family: var(--display);
+  font-style: italic;
+  font-weight: 700;
+  font-size: 15px;
+  white-space: nowrap;
+}
+
+#menu .value::before {
+  content: '‹ ';
+  opacity: 0.5;
+}
+
+#menu .value::after {
+  content: ' ›';
+  opacity: 0.5;
+}
+
+/* 選択肢のまとまりが2つ以上の画面（時間帯と天気）は、まとまりごとに横に並べる */
+#menu .group {
+  margin-bottom: 18px;
+}
+
+#menu .group h3 {
+  margin: 0 0 8px;
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  color: var(--muted);
+}
+
+#menu .group.focused h3 {
+  color: var(--accent);
+}
+
+#menu .choices.multi .list {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
+  gap: 4px;
+}
+
+#menu .choices.multi .choice {
+  margin: 0;
+}
+
+#menu .choices.multi .choice.selected {
+  transform: none;
+}
+
+/* 右側の詳しい説明 */
+#menu-detail {
+  position: relative;
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  background: linear-gradient(160deg, rgba(28, 31, 38, 0.94), rgba(14, 16, 20, 0.94));
+  border: 1px solid var(--line);
+  border-top: 3px solid var(--accent);
+  scrollbar-width: thin;
+}
+
+#menu-detail.empty {
+  visibility: hidden;
+}
+
+/* 右上の角の斜線の飾り */
+#menu-detail::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  right: 0;
+  width: 120px;
+  height: 22px;
+  background: repeating-linear-gradient(-55deg, rgba(255, 255, 255, 0.14) 0 3px, transparent 3px 9px);
+  pointer-events: none;
+  z-index: 1;
+}
+
+.d-hero {
+  position: relative;
+  height: clamp(170px, 32vh, 380px);
+  border-bottom: 1px solid var(--line);
+}
+
+.d-map {
+  background:
+    linear-gradient(rgba(255, 255, 255, 0.035) 1px, transparent 1px) 0 0 / 32px 32px,
+    linear-gradient(90deg, rgba(255, 255, 255, 0.035) 1px, transparent 1px) 0 0 / 32px 32px,
+    radial-gradient(ellipse at center, #1d2128, #101215);
+}
+
+.d-stage {
+  background: radial-gradient(ellipse at 50% 70%, #2a2e36, #0f1114 70%);
+}
+
+.d-map canvas,
+.d-stage .preview-slot,
+.d-stage canvas {
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+
+.d-tag {
+  position: absolute;
+  top: 14px;
+  left: 16px;
+  padding: 3px 12px;
+  font-family: var(--display);
+  font-style: italic;
+  font-weight: 700;
+  font-size: 12px;
+  letter-spacing: 0.14em;
+  background: rgba(0, 0, 0, 0.6);
+  border-left: 3px solid var(--accent);
+}
+
+.d-tag.hot {
+  left: auto;
+  right: 16px;
+  top: 30px;
+  color: #111;
+  background: var(--accent-2);
+  border: 0;
+  transform: skewX(-12deg);
+}
+
+.d-body {
+  position: relative;
+  padding: 20px 24px 24px;
+}
+
+.d-name {
+  margin: 0 0 6px;
+  font-size: clamp(22px, 2.2vw, 32px);
+  font-weight: 900;
+  line-height: 1.2;
+}
+
+.d-team {
+  margin: 0;
+  font-family: var(--display);
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.2em;
+  color: var(--accent);
+}
+
+.d-text {
+  margin: 0 0 10px;
+  font-size: 14px;
+  line-height: 1.75;
+  color: #cfcdc6;
+}
+
+.d-note {
+  margin: 12px 0 0;
+  font-size: 12px;
+  color: var(--muted);
+}
+
+.d-label {
+  display: inline-block;
+  margin-right: 10px;
+  font-family: var(--display);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.2em;
+  color: var(--muted);
+}
+
+.d-specs {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(110px, 1fr));
+  gap: 1px;
+  margin: 14px 0;
+  background: var(--line);
+  border: 1px solid var(--line);
+}
+
+.d-specs div {
+  padding: 8px 12px;
+  background: #15181d;
+}
+
+.d-specs dt {
+  font-size: 11px;
+  color: var(--muted);
+}
+
+.d-specs dd {
+  margin: 2px 0 0;
+  font-family: var(--display);
+  font-size: 19px;
+  font-weight: 700;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.d-profile {
+  margin: 10px 0;
+}
+
+.d-profile canvas {
+  display: block;
+  width: 100%;
+  height: 72px;
+  margin-top: 4px;
+  border-bottom: 1px solid var(--line-strong);
+}
+
+.d-features {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin: 12px 0;
+}
+
+.d-features span {
+  padding: 3px 10px;
+  font-size: 12px;
+  border: 1px solid var(--line-strong);
+}
+
+.d-reco {
+  margin: 12px 0 0;
+  font-size: 14px;
+  font-weight: 700;
+}
+
+/* 性能の棒: 10 個の斜めの区切り */
+.d-stats {
+  display: grid;
+  gap: 9px;
+  margin-top: 16px;
+}
+
+.d-stats .stat {
+  display: grid;
+  grid-template-columns: 76px 1fr 78px;
+  align-items: center;
+  gap: 12px;
+  font-size: 13px;
+}
+
+.d-stats .k {
+  color: var(--muted);
+}
+
+.d-stats .v {
+  font-family: var(--display);
+  font-style: italic;
+  font-weight: 700;
+  text-align: right;
+}
+
+.bar {
+  display: grid;
+  grid-template-columns: repeat(10, 1fr);
+  gap: 3px;
+}
+
+.bar i {
+  height: 10px;
+  background: rgba(255, 255, 255, 0.1);
+  transform: skewX(-20deg);
+}
+
+.bar i.on {
+  background: linear-gradient(90deg, var(--accent), var(--accent-2));
+}
+
+/* 時間帯と天気: 空の色と山の稜線の絵 */
+.d-sky {
+  overflow: hidden;
+  background: linear-gradient(#5fa8e8, #bfe0f5 70%);
+}
+
+.d-sky.sky-morning {
+  background: linear-gradient(#5a6fa8, #f2a874 62%, #ffd9a0);
+}
+
+.d-sky.sky-night {
+  background: linear-gradient(#05070d, #16213a 70%);
+}
+
+.d-sky .ridge {
+  position: absolute;
+  inset: auto 0 0;
+  height: 55%;
+  background: #1a2a22;
+  clip-path: polygon(0 60%, 12% 35%, 22% 52%, 36% 18%, 48% 45%, 60% 30%, 74% 55%, 86% 25%, 100% 48%, 100% 100%, 0 100%);
+}
+
+.d-sky.sky-night .ridge {
+  background: #070a0c;
+}
+
+.d-sky.wx-rain::after,
+.d-sky.wx-fog::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+}
+
+.d-sky.wx-rain {
+  filter: saturate(0.6) brightness(0.8);
+}
+
+.d-sky.wx-rain::after {
+  background: repeating-linear-gradient(105deg, transparent 0 14px, rgba(220, 235, 255, 0.35) 14px 15px, transparent 15px 31px);
+  animation: rain 0.5s linear infinite;
+}
+
+@keyframes rain {
+  to {
+    background-position: -12px 40px;
+  }
+}
+
+.d-sky.wx-fog::after {
+  background: linear-gradient(rgba(220, 225, 230, 0.35), rgba(220, 225, 230, 0.85));
+}
+
+.d-garage {
+  height: 210px;
+  margin-top: 18px;
+  background: radial-gradient(ellipse at 50% 70%, #2a2e36, transparent 70%);
+}
+
+.d-garage .preview-slot,
+.d-garage canvas {
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+
+/* ライバル: 写真（未設定なら頭文字の絵）と強さ */
+.d-rival {
+  display: grid;
+  grid-template-columns: minmax(150px, 38%) 1fr;
+  min-height: 100%;
+}
+
+.d-portrait {
+  position: relative;
+  border-right: 1px solid var(--line);
+  background: #0e1013;
+}
+
+.d-portrait .photo {
+  display: block;
+  width: 100%;
+  height: 100%;
+  min-height: 260px;
+  object-fit: cover;
+}
+
+.d-portrait .photo.none {
+  display: grid;
+  place-items: center;
+  background:
+    repeating-linear-gradient(-55deg, rgba(255, 255, 255, 0.04) 0 2px, transparent 2px 12px),
+    linear-gradient(160deg, #2b2f37, #111317);
+}
+
+.d-portrait .photo.none span {
+  font-size: clamp(64px, 8vw, 120px);
+  font-weight: 900;
+  color: rgba(255, 255, 255, 0.16);
+}
+
+.d-portrait .d-tag.hot {
+  top: 14px;
+}
+
+.d-level {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin: 0 0 6px;
+  font-weight: 700;
+}
+
+.stars {
+  color: var(--accent-2);
+  letter-spacing: 2px;
+  font-size: 16px;
+}
+
+.stars i {
+  font-style: normal;
+  color: rgba(255, 255, 255, 0.14);
+}
+
+/* 文だけの説明: 後ろに大きな飾りの文字 */
+.d-plain {
+  position: relative;
+  min-height: 100%;
+  overflow: hidden;
+}
+
+.d-plain .d-body {
+  padding-top: 32px;
+}
+
+.d-big {
+  position: absolute;
+  right: -10px;
+  bottom: -30px;
+  font-family: var(--display);
+  font-style: italic;
+  font-weight: 900;
+  font-size: clamp(120px, 16vw, 260px);
+  line-height: 1;
+  color: transparent;
+  -webkit-text-stroke: 1px rgba(255, 255, 255, 0.1);
+  white-space: nowrap;
+  pointer-events: none;
+}
+
+/* 下の操作の帯 */
+.menu-foot {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  padding-top: 14px;
+  border-top: 1px solid var(--line);
+}
+
+.menu-foot .spacer {
+  flex: 1;
+}
+
+.menu-keys {
+  margin: 0;
+  font-size: 12px;
+  color: var(--muted);
+}
+
+.menu-keys kbd {
+  margin-left: 8px;
+}
+
+body.touch .menu-keys {
+  display: none;
+}
+
+#menu .ghost,
+#menu .go {
+  min-width: 140px;
+  min-height: 46px;
+  padding: 0 30px;
+  border: 0;
+  font-weight: 700;
+  font-size: 15px;
+  letter-spacing: 0.08em;
+  clip-path: polygon(14px 0, 100% 0, calc(100% - 14px) 100%, 0 100%);
+}
+
+#menu .ghost {
+  background: rgba(255, 255, 255, 0.1);
+}
+
+#menu .ghost:hover {
+  background: rgba(255, 255, 255, 0.18);
+}
+
+#menu .go {
+  min-width: 200px;
+  background: var(--text);
+  color: #111;
+}
+
+#menu .go::after {
+  content: '  ▶';
+  font-size: 11px;
+}
+
+#menu .go.start {
+  background: var(--accent);
+  color: #fff;
+  animation: go-glow 1.6s ease-in-out infinite;
+}
+
+@keyframes go-glow {
+  50% {
+    filter: brightness(1.18);
+  }
+}
+
+/* 大きな画面では、文字をさらに大きく */
+@media (min-width: 1400px) and (min-height: 820px) {
+  #menu .label {
+    font-size: 18px;
+  }
+  #menu .choice {
+    padding: 13px 36px 13px 20px;
+  }
+  .d-text {
+    font-size: 15px;
+  }
+}
+
+/* 横向きのスマホ: 縦が短いので、見出しを詰め、説明は絵と文を横に並べる */
+@media (max-height: 540px) {
+  #menu-frame {
+    gap: 8px;
+    padding: max(8px, env(safe-area-inset-top)) max(16px, env(safe-area-inset-right)) max(8px, env(safe-area-inset-bottom))
+      max(16px, env(safe-area-inset-left));
+  }
+  .menu-head {
+    grid-template-columns: auto 1fr;
+    row-gap: 2px;
+  }
+  #menu-crumb,
+  #menu-summary {
+    display: none;
+  }
+  #menu-title {
+    font-size: 20px;
+  }
+  #menu-title-en {
+    font-size: 11px;
+  }
+  #menu-steps li {
+    font-size: 10px;
+    padding-top: 4px;
+  }
+  .menu-body {
+    grid-template-columns: minmax(200px, 4fr) 6fr;
+    gap: 14px;
+  }
+  #menu .item,
+  #menu .choice {
+    padding: 8px 26px 8px 12px;
+    margin-bottom: 3px;
+  }
+  #menu .item.major {
+    padding: 9px 30px 9px 12px;
+  }
+  #menu .item.major .label {
+    font-size: 16px;
+  }
+  #menu .idx {
+    width: 30px;
+    font-size: 20px;
+  }
+  #menu .label {
+    font-size: 14px;
+  }
+  #menu .choice small {
+    font-size: 10px;
+  }
+  .d-course,
+  .d-car {
+    display: grid;
+    grid-template-columns: 45% 1fr;
+    min-height: 100%;
+  }
+  .d-hero {
+    height: auto;
+    min-height: 160px;
+    border-bottom: 0;
+    border-right: 1px solid var(--line);
+  }
+  .d-body {
+    padding: 12px 14px 14px;
+  }
+  .d-name {
+    font-size: 18px;
+  }
+  .d-text {
+    font-size: 12px;
+    line-height: 1.6;
+    margin-bottom: 6px;
+  }
+  .d-specs {
+    margin: 8px 0;
+    grid-template-columns: repeat(2, 1fr);
+  }
+  .d-specs div {
+    padding: 4px 8px;
+  }
+  .d-specs dd {
+    font-size: 15px;
+  }
+  .d-profile canvas {
+    height: 44px;
+  }
+  .d-stats {
+    gap: 5px;
+    margin-top: 8px;
+  }
+  .d-stats .stat {
+    grid-template-columns: 58px 1fr 62px;
+    gap: 8px;
+    font-size: 11px;
+  }
+  .bar i {
+    height: 7px;
+  }
+  .d-portrait .photo {
+    min-height: 0;
+  }
+  .d-reco,
+  .d-features {
+    margin-top: 6px;
+    font-size: 12px;
+  }
+  .menu-foot {
+    padding-top: 6px;
+  }
+  #menu .ghost,
+  #menu .go {
+    min-height: 38px;
+    min-width: 110px;
+    font-size: 13px;
+  }
+  #menu .go {
+    min-width: 150px;
+  }
+  #menu .items.home .item:not(.major) {
+    width: calc(50% - 4px);
+  }
+}
+
+/* 縦長の画面（縦向きのスマホ）: 説明を上、一覧を下に重ねる */
+@media (max-width: 760px) and (orientation: portrait) {
+  #menu-frame {
+    padding: max(14px, env(safe-area-inset-top)) 14px max(12px, env(safe-area-inset-bottom));
+    gap: 10px;
+  }
+  .menu-head {
+    grid-template-columns: 1fr;
+  }
+  #menu-steps {
+    justify-self: stretch;
+  }
+  #menu-steps li {
+    font-size: 0;
+  }
+  #menu-steps li span {
+    font-size: 11px;
+  }
+  #menu-summary {
+    display: none;
+  }
+  .menu-body {
+    grid-template-columns: 1fr;
+    grid-template-rows: minmax(0, 46fr) minmax(0, 54fr);
+    gap: 10px;
+  }
+  #menu-detail {
+    order: -1;
+  }
+  .d-hero {
+    height: 150px;
+  }
+  .d-rival {
+    grid-template-columns: 38% 1fr;
+  }
+  .d-portrait .photo {
+    min-height: 0;
+  }
+  #menu .items.home .item:not(.major) {
+    width: calc(50% - 4px);
+  }
+  #menu .ghost,
+  #menu .go {
+    min-width: 110px;
+  }
 }
 
 /* スマホでは、キーボード用の説明の代わりにメニューを使い、速度は上の中央に出す */
@@ -1088,4 +2062,165 @@ body.racing #toast {
 
 #race-ranking.hidden {
   display: none;
+}
+
+/* --- 見た目の仕上げ: ダイアログ・ボタン・走行中の表示を、メニューと同じ雰囲気（角ばった枠・斜めのボタン・橙の差し色）にそろえる --- */
+
+.dialog-panel {
+  border-radius: 0;
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-top: 3px solid var(--accent);
+  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.6);
+  padding: 18px 22px;
+}
+
+.dialog-panel h2,
+#race-result h2 {
+  font-size: 19px;
+  font-weight: 900;
+  letter-spacing: 0.04em;
+}
+
+.dialog-buttons button,
+#race-result .dialog-buttons button {
+  min-height: 40px;
+  padding: 6px 22px;
+  border: 0;
+  border-radius: 0;
+  background: rgba(255, 255, 255, 0.1);
+  font-weight: 700;
+  clip-path: polygon(10px 0, 100% 0, calc(100% - 10px) 100%, 0 100%);
+}
+
+.dialog-buttons button:hover {
+  background: rgba(255, 255, 255, 0.18);
+}
+
+.dialog-buttons .primary {
+  border: 0;
+  background: var(--accent);
+}
+
+.dialog-buttons .primary:hover {
+  background: #ff6236;
+}
+
+.dialog-panel input[type='text'],
+.dialog-panel .row button,
+#ranking .row select {
+  border-radius: 0;
+  border-color: var(--line-strong);
+}
+
+.dialog-panel input[type='text']:focus {
+  outline: none;
+  border-color: var(--accent);
+}
+
+#ranking-table tr.me {
+  background: rgba(255, 74, 28, 0.16);
+}
+
+#ranking-table button {
+  border-radius: 0;
+  border-color: var(--accent);
+  background: rgba(255, 74, 28, 0.25);
+}
+
+kbd {
+  border-radius: 2px;
+  background: transparent;
+  border: 1px solid var(--line-strong);
+  font-family: var(--display);
+  font-weight: 700;
+  font-size: 11px;
+}
+
+#toast,
+#net-status,
+#help {
+  border-radius: 0;
+  background: rgba(10, 11, 14, 0.72);
+  border-left: 3px solid var(--accent);
+}
+
+#loading {
+  background: var(--ink);
+  font-family: var(--display);
+  font-style: italic;
+  font-weight: 700;
+  letter-spacing: 0.4em;
+}
+
+#speed-value {
+  font-family: var(--display);
+  font-style: italic;
+  font-weight: 900;
+  letter-spacing: -0.02em;
+}
+
+#speed .unit {
+  font-family: var(--display);
+  font-style: italic;
+  font-weight: 700;
+}
+
+#gear {
+  border-radius: 0;
+  font-family: var(--display);
+  font-style: italic;
+  background: rgba(10, 11, 14, 0.7);
+  border-bottom: 3px solid var(--accent);
+}
+
+#race,
+#race-result {
+  border-radius: 0;
+  border-top: 3px solid var(--accent);
+}
+
+#race-result {
+  background: var(--panel);
+}
+
+#race-result .total {
+  font-family: var(--display);
+  font-style: italic;
+  font-weight: 900;
+}
+
+#race-warning {
+  border-radius: 0;
+  clip-path: polygon(12px 0, 100% 0, calc(100% - 12px) 100%, 0 100%);
+}
+
+#countdown {
+  font-family: var(--display);
+  font-style: italic;
+  font-weight: 900;
+}
+
+#countdown.ready {
+  border-radius: 0;
+  font-family: inherit;
+  font-style: normal;
+  font-weight: 700;
+  border-left: 3px solid var(--accent);
+}
+
+#touch button {
+  border-radius: 0 !important;
+}
+
+/* メニューを開いている間は、走行中の表示を隠す */
+body.menu-open #hud,
+body.menu-open #help,
+body.menu-open #touch,
+body.menu-open #race,
+body.menu-open #minimap,
+body.menu-open #toast,
+body.menu-open #countdown,
+body.menu-open #race-warning {
+  visibility: hidden;
 }
