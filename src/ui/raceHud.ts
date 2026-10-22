@@ -25,6 +25,10 @@ export class RaceHud {
   private readonly timeEl = el('race-time');
   private readonly bestEl = el('race-best');
   private readonly splitEl = el('race-split');
+  private readonly lapsEl = el('race-laps');
+  /** 表に出している走り終えた周の数（増えたときだけ表を作り直す） */
+  private shownLaps = -1;
+  private currentLapEl: HTMLElement | null = null;
   private readonly countdown = el('countdown');
   private readonly warning = el('race-warning');
   private readonly result = el('race-result');
@@ -46,6 +50,7 @@ export class RaceHud {
 
   show(on: boolean): void {
     this.panel.classList.toggle('hidden', !on);
+    this.shownLaps = -1;
     document.body.classList.toggle('racing', on);
     if (!on) {
       this.hideResult();
@@ -55,10 +60,39 @@ export class RaceHud {
   }
 
   /** 周回・タイムを更新する（毎フレーム） */
-  update(lap: number, totalLaps: number, time: number, best: number | null): void {
-    this.lapEl.textContent = `LAP ${lap}/${totalLaps}`;
-    this.timeEl.textContent = formatTime(time);
-    this.bestEl.textContent = best === null ? 'ベスト --:--.--' : `ベスト ${formatTime(best)}`;
+  update(s: {
+    lap: number;
+    totalLaps: number;
+    time: number;
+    best: number | null;
+    /** 走り終えた周のタイム */
+    laps: readonly number[];
+    lapTime: number;
+    /** 比べる周回タイム（自己ベストの走りの各周） */
+    refLaps?: readonly number[];
+    finished: boolean;
+  }): void {
+    this.lapEl.textContent = `LAP ${s.lap}/${s.totalLaps}`;
+    this.timeEl.textContent = formatTime(s.time);
+    this.bestEl.textContent = s.best === null ? 'ベスト --:--.--' : `ベスト ${formatTime(s.best)}`;
+    if (s.laps.length !== this.shownLaps || (s.finished && this.currentLapEl)) this.renderLaps(s.laps, s.refLaps, s.finished, s.totalLaps);
+    if (this.currentLapEl) this.currentLapEl.textContent = formatTime(s.lapTime);
+  }
+
+  /** これまでの周回タイムの表。自己ベストの同じ周より速ければ緑、遅ければ赤で差を出す */
+  private renderLaps(laps: readonly number[], ref: readonly number[] | undefined, finished: boolean, totalLaps: number): void {
+    this.shownLaps = laps.length;
+    const fastest = Math.min(...laps);
+    const rows = laps.map((t, i) => {
+      const r = ref?.[i];
+      const diff = r === undefined ? '' : `<span class="${t < r ? 'good' : 'bad'}">${t - r >= 0 ? '+' : '−'}${Math.abs(t - r).toFixed(2)}</span>`;
+      const mark = laps.length > 1 && t === fastest ? ' fastest' : '';
+      return `<tr class="done${mark}"><td>${i + 1}</td><td>${formatTime(t)}</td><td>${diff}</td></tr>`;
+    });
+    const running = !finished && laps.length < totalLaps;
+    if (running) rows.push(`<tr class="current"><td>${laps.length + 1}</td><td></td><td></td></tr>`);
+    this.lapsEl.innerHTML = rows.join('');
+    this.currentLapEl = running ? (this.lapsEl.querySelector('.current td:nth-child(2)') as HTMLElement) : null;
   }
 
   /** カウントダウンの数字（0 で「スタート！」） */
