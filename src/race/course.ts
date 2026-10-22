@@ -55,6 +55,8 @@ export interface Course {
   finishLine: { x: number; z: number; yaw: number };
   /** 中心線の長さ [m]。周回コースは一周、そうでなければゴールまで */
   length: number;
+  /** 中心線の全長 [m]。一本道のコースではゴールの先の止まるための区間を含む（周回コースは length と同じ） */
+  end: number;
   /** その位置のタイルがコースの何番目か（コース外なら -1） */
   indexAt(x: number, z: number): number;
   /** その番目のタイルでの進行方向（単位ベクトル） */
@@ -252,6 +254,7 @@ export function buildCourse(map: ParsedMap): Course {
     line,
     finishLine,
     length,
+    end: total,
     indexAt,
     directionAt(index) {
       // カーブでは入ってきた向きと出ていく向きの中間を進行方向とみなす

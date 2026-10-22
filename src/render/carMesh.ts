@@ -221,6 +221,10 @@ export class CarMesh {
     this.paint.color.setHex(color);
   }
 
+  get color(): number {
+    return this.paint.color.getHex();
+  }
+
   dispose(): void {
     this.root.removeFromParent();
     const materials = new Set<THREE.Material>();

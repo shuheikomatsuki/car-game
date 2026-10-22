@@ -1,3 +1,4 @@
+import type { Standing } from '../game/npcRace';
 import { formatTime } from '../race/timeAttack';
 
 function el<T extends HTMLElement = HTMLElement>(id: string): T {
@@ -22,6 +23,9 @@ export interface RaceResult {
 export class RaceHud {
   private readonly panel = el('race');
   private readonly lapEl = el('race-lap');
+  private readonly posEl = el('race-pos');
+  private readonly resultTitle = el('race-result-title');
+  private standingsHtml = '';
   private readonly timeEl = el('race-time');
   private readonly bestEl = el('race-best');
   private readonly splitEl = el('race-split');
@@ -71,11 +75,15 @@ export class RaceHud {
     /** 比べる周回タイム（自己ベストの走りの各周） */
     refLaps?: readonly number[];
     finished: boolean;
+    /** NPC 対戦の順位 */
+    position?: { rank: number; total: number };
   }): void {
+    this.posEl.textContent = s.position ? `${s.position.rank}位/${s.position.total}` : '';
     // 一本道のコース（1本だけ走る）では周回を出さない
     this.lapEl.textContent = s.totalLaps > 1 ? `LAP ${s.lap}/${s.totalLaps}` : '';
     this.timeEl.textContent = formatTime(s.time);
-    this.bestEl.textContent = s.best === null ? 'ベスト --:--.--' : `ベスト ${formatTime(s.best)}`;
+    // NPC 対戦では自己ベストを比べないので出さない
+    this.bestEl.textContent = s.position ? '' : s.best === null ? 'ベスト --:--.--' : `ベスト ${formatTime(s.best)}`;
     if (s.laps.length !== this.shownLaps || (s.finished && this.currentLapEl)) this.renderLaps(s.laps, s.refLaps, s.finished, s.totalLaps);
     if (this.currentLapEl) this.currentLapEl.textContent = formatTime(s.lapTime);
   }
@@ -133,6 +141,7 @@ export class RaceHud {
     const best = r.newTotal
       ? `<p class="new big">自己ベスト更新！${r.previousBest !== null ? `（${formatTime(r.previousBest)} → ${formatTime(r.total)}）` : ''}</p>`
       : `<p class="note">自己ベスト ${formatTime(r.previousBest ?? r.total)}（あと ${(r.total - (r.previousBest ?? r.total)).toFixed(2)} 秒）</p>`;
+    this.resultTitle.textContent = 'ゴール！';
     this.resultBody.innerHTML = `
       <p class="total">${formatTime(r.total)}</p>
       ${best}
@@ -141,7 +150,35 @@ export class RaceHud {
     this.result.classList.remove('hidden');
   }
 
+  /**
+   * NPC 対戦の結果（順位表）。まだ走っている NPC がいる間は毎フレーム呼んでよい（変わったときだけ描き直す）
+   */
+  showStandings(rows: readonly Standing[], totalLaps: number): void {
+    const me = rows.findIndex((r) => r.isPlayer);
+    const winner = rows[0]?.total ?? null;
+    const body = rows
+      .map((r, i) => {
+        const color = `#${r.color.toString(16).padStart(6, '0')}`;
+        const time =
+          r.total === null
+            ? `<span class="note">走行中${totalLaps > 1 ? `（${Math.min(r.laps + 1, totalLaps)}周目）` : ''}</span>`
+            : i === 0 || winner === null
+              ? formatTime(r.total)
+              : `${formatTime(r.total)} <span class="note">+${(r.total - winner).toFixed(2)}</span>`;
+        return `<tr class="${r.isPlayer ? 'me' : ''}"><td>${i + 1}</td><td><span class="dot" style="background:${color}"></span>${r.isPlayer ? 'あなた' : r.name}</td><td>${time}</td></tr>`;
+      })
+      .join('');
+    const html = `<table class="standings">${body}</table>`;
+    this.resultTitle.textContent = me === 0 ? '優勝！' : `ゴール！ ${me + 1}位`;
+    if (html !== this.standingsHtml) {
+      this.standingsHtml = html;
+      this.resultBody.innerHTML = html;
+    }
+    this.result.classList.remove('hidden');
+  }
+
   hideResult(): void {
+    this.standingsHtml = '';
     this.result.classList.add('hidden');
   }
 }

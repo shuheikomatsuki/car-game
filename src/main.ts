@@ -9,10 +9,12 @@ import { loadFace, loadFace3d, loadFaceShape, saveFace, saveFace3d, saveFaceShap
 import { GamepadInput, KeyboardInput, PAD_BUTTON, mergeInputs } from './core/input';
 import { FixedStepLoop } from './core/loop';
 import { Level } from './game/level';
+import { NpcField, rankEntrants, velocityOf } from './game/npcRace';
 import { PLAYER_COLORS, RemoteCars, carStateOf } from './game/remoteCars';
 import { MAPS } from './map/maps';
 import { NetClient } from './net/client';
 import { GhostRecorder, ghostPoseAt } from './race/ghost';
+import { NPC_LEVELS } from './race/npcDriver';
 import { type RaceRecord, loadRecord, mergeRecord, saveRecord } from './race/records';
 import { TimeAttack, formatTime } from './race/timeAttack';
 import { isRoomCode, normalizeRoomCode } from './net/protocol';
@@ -149,8 +151,16 @@ async function main() {
   const remoteCars = new RemoteCars(view.scene);
   remoteCars.attachLevel(level);
 
-  // --- タイムアタック ---
+  // --- タイムアタック・NPC 対戦 ---
   let race: TimeAttack | null = null;
+  /** いま走っているレースの種類 */
+  let raceMode: 'timeAttack' | 'npc' = 'timeAttack';
+  /** NPC 対戦の NPC たち */
+  let npcField: NpcField | null = null;
+  /** NPC の強さ（?npc=pro のように指定できる） */
+  let npcLevelIndex = Math.max(0, NPC_LEVELS.findIndex((l) => l.id === (params.get('npc') ?? 'hard')));
+  /** NPC 対戦の NPC の台数 */
+  const NPC_COUNT = 3;
   let ghostRecorder = new GhostRecorder();
   /** いまのコースと車での自己ベスト */
   let best: RaceRecord | null = null;
@@ -160,8 +170,8 @@ async function main() {
   const raceMapIndex = MAPS.findIndex((m) => m.race);
   const minimap = new Minimap(document.getElementById('minimap')!);
   const raceHud = new RaceHud({
-    onRetry: () => race && startTimeAttack(),
-    onQuit: () => stopTimeAttack(),
+    onRetry: () => race && startRace(raceMode),
+    onQuit: () => stopRace(),
   });
 
   const placeCar = (spawn: { x: number; z: number; yaw: number }) => {
@@ -173,44 +183,85 @@ async function main() {
     remoteCars.ghost(performance.now());
   };
   const resetCar = () => {
-    // タイムアタック中のリセットは、スタートからやり直し
-    if (race) startTimeAttack();
+    // レース中のリセットは、スタートからやり直し
+    if (race) startRace(raceMode);
     else placeCar(assist ? level.laneSpawn : level.spawn);
   };
 
-  /** サーキットのスタートラインの手前に並び、カウントダウンから始める */
-  function startTimeAttack() {
+  const raceLabel = () => (raceMode === 'npc' ? `NPC対戦（${NPC_LEVELS[npcLevelIndex].label}）` : 'タイムアタック');
+
+  /**
+   * レース用のコースのスタートラインの手前に並び、カウントダウンから始める。
+   * いまのマップがレース用でなければサーキットへ移動する。NPC 対戦では NPC が前に並び、自分は最後尾から
+   */
+  function startRace(mode: 'timeAttack' | 'npc') {
     if (assist) setAssist(false);
+    raceMode = mode;
     if (!level.course) {
       loadMap(raceMapIndex);
       // 同じ部屋の全員もサーキットへ
       net.send({ t: 'map', map: mapIndex });
     }
+    npcField?.dispose();
+    npcField = null;
     const course = level.course!;
-    race = new TimeAttack(course, level.def.race!.laps);
+    const laps = level.def.race!.laps;
+    race = new TimeAttack(course, laps);
     ghostRecorder = new GhostRecorder();
-    best = loadRecord(level.def.name, vehicle().id);
-    placeCar(course.gridSpot(6));
+    // NPC 対戦ではゴーストを出さず、記録も残さない
+    best = mode === 'timeAttack' ? loadRecord(level.def.name, vehicle().id) : null;
+    // 2列に互い違いに並ぶ。道幅に合わせて左右の間隔を決める
+    const side = Math.min(3, level.def.roadWidth / 4);
+    const slot = (i: number) => course.gridSpot(6 + 7 * i, i % 2 === 0 ? side : -side);
+    if (mode === 'npc') {
+      const grid = Array.from({ length: NPC_COUNT }, (_, i) => slot(i));
+      npcField = new NpcField(level, view.scene, NPC_LEVELS[npcLevelIndex], vehicle().params, laps, grid);
+      placeCar(slot(NPC_COUNT));
+    } else {
+      placeCar(course.gridSpot(6));
+    }
     raceHud.show(true);
     minimap.setCourse(course);
     raceHud.hideResult();
     raceHud.setWarning({ wrongWay: false, offCourse: false });
-    hud.setMode(false, 'タイムアタック');
+    hud.setMode(false, raceLabel());
     touch.refresh();
   }
 
-  function stopTimeAttack() {
-    if (!race) return;
+  /** レースの表示と NPC を片付ける（車の位置はそのまま） */
+  function clearRace() {
     race = null;
+    npcField?.dispose();
+    npcField = null;
     raceHud.show(false);
     minimap.setCourse(null);
     ghostMesh.root.visible = false;
+  }
+
+  function stopRace() {
+    if (!race) return;
+    clearRace();
     hud.setMode(false, '自分で運転');
     resetCar();
     touch.refresh();
   }
 
-  const toggleTimeAttack = () => (race ? stopTimeAttack() : startTimeAttack());
+  const toggleRace = (mode: 'timeAttack' | 'npc') => (race && raceMode === mode ? stopRace() : startRace(mode));
+  const cycleNpcLevel = () => {
+    npcLevelIndex = (npcLevelIndex + 1) % NPC_LEVELS.length;
+    hud.toast(`NPCの強さ: ${NPC_LEVELS[npcLevelIndex].label}`);
+    if (race && raceMode === 'npc') startRace('npc');
+    touch.refresh();
+  };
+
+  /** NPC 対戦の順位（自分を含む） */
+  const standings = () => {
+    if (!race || !npcField) return [];
+    return rankEntrants([
+      { name: 'あなた', color: carMesh.color, isPlayer: true, timer: race, x: curr.x, z: curr.z },
+      ...npcField.npcs.map((n) => ({ name: n.name, color: n.color, isPlayer: false, timer: n.timer, x: n.curr.x, z: n.curr.z })),
+    ]);
+  };
 
   const handleRaceEvents = (r: TimeAttack) => {
     for (const e of r.drainEvents()) {
@@ -228,6 +279,12 @@ async function main() {
           break;
         }
         case 'finish': {
+          if (raceMode === 'npc') {
+            raceHud.showStandings(standings(), r.totalLaps);
+            raceHud.setWarning({ wrongWay: false, offCourse: false });
+            sound.beep(true);
+            break;
+          }
           const previousBest = best?.total ?? null;
           const merged = mergeRecord(best, { total: e.total, laps: e.laps, ghost: ghostRecorder.frames });
           const saved = merged.newTotal || merged.newLap ? saveRecord(level.def.name, vehicle().id, merged.record) : true;
@@ -256,12 +313,7 @@ async function main() {
   };
 
   const setAssist = (on: boolean) => {
-    if (on && race) {
-      race = null;
-      raceHud.show(false);
-      minimap.setCourse(null);
-      ghostMesh.root.visible = false;
-    }
+    if (on && race) clearRace();
     assist = on;
     character.root.visible = on;
     panel.show(on);
@@ -282,6 +334,9 @@ async function main() {
   };
 
   const loadMap = (index: number, message = `マップ: ${MAPS[index].name}`) => {
+    // NPC の車は古いマップの物理ワールドにいるので先に片付ける（レース中ならこの後で並び直す）
+    npcField?.dispose();
+    npcField = null;
     level.dispose();
     mapIndex = index;
     level = new Level(rapier, MAPS[mapIndex]);
@@ -289,12 +344,9 @@ async function main() {
     view.scene.add(level.group);
     remoteCars.attachLevel(level);
     driver = createDriver();
-    // サーキット以外のマップに替わったらタイムアタックをやめる（サーキットならやり直し）
+    // レース用でないマップに替わったらレースをやめる（レース用ならそのコースでやり直し）
     if (race && !level.course) {
-      race = null;
-      raceHud.show(false);
-      minimap.setCourse(null);
-      ghostMesh.root.visible = false;
+      clearRace();
       hud.setMode(false, '自分で運転');
       touch.refresh();
     }
@@ -334,6 +386,10 @@ async function main() {
     hud.setMuted(muted);
   };
   const cyclePersonality = () => {
+    if (race && raceMode === 'npc') {
+      cycleNpcLevel();
+      return;
+    }
     if (!assist) return;
     personalityIndex = (personalityIndex + 1) % PERSONALITIES.length;
     driver = createDriver();
@@ -508,7 +564,8 @@ async function main() {
   const keyboard = new KeyboardInput();
   keyboard.onAction('KeyO', () => onlinePanel.open());
   keyboard.onAction('KeyR', resetCar);
-  keyboard.onAction('KeyT', toggleTimeAttack);
+  keyboard.onAction('KeyT', () => toggleRace('timeAttack'));
+  keyboard.onAction('KeyY', () => toggleRace('npc'));
   keyboard.onAction('KeyC', cycleCamera);
   keyboard.onAction('KeyN', nextMap);
   keyboard.onAction('KeyP', cycleCar);
@@ -537,7 +594,9 @@ async function main() {
         quick: true,
       },
       { label: () => (race ? 'やり直す' : 'リセット'), run: resetCar, quick: true },
-      { label: () => (race ? 'タイムアタックをやめる' : 'タイムアタック'), run: toggleTimeAttack },
+      { label: () => (race && raceMode === 'timeAttack' ? 'タイムアタックをやめる' : 'タイムアタック'), run: () => toggleRace('timeAttack') },
+      { label: () => (race && raceMode === 'npc' ? 'NPC対戦をやめる' : 'NPCと対戦'), run: () => toggleRace('npc') },
+      { label: () => `NPCの強さ: ${NPC_LEVELS[npcLevelIndex].label}`, run: cycleNpcLevel, visible: () => race !== null && raceMode === 'npc' },
       { label: () => (assist ? '自分で運転する' : `${CHARACTER_NAME}に運転してもらう`), run: () => setAssist(!assist) },
       {
         label: () => `ハンドル: ${touch.steerMode === 'tilt' ? '傾ける' : 'なぞる'}`,
@@ -556,7 +615,7 @@ async function main() {
       { label: () => '顔写真', run: openFaceEditor, visible: () => assist },
       { label: () => `サウンド: ${sound.isMuted ? 'OFF' : 'ON'}`, run: toggleMute },
     ],
-    () => `${level.def.name}・${race ? 'タイムアタック' : assist ? `${CHARACTER_NAME}に指示` : '自分で運転'}・${vehicle().label}・カメラ: ${cameraRig.modeName}`,
+    () => `${level.def.name}・${race ? raceLabel() : assist ? `${CHARACTER_NAME}に指示` : '自分で運転'}・${vehicle().label}・カメラ: ${cameraRig.modeName}`,
   );
   touch.refresh();
   // iPhone の Safari はページから全画面にできないので、ホーム画面に追加する方法を案内する
@@ -609,7 +668,9 @@ async function main() {
       remoteCars.step(performance.now());
       level.physics.world.timestep = dt;
       level.car.applyInput(input, dt);
+      npcField?.applyInputs(dt, race?.canDrive ?? false, [curr]);
       level.physics.world.step();
+      npcField?.afterStep(dt);
 
       const impact = level.car.measureImpact();
       if (impact > IMPACT_THRESHOLD) {
@@ -624,12 +685,7 @@ async function main() {
       if (curr.y < -5) resetCar();
       if (race) {
         const r = race;
-        const sin = Math.sin(curr.yaw);
-        const cos = Math.cos(curr.yaw);
-        // 前方 (sin, cos)・左 (cos, -sin) の速度を足して、地面に対する速度にする
-        const vx = sin * curr.forwardSpeed + cos * curr.lateralSpeed;
-        const vz = cos * curr.forwardSpeed - sin * curr.lateralSpeed;
-        r.update(dt, { x: curr.x, z: curr.z, vx, vz });
+        r.update(dt, { x: curr.x, z: curr.z, ...velocityOf(curr) });
         if (r.phase === 'racing') ghostRecorder.sample(r.time, curr);
         handleRaceEvents(r);
       }
@@ -647,8 +703,11 @@ async function main() {
       const s = level.ground(lerpSnapshot(prev, curr, alpha));
       carMesh.update(s);
       remoteCars.render(performance.now());
+      npcField?.render(alpha);
       if (race) {
         const pose = best ? ghostPoseAt(best.ghost, Math.max(0, race.time)) : null;
+        const list = npcField ? standings() : null;
+        const rank = list ? { list, index: list.findIndex((e) => e.isPlayer) } : null;
         ghostMesh.root.visible = pose !== null;
         if (pose) ghostMesh.update(level.ground({ x: pose.x, y: 0.05, z: pose.z, yaw: pose.yaw, forwardSpeed: 0, lateralSpeed: 0, steerAngle: 0, wheelSpin: 0 }));
         raceHud.update({
@@ -660,9 +719,14 @@ async function main() {
           lapTime: race.lapTime,
           refLaps: best?.laps,
           finished: race.phase === 'finished',
+          position: rank ? { rank: rank.index + 1, total: rank.list.length } : undefined,
         });
+        // ゴールした後も、まだ走っている NPC がゴールするたびに順位表を更新する
+        if (rank && race.phase === 'finished') raceHud.showStandings(rank.list, race.totalLaps);
+        const hex = (c: number) => `#${c.toString(16).padStart(6, '0')}`;
         minimap.draw([
           ...(pose ? [{ x: pose.x, z: pose.z, color: '#7fd4ff' }] : []),
+          ...(npcField?.npcs.map((n) => ({ x: n.curr.x, z: n.curr.z, color: hex(n.color) })) ?? []),
           { x: s.x, z: s.z, yaw: s.yaw, color: '#ff5a4f', size: 5 },
         ]);
       }
@@ -680,7 +744,7 @@ async function main() {
   // ?debug を付けるとブラウザの開発者ツールや自動テストから状態を触れる
   if (params.has('debug')) {
     Object.assign(window, {
-      __game: { getLevel: () => level, getRace: () => race, startTimeAttack, stopTimeAttack, getDriver: () => driver, faceEditor, net, remoteCars, touch, onlinePanel, cameraRig, sound, giveCommand, setAssist },
+      __game: { getLevel: () => level, getRace: () => race, getNpcs: () => npcField, startTimeAttack: () => startRace('timeAttack'), startNpcRace: () => startRace('npc'), stopRace, getDriver: () => driver, faceEditor, net, remoteCars, touch, onlinePanel, cameraRig, sound, giveCommand, setAssist },
     });
   }
 

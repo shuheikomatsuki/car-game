@@ -28,7 +28,7 @@
       <div class="assist-only"><kbd>1</kbd>〜<kbd>0</kbd> 指示　<kbd>V</kbd> 音声で指示　<kbd>K</kbd> 運転のうまさ　<kbd>F</kbd> 顔写真</div>
       <div><kbd>Q</kbd> モード切替（自分で運転／アッティーに指示）</div>
       <div><kbd>C</kbd> カメラ切替 <span id="camera-name"></span></div>
-      <div><kbd>T</kbd> タイムアタック（走っている間は <kbd>N</kbd> でコースを替える）</div>
+      <div><kbd>T</kbd> タイムアタック　<kbd>Y</kbd> NPCと対戦（<kbd>K</kbd> 強さ・<kbd>N</kbd> コース）</div>
       <div><kbd>N</kbd> マップ切替　<kbd>P</kbd> 車の切替　<kbd>R</kbd> リセット</div>
       <div><kbd>O</kbd> みんなで走る（オンライン）</div>
       <div><kbd>M</kbd> サウンド <span id="sound-state"></span>　<kbd>H</kbd> ヘルプ表示</div>
@@ -118,7 +118,7 @@
       </div>
     </div>
     <div id="race" class="hidden">
-      <div class="row"><span id="race-lap"></span><span id="race-time"></span></div>
+      <div class="row"><span id="race-pos"></span><span id="race-lap"></span><span id="race-time"></span></div>
       <div id="race-best"></div>
       <table id="race-laps"></table>
       <div id="race-split"></div>
@@ -127,10 +127,10 @@
     <div id="countdown"></div>
     <div id="race-warning"></div>
     <div id="race-result" class="hidden">
-      <h2>ゴール！</h2>
+      <h2 id="race-result-title">ゴール！</h2>
       <div id="race-result-body"></div>
       <div class="dialog-buttons">
-        <button id="race-quit">やめる<kbd>T</kbd></button>
+        <button id="race-quit">やめる</button>
         <span class="spacer"></span>
         <button id="race-retry" class="primary">もう一度<kbd>R</kbd></button>
       </div>
