@@ -38,7 +38,7 @@ describe('VoiceInput', () => {
     feed(event(0, [['右、いや左', false]]));
     expect(commands).toEqual([]);
     feed(event(0, [['右、いや左', true]]));
-    expect(commands).toEqual(['turnLeft']);
+    expect(commands).toEqual(['goLeft']);
   });
 
   it('handles separate utterances independently', () => {
