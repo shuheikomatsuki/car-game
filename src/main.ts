@@ -26,6 +26,7 @@ import { Hud, hideLoading, showError } from './ui/hud';
 import { OnlinePanel, loadPlayerName } from './ui/onlinePanel';
 import { RankingPanel } from './ui/rankingPanel';
 import { Minimap } from './ui/minimap';
+import { GameMenu } from './ui/menu';
 import { RaceHud } from './ui/raceHud';
 import { canRequestFullscreen, enterFullscreen, isFullscreen, isStandalone, needsHomeScreenForFullscreen } from './ui/fullscreen';
 import { TouchControls, prefersTouch } from './ui/touchControls';
@@ -161,7 +162,8 @@ async function main() {
     npcField = null;
     const course = level.course!;
     const laps = level.def.race!.laps;
-    race = new TimeAttack(course, laps);
+    // アクセルを踏むまでカウントダウンを始めない（自分のタイミングでスタートする）
+    race = new TimeAttack(course, laps, true);
     ghostRecorder = new GhostRecorder();
     // NPC 対戦ではゴーストを出さず、記録も残さない
     best = mode === 'timeAttack' ? loadRecord(level.def.name, vehicle().id) : null;
@@ -176,11 +178,20 @@ async function main() {
       placeCar(course.gridSpot(6));
     }
     raceHud.show(true);
+    raceHud.showReady(touch.isShown ? 'アクセルを押すとスタート' : 'アクセル（W / ↑）でスタート');
     minimap.setCourse(course);
     raceHud.hideResult();
     raceHud.setWarning({ wrongWay: false, offCourse: false });
     hud.setMode(raceLabel());
     touch.refresh();
+    menu.refresh();
+  }
+
+  /** スタートの合図: カウントダウンを始める */
+  function beginRace() {
+    if (!race || race.phase !== 'ready') return;
+    race.begin();
+    npcField?.begin();
   }
 
   /** レースの表示と NPC を片付ける（車の位置はそのまま） */
@@ -201,6 +212,7 @@ async function main() {
     hud.setMode('自分で運転');
     resetCar();
     touch.refresh();
+    menu.refresh();
   }
 
   const toggleRace = (mode: 'timeAttack' | 'npc') => (race && raceMode === mode ? stopRace() : startRace(mode));
@@ -224,6 +236,7 @@ async function main() {
     for (const e of r.drainEvents()) {
       switch (e.type) {
         case 'count':
+          raceHud.showReady(null);
           raceHud.count(e.value);
           sound.beep(e.value === 0);
           break;
@@ -292,6 +305,7 @@ async function main() {
     resetCar();
     hud.setMapName(level.def.name);
     hud.toast(message);
+    menu.refresh();
     net.updateJoin({ map: mapIndex });
   };
   const nextMap = () => {
@@ -475,6 +489,8 @@ async function main() {
     serverUrl !== '',
   );
   let stepCount = 0;
+  /** アクセルを踏みっぱなしか（スタートは踏み直したときだけにする） */
+  let throttleHeld = false;
 
   const keyboard = new KeyboardInput();
   keyboard.onAction('KeyO', () => onlinePanel.open());
@@ -503,28 +519,86 @@ async function main() {
           cycleCamera();
           hud.toast(`カメラ: ${cameraRig.modeName}`);
         },
-        quick: true,
       },
-      { label: () => (race ? 'やり直す' : 'リセット'), run: resetCar, quick: true },
-      { label: () => (race && raceMode === 'timeAttack' ? 'タイムアタックをやめる' : 'タイムアタック'), run: () => toggleRace('timeAttack') },
-      { label: () => (race && raceMode === 'npc' ? 'NPC対戦をやめる' : 'NPCと対戦'), run: () => toggleRace('npc') },
-      { label: () => `NPCの強さ: ${NPC_LEVELS[npcLevelIndex].label}`, run: cycleNpcLevel, visible: () => race !== null && raceMode === 'npc' },
+      { label: () => (race ? 'やり直す' : 'リセット'), run: resetCar },
+    ],
+    () => menu.open(),
+  );
+
+  // --- メニュー（スマホは ☰、パソコンは Esc）: 走り方・コース・車を一覧から選ぶ ---
+  const raceModeId = () => (race ? raceMode : 'free');
+  const menu = new GameMenu(
+    [
       {
-        label: () => `ハンドル: ${touch.steerMode === 'tilt' ? '傾ける' : 'なぞる'}`,
-        run: () => void toggleSteerMode(),
+        title: '走り方',
+        choices: () => [
+          { id: 'free', label: '自由に走る' },
+          { id: 'timeAttack', label: 'タイムアタック' },
+          { id: 'npc', label: 'NPCと対戦' },
+        ],
+        selected: raceModeId,
+        select: (id) => {
+          if (id === raceModeId()) return;
+          if (id === 'free') stopRace();
+          else startRace(id as 'timeAttack' | 'npc');
+        },
+        detail: () => (race ? 'スタートの位置で、アクセルを踏むとカウントダウンが始まります' : ''),
       },
       {
-        label: () => '全画面で遊ぶ',
-        run: () => void enterFullscreen(),
-        visible: () => canRequestFullscreen() && !isFullscreen() && !isStandalone(),
+        title: 'NPCの強さ',
+        choices: () => NPC_LEVELS.map((l) => ({ id: l.id, label: l.label })),
+        selected: () => NPC_LEVELS[npcLevelIndex].id,
+        select: (id) => {
+          npcLevelIndex = Math.max(0, NPC_LEVELS.findIndex((l) => l.id === id));
+          if (race && raceMode === 'npc') startRace('npc');
+        },
+        visible: () => race !== null && raceMode === 'npc',
       },
-      { label: () => 'ランキング（ゴーストと対戦）', run: openRanking, visible: () => board !== null },
-      { label: () => 'みんなで走る', run: () => onlinePanel.open() },
-      { label: () => (race ? 'コースを切り替える' : 'マップを切り替える'), run: nextMap },
-      { label: () => '車を切り替える', run: cycleCar },
+      {
+        title: 'マップ・コース',
+        choices: () =>
+          MAPS.filter((m) => !race || m.race).map((m) => ({
+            id: m.id,
+            label: m.name,
+            note: m.race ? (m.race.laps > 1 ? `周回 ${m.race.laps}周` : '一本道') : '自由に走る',
+          })),
+        selected: () => level.def.id,
+        select: (id) => {
+          const index = MAPS.findIndex((m) => m.id === id);
+          if (index < 0 || index === mapIndex) return;
+          loadMap(index);
+          // 同じ部屋の全員のマップも切り替える
+          net.send({ t: 'map', map: mapIndex });
+        },
+      },
+      {
+        title: '車',
+        choices: () => VEHICLE_PRESETS.map((v) => ({ id: v.id, label: v.label, note: `最高 ${Math.round(v.params.maxForwardSpeed * 3.6)}km/h` })),
+        selected: () => vehicle().id,
+        select: (id) => {
+          const index = VEHICLE_PRESETS.findIndex((v) => v.id === id);
+          if (index < 0 || index === carIndex) return;
+          selectCar(index);
+          resetCar();
+        },
+      },
+    ],
+    [
+      { label: () => 'ランキング（ゴーストと対戦）', run: () => openRanking(), visible: () => board !== null, closeOnRun: true },
+      { label: () => 'みんなで走る', run: () => onlinePanel.open(), closeOnRun: true },
+      { label: () => `カメラ: ${cameraRig.modeName}`, run: () => cycleCamera() },
+      { label: () => `ハンドル: ${touch.steerMode === 'tilt' ? '傾ける' : 'なぞる'}`, run: () => void toggleSteerMode(), visible: () => touch.isShown },
+      { label: () => '全画面で遊ぶ', run: () => void enterFullscreen(), visible: () => canRequestFullscreen() && !isFullscreen() && !isStandalone() },
       { label: () => `サウンド: ${sound.isMuted ? 'OFF' : 'ON'}`, run: toggleMute },
     ],
-    () => `${level.def.name}・${race ? raceLabel() : '自分で運転'}・${vehicle().label}・カメラ: ${cameraRig.modeName}`,
+    {
+      info: () => `${level.def.name}・${race ? raceLabel() : '自分で運転'}・${vehicle().label}`,
+      onOpenChange: (open) => {
+        keyboard.enabled = !open;
+        touch.enabled = !open;
+      },
+      canOpen: () => !onlinePanel.isOpen && !rankingPanel.isOpen,
+    },
   );
   touch.refresh();
   // iPhone の Safari はページから全画面にできないので、ホーム画面に追加する方法を案内する
@@ -535,6 +609,7 @@ async function main() {
     const ok = await touch.setSteerMode(next);
     if (next === 'tilt') hud.toast(ok ? '傾けてハンドル。今の持ち方がまっすぐです' : 'この端末では傾きを使えません');
     touch.refresh();
+    menu.refresh();
   }
 
   // スマホ・タブレットなら最初から、そうでなくても画面に触れたら操作画面を出す（?touch で強制表示）
@@ -563,6 +638,9 @@ async function main() {
       const pad = gamepad.read();
       hud.setGamepadConnected(gamepad.isConnected);
       input = mergeInputs(mergeInputs(keyboard.read(), pad), touch.read());
+      // スタートの位置で待っている間は、アクセルを踏み直したらカウントダウンを始める
+      if (race?.phase === 'ready' && input.throttle > 0 && !throttleHeld) beginRace();
+      throttleHeld = input.throttle > 0;
       // カウントダウン中は発進させない（ハンドルだけ切れる）
       if (race && !race.canDrive) input = { ...NEUTRAL_INPUT, steer: input.steer };
       if (fall.falling) input = NEUTRAL_INPUT;

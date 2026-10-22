@@ -71,7 +71,8 @@ export const PAD_BUTTON = {
  * 左スティック = ハンドル、右トリガー（または A）= アクセル、左トリガー = ブレーキ。
  */
 export function gamepadToDriverInput(axes: readonly number[], buttons: readonly number[]): DriverInput {
-  const button = (i: number) => buttons[i] ?? 0;
+  // 少しだけ沈んだまま戻らないトリガーで、勝手にアクセルが入らないように
+  const button = (i: number) => ((buttons[i] ?? 0) < 0.1 ? 0 : buttons[i]);
   return {
     throttle: Math.max(button(PAD_BUTTON.rightTrigger), button(PAD_BUTTON.south)),
     brake: button(PAD_BUTTON.leftTrigger),

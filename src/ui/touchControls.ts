@@ -12,9 +12,7 @@ function el<T extends HTMLElement = HTMLElement>(id: string): T {
 export interface TouchAction {
   label: () => string;
   run: () => void;
-  /** メニューを開かなくても押せるよう、画面の上に常に出す */
-  quick?: boolean;
-  /** false を返す間はメニューに出さない */
+  /** false を返す間は出さない */
   visible?: () => boolean;
 }
 
@@ -50,6 +48,26 @@ function needsMotionPermission(): boolean {
   return typeof (window.DeviceMotionEvent as unknown as MotionPermission | undefined)?.requestPermission === 'function';
 }
 
+/** ペダルから指がこれ [px] 以上離れていたら、離したとみなす */
+const PEDAL_MARGIN_PX = 48;
+
+/**
+ * 残っている指のどれかがボタンの上（周り margin を含む）にあるか。
+ * 指を離したのにブラウザが pointerup を送ってこないときに、押しっぱなしにならないよう確かめる
+ */
+export function anyTouchInside(
+  rect: { left: number; top: number; right: number; bottom: number },
+  touches: Iterable<{ clientX: number; clientY: number }>,
+  margin = PEDAL_MARGIN_PX,
+): boolean {
+  for (const t of touches) {
+    if (t.clientX >= rect.left - margin && t.clientX <= rect.right + margin && t.clientY >= rect.top - margin && t.clientY <= rect.bottom + margin) {
+      return true;
+    }
+  }
+  return false;
+}
+
 /** タッチ操作できる端末か（スマホ・タブレット） */
 export function prefersTouch(): boolean {
   return window.matchMedia?.('(pointer: coarse)').matches ?? false;
@@ -57,7 +75,7 @@ export function prefersTouch(): boolean {
 
 /**
  * スマホ向けの操作画面。左下をなぞってハンドル、右下のボタンでアクセル・ブレーキ、
- * 上のボタンとメニューでカメラ・リセット・マップ切替などを行う。
+ * 上のボタンでカメラ・リセット、☰ でメニュー（GameMenu）を開く。
  */
 export class TouchControls {
   private readonly root = el('touch');
@@ -67,10 +85,6 @@ export class TouchControls {
   private readonly steerHint = el('touch-steer-hint');
   private readonly accel = el('touch-accel');
   private readonly brake = el('touch-brake');
-  private readonly menu = el('touch-menu');
-  private readonly menuInfo = el('touch-menu-info');
-  private readonly menuItems = el('touch-menu-items');
-  private readonly menuButtons: { action: TouchAction; button: HTMLButtonElement }[] = [];
   private readonly quickButtons: { action: TouchAction; button: HTMLButtonElement }[] = [];
   private steerPointer: { id: number; x: number } | null = null;
   private steer = 0;
@@ -84,31 +98,21 @@ export class TouchControls {
   private tiltNeutral: number | null = null;
   private tiltListening = false;
 
-  constructor(
-    actions: TouchAction[],
-    private readonly info: () => string,
-  ) {
+  constructor(actions: TouchAction[], onMenu: () => void) {
     const quickBar = el('touch-quick');
     for (const action of actions) {
       const button = document.createElement('button');
       button.type = 'button';
       button.addEventListener('click', () => {
-        if (!action.quick) this.closeMenu();
         action.run();
         this.refresh();
       });
-      if (action.quick) {
-        quickBar.appendChild(button);
-        this.quickButtons.push({ action, button });
-      } else {
-        this.menuItems.appendChild(button);
-        this.menuButtons.push({ action, button });
-      }
+      quickBar.appendChild(button);
+      this.quickButtons.push({ action, button });
     }
-    el('touch-menu-button').addEventListener('click', () => this.openMenu());
-    el('touch-menu-close').addEventListener('click', () => this.closeMenu());
-    this.menu.addEventListener('click', (e) => {
-      if (e.target === this.menu) this.closeMenu();
+    el('touch-menu-button').addEventListener('click', () => {
+      this.releaseAll();
+      onMenu();
     });
 
     this.steerZone.addEventListener('pointerdown', (e) => {
@@ -141,6 +145,22 @@ export class TouchControls {
 
     this.bindPedal(this.accel, this.pedalPointers.accel);
     this.bindPedal(this.brake, this.pedalPointers.brake);
+    // 指を離したのに pointerup が届かず、アクセルが押しっぱなしになることがある（iPhone の Safari など）。
+    // 指の数が変わるたびに、残っている指でペダルを確かめ直す
+    const recheck = (e: TouchEvent) => this.recheckPedals(e.touches);
+    window.addEventListener('touchend', recheck, { capture: true, passive: true });
+    window.addEventListener('touchcancel', recheck, { capture: true, passive: true });
+    // ボタンが取りこぼしても、どこかで指が離れたらそのペダルを離す
+    const forget = (e: PointerEvent) => {
+      if (e.pointerType !== 'touch') return;
+      this.releasePointer(e.pointerId);
+    };
+    window.addEventListener('pointerup', forget, { capture: true });
+    window.addEventListener('pointercancel', forget, { capture: true });
+    // 別のアプリや通知に切り替わったときも離したことにする
+    document.addEventListener('visibilitychange', () => document.hidden && this.releaseAll());
+    window.addEventListener('blur', () => this.releaseAll());
+    window.addEventListener('pagehide', () => this.releaseAll());
     // 長押しでメニュー（コピー等）や拡大鏡が出ないように
     this.root.addEventListener('contextmenu', (e) => e.preventDefault());
     // 画面の向きが変わったら持ち方も変わるので、基準を取り直す
@@ -269,21 +289,34 @@ export class TouchControls {
 
   /** ボタンの表示（ON/OFF など）を今の状態に合わせる */
   refresh(): void {
-    for (const { action, button } of [...this.quickButtons, ...this.menuButtons]) {
+    for (const { action, button } of this.quickButtons) {
       button.textContent = action.label();
       button.classList.toggle('hidden', action.visible?.() === false);
     }
-    this.menuInfo.textContent = this.info();
   }
 
-  private openMenu(): void {
-    this.refresh();
-    this.releaseAll();
-    this.menu.classList.remove('hidden');
+  /** 残っている指がどれもペダルの上になければ、そのペダルを離す */
+  private recheckPedals(touches: TouchList): void {
+    const list = Array.from(touches);
+    for (const [button, pointers] of [
+      [this.accel, this.pedalPointers.accel],
+      [this.brake, this.pedalPointers.brake],
+    ] as const) {
+      if (pointers.size === 0) continue;
+      if (list.length > 0 && anyTouchInside(button.getBoundingClientRect(), list)) continue;
+      pointers.clear();
+      button.classList.remove('pressed');
+    }
+    if (list.length === 0 && this.steerPointer) this.releaseSteer();
   }
 
-  private closeMenu(): void {
-    this.menu.classList.add('hidden');
+  private releasePointer(id: number): void {
+    for (const [button, pointers] of [
+      [this.accel, this.pedalPointers.accel],
+      [this.brake, this.pedalPointers.brake],
+    ] as const) {
+      if (pointers.delete(id) && pointers.size === 0) button.classList.remove('pressed');
+    }
   }
 
   private bindPedal(button: HTMLElement, pointers: Set<number>): void {

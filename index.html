@@ -26,6 +26,7 @@
       <div><kbd>W</kbd>/<kbd>↑</kbd> アクセル　<kbd>S</kbd>/<kbd>↓</kbd> ブレーキ・後退</div>
       <div><kbd>A</kbd><kbd>D</kbd>/<kbd>←</kbd><kbd>→</kbd> ハンドル</div>
       <div><kbd>C</kbd> カメラ切替 <span id="camera-name"></span></div>
+      <div><kbd>Esc</kbd> メニュー（走り方・コース・車を選ぶ）</div>
       <div><kbd>L</kbd> ランキング（ゴーストと対戦）</div>
       <div><kbd>T</kbd> タイムアタック　<kbd>Y</kbd> NPCと対戦（<kbd>K</kbd> 強さ・<kbd>N</kbd> コース）</div>
       <div><kbd>N</kbd> マップ切替　<kbd>P</kbd> 車の切替　<kbd>R</kbd> リセット</div>
@@ -80,18 +81,19 @@
         <button id="touch-brake" type="button">ブレーキ<br /><small>止まると後退</small></button>
         <button id="touch-accel" type="button">アクセル</button>
       </div>
-      <div id="touch-menu" class="hidden" role="dialog" aria-label="メニュー">
-        <div class="dialog-panel">
-          <h2>メニュー</h2>
-          <p id="touch-menu-info" class="note"></p>
-          <div id="touch-menu-items"></div>
-          <p id="touch-install" class="note hidden">
-            アドレスバーを消して遊ぶには、Safari の共有ボタン（□に↑）から「ホーム画面に追加」を選び、追加したアイコンから開いてください。
-          </p>
-          <div class="dialog-buttons">
-            <span class="spacer"></span>
-            <button id="touch-menu-close" class="primary">閉じる</button>
-          </div>
+    </div>
+    <div id="menu" class="hidden" role="dialog" aria-label="メニュー">
+      <div class="dialog-panel">
+        <h2>メニュー</h2>
+        <p id="menu-info" class="note"></p>
+        <div id="menu-groups"></div>
+        <div id="menu-actions"></div>
+        <p id="touch-install" class="note hidden">
+          アドレスバーを消して遊ぶには、Safari の共有ボタン（□に↑）から「ホーム画面に追加」を選び、追加したアイコンから開いてください。
+        </p>
+        <div class="dialog-buttons">
+          <span class="spacer"></span>
+          <button id="menu-close" class="primary">閉じる</button>
         </div>
       </div>
     </div>

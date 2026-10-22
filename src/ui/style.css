@@ -126,7 +126,8 @@ kbd {
 }
 
 #online,
-#ranking {
+#ranking,
+#menu {
   position: fixed;
   inset: 0;
   /* 画面に収まらないとき（スマホの横向きなど）はスクロールできるようにする */
@@ -141,7 +142,8 @@ kbd {
 }
 
 #online.hidden,
-#ranking.hidden {
+#ranking.hidden,
+#menu.hidden {
   display: none;
 }
 
@@ -290,9 +292,7 @@ body {
 }
 
 #touch.hidden,
-#touch-menu.hidden,
 #touch-install.hidden,
-#touch-menu-items .hidden,
 #touch-quick .hidden {
   display: none;
 }
@@ -440,27 +440,74 @@ body {
   font-size: 16px;
 }
 
-#touch-menu {
-  position: fixed;
-  inset: 0;
-  display: grid;
-  place-items: center;
-  background: rgba(0, 0, 0, 0.35);
-  z-index: 10;
+/* --- メニュー（走り方・コース・車を一覧から選ぶ） --- */
+
+#menu .dialog-panel {
+  width: min(560px, calc(100vw - 32px));
 }
 
-#touch-menu-items {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 8px;
-  margin: 8px 0;
+#menu section {
+  margin: 10px 0;
 }
 
-#touch-menu-items button {
-  padding: 10px 8px;
+#menu h3 {
+  margin: 0 0 6px;
+  font-size: 12px;
+  font-weight: 600;
+  opacity: 0.7;
+}
+
+#menu .chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+#menu button {
+  font: inherit;
+  color: #fff;
+  cursor: pointer;
+  touch-action: manipulation;
+}
+
+#menu .chip {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 1px;
+  padding: 7px 11px;
+  border: 1px solid rgba(255, 255, 255, 0.22);
   border-radius: 8px;
-  font-size: 14px;
   background: rgba(40, 46, 58, 0.9);
+  font-size: 13px;
+  text-align: left;
+}
+
+#menu .chip small {
+  font-size: 10px;
+  opacity: 0.7;
+}
+
+#menu .chip.selected {
+  border-color: #6aa8ff;
+  background: #2f5fa8;
+}
+
+#menu-actions {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+  gap: 6px;
+  margin: 12px 0 8px;
+  padding-top: 10px;
+  border-top: 1px solid rgba(255, 255, 255, 0.12);
+}
+
+#menu-actions button {
+  padding: 9px 8px;
+  border: 1px solid rgba(255, 255, 255, 0.22);
+  border-radius: 8px;
+  background: rgba(40, 46, 58, 0.9);
+  font-size: 13px;
 }
 
 /* スマホでは、キーボード用の説明の代わりにメニューを使い、速度は上の中央に出す */
@@ -710,6 +757,22 @@ body.racing #toast {
 
 #countdown.visible {
   opacity: 1;
+}
+
+/* スタートの合図を待っている間の案内 */
+#countdown.ready {
+  font-size: 26px;
+  padding: 10px 22px;
+  border-radius: 12px;
+  background: rgba(0, 0, 0, 0.45);
+  white-space: nowrap;
+  animation: ready-pulse 1.4s ease-in-out infinite;
+}
+
+@keyframes ready-pulse {
+  50% {
+    opacity: 0.55;
+  }
 }
 
 #race-warning {
