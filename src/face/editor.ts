@@ -1,4 +1,5 @@
 import { type CropView, FACE_GUIDE, clampView, fitView, minScale, zoomAt } from './crop';
+import type { FacePoints } from './shape';
 import { composeFaceTexture } from './texture';
 
 function el<T extends HTMLElement = HTMLElement>(id: string): T {
@@ -13,8 +14,11 @@ const ZOOM_STEPS = 100;
 const MAX_ZOOM = 8;
 
 export interface FaceEditorHandlers {
-  /** 決定したとき（null は顔写真をやめたとき） */
-  onApply: (texture: HTMLCanvasElement | null) => void;
+  /**
+   * 決定したとき（null は顔写真をやめたとき）。
+   * points は写真から読み取った顔の形（読み取れなかったときは null）
+   */
+  onApply: (texture: HTMLCanvasElement | null, points: FacePoints | null) => void;
   onOpenChange: (open: boolean) => void;
 }
 
@@ -30,6 +34,8 @@ export class FaceEditor {
   private readonly zoom = el<HTMLInputElement>('face-zoom');
   private readonly ok = el<HTMLButtonElement>('face-ok');
   private readonly empty = el('face-empty');
+  private readonly status = el('face-status');
+  private busy = false;
   private image: ImageBitmap | null = null;
   private view: CropView = { scale: 1, x: 0, y: 0 };
   private drag: { id: number; x: number; y: number } | null = null;
@@ -45,14 +51,10 @@ export class FaceEditor {
     });
     el('face-cancel').addEventListener('click', () => this.close());
     el('face-clear').addEventListener('click', () => {
-      this.handlers.onApply(null);
+      this.handlers.onApply(null, null);
       this.close();
     });
-    this.ok.addEventListener('click', () => {
-      if (!this.image) return;
-      this.handlers.onApply(composeFaceTexture(this.image, this.view, FRAME));
-      this.close();
-    });
+    this.ok.addEventListener('click', () => void this.apply());
     this.zoom.addEventListener('input', () => {
       if (!this.image) return;
       const min = minScale(this.image.width, this.image.height, FRAME);
@@ -97,6 +99,7 @@ export class FaceEditor {
   }
 
   close(): void {
+    if (this.busy) return;
     this.openValue = false;
     this.root.classList.add('hidden');
     // 写真そのものは保持しない（保存するのは切り抜いた結果だけ）
@@ -114,9 +117,36 @@ export class FaceEditor {
       this.view = fitView(image.width, image.height, FRAME);
       this.zoom.value = '0';
       this.draw();
+      // 決定を押したときに待たせないよう、顔の形を読み取る仕組みをいまのうちに読み込んでおく
+      void import('./landmarks').then((m) => m.preload()).catch(() => undefined);
     } catch {
       this.empty.textContent = 'この画像は読み込めませんでした。JPEG や PNG の写真を選んでください。';
     }
+  }
+
+  /** 切り抜いた写真から顔の形を読み取ってから決定する */
+  private async apply(): Promise<void> {
+    if (!this.image || this.busy) return;
+    const texture = composeFaceTexture(this.image, this.view, FRAME);
+    this.setBusy(true);
+    let points: FacePoints | null = null;
+    try {
+      const { detectFacePoints } = await import('./landmarks');
+      points = await detectFacePoints(texture);
+    } catch {
+      // 読み込めない・読み取れないときは、これまでどおり平らに貼る
+    }
+    this.setBusy(false);
+    this.handlers.onApply(texture, points);
+    this.close();
+  }
+
+  private setBusy(busy: boolean): void {
+    this.busy = busy;
+    this.status.textContent = busy ? '顔の形を読み取っています…（初回は少し時間がかかります）' : '';
+    for (const b of this.root.querySelectorAll('button')) b.disabled = busy;
+    this.file.disabled = busy;
+    if (!busy) this.draw();
   }
 
   private toFrame(e: { clientX: number; clientY: number }) {

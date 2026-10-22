@@ -1,8 +1,9 @@
 import * as THREE from 'three';
 import type { Mood } from '../ai/dialogue';
+import type { FaceMeshData } from '../face/shape';
 import { CABIN, SEAT_Y } from './carMesh';
 
-const HEAD_RADIUS = 0.1;
+export const HEAD_RADIUS = 0.1;
 /** 後ろ髪の傾き（顔写真のときは額が見えるよう後ろへ下げる） */
 const HAIR_TILT = -0.5;
 const HAIR_TILT_WITH_PHOTO = -1.1;
@@ -37,6 +38,8 @@ export class CharacterMesh {
   private readonly eyes: THREE.Mesh[] = [];
   private readonly hairBack: THREE.Mesh;
   private readonly faceCap: THREE.Mesh<THREE.BufferGeometry, THREE.MeshLambertMaterial>;
+  /** 顔写真から読み取った形で作った立体の顔（写真を貼る面の上に重ねる） */
+  private faceShape: THREE.Mesh | null = null;
   private mood: Mood = 'neutral';
   private talkingUntil = 0;
   private time = 0;
@@ -114,8 +117,28 @@ export class CharacterMesh {
     material.needsUpdate = true;
     const has = image !== null;
     this.faceCap.visible = has;
+    if (this.faceShape) this.faceShape.visible = has;
     for (const e of this.eyes) e.visible = !has;
     this.hairBack.rotation.x = has ? HAIR_TILT_WITH_PHOTO : HAIR_TILT;
+  }
+
+  /** 顔の立体（buildFaceMesh で作ったもの）を付ける。null で外す（写真は球面に貼ったまま） */
+  setFaceShape(data: FaceMeshData | null): void {
+    if (this.faceShape) {
+      this.head.remove(this.faceShape);
+      this.faceShape.geometry.dispose();
+      this.faceShape = null;
+    }
+    if (!data) return;
+    const geo = new THREE.BufferGeometry();
+    geo.setAttribute('position', new THREE.BufferAttribute(data.positions, 3));
+    geo.setAttribute('uv', new THREE.BufferAttribute(data.uvs, 2));
+    geo.setIndex(new THREE.BufferAttribute(data.indices, 1));
+    geo.computeVertexNormals();
+    // 写真の貼り方・明るさは球面の顔と同じにする
+    this.faceShape = new THREE.Mesh(geo, this.faceCap.material);
+    this.faceShape.visible = this.faceCap.visible;
+    this.head.add(this.faceShape);
   }
 
   setMood(mood: Mood, talkSeconds: number): void {
