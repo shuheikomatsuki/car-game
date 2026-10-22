@@ -119,8 +119,8 @@ async function main() {
     },
     onTranscript: (text, final, command) => {
       if (!assist || (voiceOut.speaking && !command)) return;
+      // 指示でない言葉は字幕に「聞き取れず」と出すだけにする（毎回聞き返されると進まないので）
       if (!command || !final) panel.showHeard(text, command, final);
-      if (final && !command && text.trim().length > 1 && !voiceOut.speaking) speak({ type: 'notUnderstood' });
     },
     onError: (message) => hud.toast(message),
     onListeningChange: (listening) => panel.setMic(listening),
@@ -344,7 +344,7 @@ async function main() {
   keyboard.onAction('KeyV', () => assist && voiceIn.toggle());
   keyboard.onAction('KeyK', cyclePersonality);
   keyboard.onAction('KeyF', openFaceEditor);
-  for (const b of COMMAND_BUTTONS) keyboard.onAction(`Digit${b.key}`, () => giveCommand(b.command));
+  for (const b of COMMAND_BUTTONS) keyboard.onAction(/\d/.test(b.key) ? `Digit${b.key}` : `Key${b.key}`, () => giveCommand(b.command));
 
   const gamepad = new GamepadInput();
   gamepad.onButton(PAD_BUTTON.north, cycleCamera);

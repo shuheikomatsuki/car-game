@@ -30,6 +30,11 @@ describe('tiltSteer', () => {
     expect(tiltSteer(-2, 0)).toBe(1);
   });
 
+  it('is gentle near the middle so small corrections do not over-steer', () => {
+    expect(Math.abs(tiltSteer(TILT_FULL_LOCK / 2, 0))).toBeLessThan(0.4);
+    expect(Math.abs(tiltSteer(TILT_FULL_LOCK / 4, 0))).toBeLessThan(0.15);
+  });
+
   it('works across the ±180° boundary', () => {
     expect(tiltSteer(-Math.PI + 0.1, Math.PI - 0.1)).toBeLessThan(0);
   });

@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { DIR_YAW, type MapDefinition, parseMap } from '../map/tilemap';
-import { type PlannerEvent, RoutePlanner, lanePoints, turnBetween } from './navigation';
+import { type PlannerEvent, RoutePlanner, lanePoints, turnBetween, uturnPoints } from './navigation';
 
 /**
  *   0123456789
@@ -75,20 +75,57 @@ describe('RoutePlanner', () => {
     expect(junction?.dout).toBe('E');
   });
 
-  it('turns at the next junction when told to, then asks at a T where it cannot go straight', () => {
+  it('turns at the next junction when told to, then picks a way by itself at a T where it cannot go straight', () => {
     const planner = startPlanner();
     planner.setTurn('right');
-    const { events } = drive(planner, 200);
+    const { events } = drive(planner, 70);
     expect(events).toContainEqual({ type: 'pendingUsed', turn: 'right' });
     expect(events).toContainEqual({ type: 'enterJunction', turn: 'right', mistaken: false });
-    // 南へ曲がった先の (3,4) は西か東しか無い → 止まって聞く
-    expect(events).toContainEqual({ type: 'askDirection' });
-    expect(planner.isWaitingForDirection).toBe(true);
+    // 南へ曲がった先の (3,4) は西か東しか無い → 止まらずに左（東）へ
+    expect(events).toContainEqual({ type: 'autoTurn', turn: 'left' });
     expect(planner.pendingTurn).toBeNull();
+    const rest = drive(planner, 40);
+    expect([...events, ...rest.events]).toContainEqual({ type: 'enterJunction', turn: 'left', mistaken: false });
+  });
 
-    planner.setTurn('left');
-    const after = drive(planner, 30);
-    expect(after.events).toContainEqual({ type: 'enterJunction', turn: 'left', mistaken: false });
+  it('re-plans a junction it already decided on when told in time', () => {
+    const planner = startPlanner();
+    // 何も言わずに進むと (4,1) は直進で決まる
+    drive(planner, 8);
+    expect(planner.segmentList.find((s) => s.col === 4 && s.row === 1)?.dout).toBe('E');
+    planner.setTurn('right', 5);
+    drive(planner, 40);
+    expect(planner.segmentList.find((s) => s.col === 4 && s.row === 1)?.dout ?? 'S').toBe('S');
+  });
+
+  it('keeps the junction as it is when the turn comes too late, and uses it at the next one', () => {
+    const planner = startPlanner();
+    drive(planner, 8);
+    planner.setTurn('right', 100);
+    const { events } = drive(planner, 30);
+    expect(events).toContainEqual({ type: 'enterJunction', turn: 'straight', mistaken: false });
+    expect(planner.pendingTurn).toBe('right');
+  });
+
+  it('makes a U-turn inside the paved square of a road tile', () => {
+    const pts = uturnPoints(map, 2, 1, 'E', 3);
+    // 東向きの左は北（-z）。出口は同じ辺の反対車線
+    expect(pts[0]).toEqual({ x: 30, z: 20 - 3 });
+    expect(pts[pts.length - 1].x).toBeCloseTo(30);
+    expect(pts[pts.length - 1].z).toBeCloseTo(20 + 3);
+    for (const p of pts) {
+      expect(Math.abs(p.z - 20)).toBeLessThanOrEqual(DEF.roadWidth / 2 - 1);
+      expect(p.x).toBeLessThanOrEqual(40 + DEF.roadWidth / 2 - 1);
+    }
+  });
+
+  it('turns back on a U-turn and keeps driving the other way', () => {
+    const planner = startPlanner();
+    expect(planner.uturn(5)).toBe(true);
+    const { events, pos } = drive(planner, 60);
+    expect(events).toContainEqual({ type: 'enterUturn' });
+    // 西へ戻って (1,1) の角へ向かう
+    expect(pos.x).toBeLessThan(40);
   });
 
   it('keeps a turn it cannot make for the next junction and goes straight', () => {
