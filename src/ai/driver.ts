@@ -32,13 +32,9 @@ const AVOID_SHIFTS = [-3, -1.5, -4.5, 1.5, -6];
 /** よけた障害物を通り過ぎてから元の位置へ戻るまでの距離 [m] */
 const AVOID_CLEARANCE = 12;
 
-/** 自由に走るときに曲がる角度 [rad] */
-const FREE_TURN = Math.PI / 2;
-const FREE_NUDGE = Math.PI / 9;
-/** 自由に走っていて大きく向きを変える間の速さの上限 [m/s] */
-const FREE_TURN_SPEED = 5;
-/** 自由に走っていて障害物をよけるときに試す向きのずれ [rad] */
-const FREE_AVOID_ANGLES = [0.35, -0.35, 0.7, -0.7, 1.05, -1.05, 1.45, -1.45];
+/** 自由に走るときに曲がる角度 [度]（「右に曲がって」と「ちょっと右」） */
+const FREE_TURN_DEG = 90;
+const FREE_NUDGE_DEG = 20;
 /** 「右」「左」だけの指示で、この距離までに曲がれる交差点があればそこで曲がる [m] */
 const GO_JUNCTION_RANGE = 40;
 /** そのときに想定する減速度 [m/s^2] */
@@ -46,15 +42,15 @@ const GO_DECEL = 4.5;
 
 /**
  * 走り方。
- * - route: 道路に沿って走る（交差点の方向は指示で決まる）
- * - free: 指示された向きへ自由に走る（道路から外れてもよい）。道路の向きに乗ったら route に戻る
+ * - free: 指示された向きへまっすぐ走る（ふだんはこちら）。勝手に曲がったり減速したりしない。道路から外れてもよい
+ * - route: 「道なりに走って」と言われたときだけ、道路に沿って走る（カーブの手前で減速し、突き当たりは自分で曲がる）
  */
 export type DriveMode = 'route' | 'free';
 
 export type DriverState = 'parked' | 'driving' | 'stopping' | 'panic';
 
 export type DriverEvent =
-  | { type: 'ack'; command: Command; misheard?: boolean; speedKmh?: number }
+  | { type: 'ack'; command: Command; misheard?: boolean; speedKmh?: number; delaySeconds?: number }
   | { type: 'autoTurn'; turn: Turn }
   | { type: 'turning'; turn: Turn }
   | { type: 'uturning' }
@@ -67,12 +63,22 @@ export type DriverEvent =
   | { type: 'collision' }
   /** 道路から外れて、自由に走り始めた */
   | { type: 'offRoad' }
-  /** 自由に走っていて、道路に沿って走るのに戻った */
+  /** 「道に戻って」で道路に着いた */
   | { type: 'rejoin' };
+
+/** 指示に付いてくる数値（「3秒後に」「50メートル先で」「30度」） */
+export interface CommandOptions {
+  delaySeconds?: number;
+  distanceMeters?: number;
+  angleDeg?: number;
+}
 
 interface QueuedCommand {
   at: number;
   command: Command;
+  options: CommandOptions;
+  /** 受け取ったときに返事を済ませた（時間指定の指示） */
+  acked: boolean;
 }
 
 const TURN_OF: Partial<Record<Command, Turn>> = {
@@ -103,8 +109,8 @@ const MIRROR: Partial<Record<Command, Command>> = {
 
 /**
  * 運転が苦手なキャラクター。指示と道路状況から、手動運転と同じ DriverInput を作る。
- * - 経路は RoutePlanner が左車線に沿って作る。交差点の方向は指示で決まる。
- * - 「今すぐ右」などの指示や、道路から外れたときは、経路を離れて指示された向きへ自由に走る（コースアウトしてもよい）。
+ * - ふだんは指示された向きへまっすぐ走るだけ。「右に曲がって」「30度左」「3秒後に左」などで向きを変える（コースアウトしてもよい）。
+ * - 「道なりに走って」と言われたときだけ、RoutePlanner が作る左車線に沿った経路を走る。
  * - ハンドルは Pure Pursuit（少し先の経路上の点に向けて舵を切る）、速度は目標速度への比例制御。
  *   狙う点は車線から横にずらせる（指示で寄せる・障害物をよける・ゆるやかに揺らぐ）ので、線の上をなぞるだけにはならない。
  * - 性格（Personality）に応じて、反応の遅れ・聞き間違い・曲がり間違い・急ブレーキ・ふらつきが入る。
@@ -121,15 +127,15 @@ export class CharacterDriver {
   /** 「発進」で障害物を押してでも進む（コーン等）期限 */
   private pushThroughUntil = 0;
   private suddenBrakeUntil = 0;
-  private modeValue: DriveMode = 'route';
+  private modeValue: DriveMode = 'free';
+  /** 次の update で、いまの車の向きを自由に走る向きにする */
+  private needHeading = true;
+  /** 「道なりに走って」で道路へ向かっている（着いたら道なりに走る） */
+  private followAfterReturn = false;
   /** 自由に走るときに向かう向き（yaw） */
   private freeHeading = 0;
   /** 「道に戻って」で向かう道路の点 */
   private returnTarget: { x: number; z: number } | null = null;
-  /** 自由に走り始めた時刻 */
-  private freeSince = 0;
-  /** 自由に走っていて、障害物をよけた時刻 */
-  private freeAvoidAt = -Infinity;
   /** 最後に見た車の向きと位置 */
   private lastYaw = 0;
   private lastPos = { x: 0, z: 0 };
@@ -195,8 +201,10 @@ export class CharacterDriver {
     this.userShift = 0;
     this.avoidShift = null;
     this.shift = 0;
-    this.modeValue = 'route';
+    this.modeValue = 'free';
+    this.needHeading = true;
     this.returnTarget = null;
+    this.followAfterReturn = false;
   }
 
   /** いま狙っている車線からの横のずれ [m]（+ が左） */
@@ -204,13 +212,23 @@ export class CharacterDriver {
     return this.shift;
   }
 
-  /** 指示を受け取る。反応の遅れの後で実行される */
-  command(command: Command): void {
-    const delay = randomBetween(
+  /**
+   * 指示を受け取る。反応の遅れの後で実行される。
+   * 「3秒後に」「50メートル先で」が付いていれば、その分だけ遅らせて実行する（返事はすぐにする）
+   */
+  command(command: Command, options: CommandOptions = {}): void {
+    let delay = randomBetween(
       this.rng,
       isEmergency(command) ? this.personality.emergencyDelay : this.personality.reactionDelay,
     );
-    this.queue.push({ at: this.time + delay, command });
+    let later = options.delaySeconds ?? 0;
+    if (options.distanceMeters !== undefined) later += options.distanceMeters / Math.max(3, this.lastSpeed);
+    const acked = later > 0;
+    if (acked) {
+      delay += later;
+      this.events.push({ type: 'ack', command, delaySeconds: Math.round(later) });
+    }
+    this.queue.push({ at: this.time + delay, command, options, acked });
     this.queue.sort((a, b) => a.at - b.at);
   }
 
@@ -231,7 +249,8 @@ export class CharacterDriver {
   update(dt: number, car: CarSnapshot, sense: ObstacleSensor): DriverInput {
     this.time += dt;
     while (this.queue.length && this.queue[0].at <= this.time) {
-      this.execute(this.queue.shift()!.command);
+      const q = this.queue.shift()!;
+      this.execute(q.command, q.options, q.acked);
     }
 
     const v = car.forwardSpeed;
@@ -239,8 +258,12 @@ export class CharacterDriver {
     this.lastYaw = car.yaw;
     this.lastPos = { x: car.x, z: car.z };
     this.travelled += Math.abs(v) * dt;
+    if (this.needHeading) {
+      this.freeHeading = car.yaw;
+      this.needHeading = false;
+    }
     if (this.modeValue === 'route' && !this.followRoute(car)) {
-      // 道路の上にいない（コースアウトした・草地に置かれた）: そのままの向きで自由に走る
+      // 道なりに走っていて道路から外れた: そのままの向きで自由に走る
       this.enterFree(car.yaw, this.stateValue === 'driving');
     }
     if (this.modeValue === 'free') this.steerFree(car);
@@ -260,10 +283,9 @@ export class CharacterDriver {
         if (!pushing) this.planAvoidance(car, sense, v);
         blocked = !pushing && this.senseAlongRoute(car, sense, stopDistance, this.targetShift()) !== null;
       } else {
+        // 自由に走るときは、曲がるときも含めて言われた速さのまま（止まるのはぶつかりそうなときだけ）
         target = Math.min(this.speedKmh / 3.6, this.params.maxForwardSpeed * 0.9);
         const err = wrapAngle(this.freeHeading - car.yaw);
-        if (Math.abs(err) > 0.35) target = Math.min(target, FREE_TURN_SPEED);
-        if (!pushing) this.freeAvoidance(car, sense, v);
         const hit = pushing ? null : sense(car.yaw + Math.max(-0.5, Math.min(0.5, err)), stopDistance);
         blocked = hit !== null && hit < stopDistance;
       }
@@ -288,13 +310,15 @@ export class CharacterDriver {
     return input;
   }
 
-  private execute(command: Command): void {
-    const ack = (extra: Partial<Extract<DriverEvent, { type: 'ack' }>> = {}) =>
-      this.events.push({ type: 'ack', command, ...extra });
+  private execute(command: Command, options: CommandOptions = {}, acked = false): void {
+    const ack = (extra: Partial<Extract<DriverEvent, { type: 'ack' }>> = {}) => {
+      if (!acked) this.events.push({ type: 'ack', command, ...extra });
+    };
     const free = this.modeValue === 'free';
     const drive = () => {
       if (this.stateValue !== 'driving') this.stateValue = 'driving';
     };
+    const degrees = (fallback: number) => ((options.angleDeg ?? fallback) * Math.PI) / 180;
 
     switch (command) {
       case 'start':
@@ -325,25 +349,28 @@ export class CharacterDriver {
       case 'goRight':
       case 'steerLeft':
       case 'steerRight': {
-        // 聞き間違えると逆の方向だと思い込む（返事で気づけるように、言い間違えたまま返事する）
-        const misheard = this.rng() < this.personality.mishearChance;
+        // 聞き間違えると逆の方向だと思い込む（返事で気づけるように、言い間違えたまま返事する）。時間指定の指示は返事で確かめ済み
+        const misheard = !acked && this.rng() < this.personality.mishearChance;
         const heard = misheard ? MIRROR[command]! : command;
         const turn = TURN_OF[heard]!;
-        // 「右」「左」だけのときは、少し強めにブレーキを踏めば曲がれる交差点まで対象にする
+        // 道なりに走っているときの「次を右」「右」は交差点で曲がる（「右」だけなら、すぐ先に交差点があるときだけ）
         const go = heard === 'goLeft' || heard === 'goRight';
         const reach = this.turnReachDistance(go ? GO_DECEL : PLAN_DECEL);
         const atJunction =
           !free &&
+          options.angleDeg === undefined &&
           (heard === 'turnLeft' || heard === 'turnRight' || (go && this.planner.canTurnWithin(turn, reach, GO_JUNCTION_RANGE)));
         if (atJunction) this.planner.setTurn(turn, reach);
-        else this.turnFree(turn === 'left' ? FREE_TURN : -FREE_TURN);
-        this.events.push({ type: 'ack', command: heard, misheard });
+        else this.turnFree((turn === 'left' ? 1 : -1) * degrees(FREE_TURN_DEG));
+        if (!acked) this.events.push({ type: 'ack', command: heard, misheard });
         break;
       }
       case 'straight':
         if (free) {
+          // ハンドルを戻して、いま向いている方へまっすぐ
           this.freeHeading = this.lastYaw;
           this.returnTarget = null;
+          this.followAfterReturn = false;
         } else {
           this.planner.setTurn('straight', this.turnReachDistance());
         }
@@ -357,8 +384,7 @@ export class CharacterDriver {
       case 'shiftLeft':
       case 'shiftRight':
         if (free) {
-          this.freeHeading += command === 'shiftLeft' ? FREE_NUDGE : -FREE_NUDGE;
-          this.returnTarget = null;
+          this.turnFree((command === 'shiftLeft' ? 1 : -1) * degrees(FREE_NUDGE_DEG));
         } else {
           this.userShift = Math.max(SHIFT_MIN, Math.min(SHIFT_MAX, this.userShift + SHIFT_OF[command]!));
         }
@@ -366,14 +392,27 @@ export class CharacterDriver {
         break;
       case 'keepLane':
       case 'returnToRoad':
-        if (free) this.returnTarget = this.nearestRoadPoint();
-        else this.userShift = 0;
+        if (free) {
+          this.returnTarget = this.nearestRoadPoint();
+          this.followAfterReturn = false;
+        } else {
+          this.userShift = 0;
+        }
+        ack();
+        break;
+      case 'followRoad':
+        if (free && !this.startFollowing()) {
+          // 道路の上にいなければ、まず近くの道路へ向かう
+          this.returnTarget = this.nearestRoadPoint();
+          this.followAfterReturn = true;
+        }
+        drive();
         ack();
         break;
       case 'correctLeft':
       case 'correctRight': {
         if (free) {
-          this.turnFree(command === 'correctLeft' ? FREE_TURN : -FREE_TURN);
+          this.turnFree((command === 'correctLeft' ? 1 : -1) * degrees(FREE_TURN_DEG));
           ack();
           break;
         }
@@ -408,61 +447,51 @@ export class CharacterDriver {
     this.modeValue = 'free';
     this.localized = false;
     this.freeHeading = heading;
-    this.freeSince = this.time;
     this.returnTarget = null;
+    this.followAfterReturn = false;
     this.avoidShift = null;
     this.shift = 0;
     if (announce) this.events.push({ type: 'offRoad' });
   }
 
-  /** いまの向きから angle [rad] 向きを変える（左が +）。経路に沿って走っていたら、経路を離れる */
+  /** いまの向きから angle [rad] 向きを変える（左が +）。道なりに走っていたら、道なりをやめる */
   private turnFree(angle: number): void {
     if (this.modeValue === 'route') this.enterFree(this.lastYaw, false);
     this.freeHeading += angle;
-    this.freeSince = this.time;
     this.returnTarget = null;
+    this.followAfterReturn = false;
   }
 
-  /** 自由に走るときの向きを決める。「道に戻って」の行き先へ向かい、道路の向きに乗ったら経路に沿う走り方に戻る */
+  /** 「道に戻って」の行き先へ向かう。着いたら道路の向き（いまの向きに近いほう）にそろえる */
   private steerFree(car: CarSnapshot): void {
-    if (this.returnTarget) {
-      const dx = this.returnTarget.x - car.x;
-      const dz = this.returnTarget.z - car.z;
-      // 障害物をよけた直後は、よけた向きを少し保つ
-      if (this.time - this.freeAvoidAt > 1.5) this.freeHeading = car.yaw + wrapAngle(Math.atan2(dx, dz) - car.yaw);
-      if (Math.hypot(dx, dz) < 5) {
-        this.returnTarget = null;
-        this.tryRejoin(car, true);
-      }
-      return;
+    if (!this.returnTarget) return;
+    const dx = this.returnTarget.x - car.x;
+    const dz = this.returnTarget.z - car.z;
+    this.freeHeading = car.yaw + wrapAngle(Math.atan2(dx, dz) - car.yaw);
+    if (Math.hypot(dx, dz) > 5) return;
+    this.returnTarget = null;
+    if (this.followAfterReturn && this.startFollowing()) return;
+    this.followAfterReturn = false;
+    const tile = this.map.tileAt(Math.round(car.x / this.map.def.tileSize), Math.round(car.z / this.map.def.tileSize));
+    const dirs = tile?.connections ?? [];
+    if (dirs.length) {
+      const best = [...dirs].sort(
+        (a, b) => Math.abs(wrapAngle(DIR_YAW[a] - car.yaw)) - Math.abs(wrapAngle(DIR_YAW[b] - car.yaw)),
+      )[0];
+      this.freeHeading = car.yaw + wrapAngle(DIR_YAW[best] - car.yaw);
     }
-    if (this.time - this.freeSince < 1) return;
-    if (Math.abs(wrapAngle(this.freeHeading - car.yaw)) > 0.12) return;
-    this.tryRejoin(car, false);
+    this.events.push({ type: 'rejoin' });
   }
 
-  /** 道路の上で、道路の向きに沿っていれば（force なら向きは問わない）経路に沿う走り方に戻る */
-  private tryRejoin(car: CarSnapshot, force: boolean): boolean {
-    const { tileSize, roadWidth } = this.map.def;
-    const col = Math.round(car.x / tileSize);
-    const row = Math.round(car.z / tileSize);
-    const tile = this.map.tileAt(col, row);
-    if (tile?.kind !== 'road') return false;
-    if (!force) {
-      const c = tileCenter(this.map, col, row);
-      const aligned = tile.connections.some((d) => {
-        if (Math.abs(wrapAngle(DIR_YAW[d] - car.yaw)) > 0.3) return false;
-        // 道の真ん中の線からの横のずれ（舗装の上にいるか）
-        const side = d === 'N' || d === 'S' ? car.x - c.x : car.z - c.z;
-        return Math.abs(side) < roadWidth / 2;
-      });
-      if (!aligned) return false;
-    }
-    if (!this.planner.localize(car.x, car.z, car.yaw)) return false;
+  /** 道路の上にいれば、道なりに走り始める */
+  private startFollowing(): boolean {
+    const { x, z } = this.lastPos;
+    if (!this.planner.localize(x, z, this.lastYaw)) return false;
     this.localized = true;
     this.modeValue = 'route';
     this.userShift = 0;
-    this.events.push({ type: 'rejoin' });
+    this.returnTarget = null;
+    this.followAfterReturn = false;
     return true;
   }
 
@@ -481,24 +510,6 @@ export class CharacterDriver {
       }
     }
     return best;
-  }
-
-  /** 自由に走っていて、向かう先に障害物があれば、通れる向きへ少しずつ向きを変える */
-  private freeAvoidance(car: CarSnapshot, sense: ObstacleSensor, v: number): void {
-    const err = wrapAngle(this.freeHeading - car.yaw);
-    if (Math.abs(err) > 0.5) return;
-    const probe = Math.max(10, v * 1.8 + 6);
-    const hit = sense(this.freeHeading, probe);
-    if (hit === null || hit >= probe) return;
-    for (const a of FREE_AVOID_ANGLES) {
-      const h = this.freeHeading + a;
-      const other = sense(h, probe);
-      if (other !== null && other < probe) continue;
-      if (this.time - this.freeAvoidAt > 3) this.events.push({ type: 'avoid' });
-      this.freeHeading = h;
-      this.freeAvoidAt = this.time;
-      return;
-    }
   }
 
   /** 自由に走るときのハンドル: 向かう向きとのずれに比例して切る */

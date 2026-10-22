@@ -4,9 +4,10 @@ import { Dialogue } from './dialogue';
 import { createRng } from './personality';
 
 const TRIGGERS = [
-  ...(['start', 'faster', 'slower', 'stop', 'danger', 'turnLeft', 'turnRight', 'straight', 'correctLeft', 'correctRight', 'uturn', 'goLeft', 'goRight', 'steerLeft', 'steerRight', 'shiftLeft', 'shiftRight', 'keepLane', 'returnToRoad'] as const).map(
+  ...(['start', 'faster', 'slower', 'stop', 'danger', 'turnLeft', 'turnRight', 'straight', 'correctLeft', 'correctRight', 'uturn', 'goLeft', 'goRight', 'steerLeft', 'steerRight', 'shiftLeft', 'shiftRight', 'keepLane', 'returnToRoad', 'followRoad'] as const).map(
     (command) => ({ type: 'ack' as const, command }),
   ),
+  { type: 'ack' as const, command: 'steerLeft' as const, delaySeconds: 3 },
   { type: 'autoTurn' as const, turn: 'left' as const },
   { type: 'autoTurn' as const, turn: 'right' as const },
   ...(['uturning', 'wrongTurn', 'tooLate', 'obstacle', 'suddenBrake', 'stopped', 'collision', 'offRoad', 'rejoin', 'avoid', 'greeting', 'idle', 'notUnderstood'] as const).map(
@@ -31,6 +32,11 @@ describe('Dialogue', () => {
         expect(heard === 'stop' || heard === 'danger', line.text).toBe(false);
       }
     }
+  });
+
+  it('answers a timed instruction with when it will do it', () => {
+    const d = new Dialogue(createRng(1));
+    expect(d.lineFor({ type: 'ack', command: 'goRight', delaySeconds: 3 })!.text).toBe('3秒たったらみぎに曲がるね');
   });
 
   it('does not repeat the same line twice in a row', () => {

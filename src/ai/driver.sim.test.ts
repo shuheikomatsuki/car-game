@@ -8,6 +8,7 @@ import { type Rapier, createPhysicsWorld, loadRapier } from '../sim/physics';
 import { createObstacleSensor } from '../sim/sensors';
 import type { Command } from './commands';
 import { CharacterDriver, type DriverEvent } from './driver';
+import { wrapAngle } from './navigation';
 import { PERSONALITIES, type Personality, createRng } from './personality';
 
 /**
@@ -22,7 +23,8 @@ beforeAll(async () => {
   rapier = await loadRapier();
 });
 
-function createSim(def: MapDefinition, personality: Personality = EASY, seed = 1, params?: VehicleParams) {
+/** followRoad: 道なりに走らせる（経路に沿った走りを確かめるテスト用） */
+function createSim(def: MapDefinition, personality: Personality = EASY, seed = 1, params?: VehicleParams, followRoad = true) {
   const map = parseMap(def);
   const physics = createPhysicsWorld(rapier, buildObstacles(map));
   const spawn = { ...tileCenter(map, def.start.col, def.start.row), yaw: DIR_YAW[def.start.heading] };
@@ -31,6 +33,7 @@ function createSim(def: MapDefinition, personality: Personality = EASY, seed = 1
   const car = new Car(physics, spawn, params);
   const driver = new CharacterDriver(map, personality, createRng(seed), params);
   const sense = createObstacleSensor(physics, car);
+  if (followRoad) driver.command('followRoad');
   const events: DriverEvent[] = [];
   let distance = 0;
   let maxImpact = 0;
@@ -97,7 +100,7 @@ const SCHOOL_NO_CONES: MapDefinition = {
 
 describe('CharacterDriver on the physics world', () => {
   it('waits until told to start', () => {
-    const sim = createSim(SCHOOL_NO_CONES);
+    const sim = createSim(SCHOOL_NO_CONES, EASY, 1, undefined, false);
     sim.run(3);
     expect(sim.distance).toBeLessThan(0.1);
     expect(sim.driver.state).toBe('parked');
@@ -194,22 +197,47 @@ describe('CharacterDriver on the physics world', () => {
     expect(sim.events.filter((e) => e.type === 'collision')).toEqual([]);
   });
 
-  it('turns off the road right away when told, drives freely, and finds the road again', () => {
-    const sim = createSim(TOWN_MAP_NO_CONES);
+  it('drives straight at the set speed by default, without slowing down for a corner or turning by itself', () => {
+    const sim = createSim(SCHOOL_NO_CONES, EASY, 1, undefined, false);
+    sim.say('start');
+    let speedAtCorner = 0;
+    for (let i = 0; i < 300 && speedAtCorner === 0; i++) {
+      sim.run(0.1);
+      // 右上の角のカーブ（x = 210〜230）の手前。この先はガードレールにぶつかりそうなので止まる
+      if (sim.car.snapshot().x > 185) speedAtCorner = sim.car.snapshot().forwardSpeed;
+    }
+    expect(speedAtCorner).toBeGreaterThan(40 / 3.6 - 0.6);
+    expect(sim.driver.mode).toBe('free');
+    expect(sim.events.some((e) => e.type === 'autoTurn')).toBe(false);
+    // 東を向いたまま
+    expect(Math.abs(wrapAngle(sim.car.snapshot().yaw - DIR_YAW.E))).toBeLessThan(0.1);
+  });
+
+  it('turns when told, after the given number of seconds', () => {
+    const sim = createSim(TOWN_MAP_NO_CONES, EASY, 1, undefined, false);
     sim.say('start');
     sim.run(2);
-    const before = sim.car.snapshot();
-    // 東向きに走っている途中で「今すぐ左」→ 北の草地へ
-    sim.say('steerLeft');
-    sim.run(5);
-    const after = sim.car.snapshot();
-    expect(sim.driver.mode).toBe('free');
-    expect(after.z).toBeLessThan(before.z - 10);
-    expect(Math.abs(after.forwardSpeed)).toBeGreaterThan(2);
+    sim.driver.command('steerLeft', { delaySeconds: 3 });
+    expect(sim.driver.drainEvents()).toContainEqual({ type: 'ack', command: 'steerLeft', delaySeconds: 3 });
+    sim.run(2.5);
+    expect(Math.abs(wrapAngle(sim.car.snapshot().yaw - DIR_YAW.E))).toBeLessThan(0.1);
+    sim.run(4);
+    expect(Math.abs(wrapAngle(sim.car.snapshot().yaw - DIR_YAW.N))).toBeLessThan(0.15);
+    expect(sim.events.filter((e) => e.type === 'collision')).toEqual([]);
+  });
+
+  it('turns by the given angle, leaves the road, and finds the road again when told', () => {
+    const sim = createSim(TOWN_MAP_NO_CONES, EASY, 1, undefined, false);
+    sim.say('start');
+    sim.run(1.5);
+    sim.driver.command('shiftRight', { angleDeg: 30 });
+    sim.run(3);
+    expect(Math.abs(wrapAngle(sim.car.snapshot().yaw - (DIR_YAW.E - Math.PI / 6)))).toBeLessThan(0.1);
+    // 道路（z = 70..90 のうち舗装は 74..86）から外れた
+    expect(sim.car.snapshot().z).toBeGreaterThan(87);
     sim.say('returnToRoad');
-    sim.run(15);
+    sim.run(10);
     expect(sim.events.some((e) => e.type === 'rejoin')).toBe(true);
-    expect(sim.driver.mode).toBe('route');
     expect(sim.events.filter((e) => e.type === 'collision')).toEqual([]);
   });
 

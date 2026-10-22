@@ -42,8 +42,28 @@ const ACK: Record<string, Table> = {
   uturn: { lines: ['くるっと戻るね！', '引き返すね！'], mood: 'happy', priority: 2 },
   shiftLeft: { lines: ['ひだり寄りね', 'ちょっとひだりに寄せるね'], mood: 'neutral', priority: 2 },
   shiftRight: { lines: ['みぎ寄りね', 'ちょっとみぎに寄せるね'], mood: 'neutral', priority: 2 },
+  followRoad: { lines: ['道なりに行くね', '道に沿って走るね'], mood: 'neutral', priority: 2 },
   returnToRoad: { lines: ['道に戻るね', '道路はどっちかな…あっちだ！'], mood: 'neutral', priority: 2 },
   keepLane: { lines: ['いつもの位置に戻るね', '車線の真ん中を走るね'], mood: 'neutral', priority: 2 },
+};
+
+/** 「3秒後に」などの時間指定の指示への返事（「3秒たったら」に続ける） */
+const LATER: Partial<Record<string, string>> = {
+  turnLeft: 'ひだりに曲がるね',
+  turnRight: 'みぎに曲がるね',
+  goLeft: 'ひだりに曲がるね',
+  goRight: 'みぎに曲がるね',
+  steerLeft: 'ひだりに曲がるね',
+  steerRight: 'みぎに曲がるね',
+  correctLeft: 'ひだりに曲がるね',
+  correctRight: 'みぎに曲がるね',
+  shiftLeft: 'ちょっとひだりに向けるね',
+  shiftRight: 'ちょっとみぎに向けるね',
+  straight: 'ハンドルをまっすぐにするね',
+  uturn: 'くるっと戻るね',
+  faster: 'スピード上げるね',
+  slower: 'のんびりにするね',
+  start: '出発するね',
 };
 
 const EVENTS: Record<string, Table> = {
@@ -60,7 +80,7 @@ const EVENTS: Record<string, Table> = {
   collision: { lines: ['いたっ…ごめん！', 'ぶつけちゃった…', 'あわわ…どうしよう'], mood: 'sad', priority: 5 },
   offRoad: { lines: ['道から出ちゃった！このまま行くね', 'コースアウト〜！', 'でこぼこだ〜！'], mood: 'happy', priority: 2 },
   rejoin: { lines: ['道に戻ったよ', 'この道を走るね'], mood: 'neutral', priority: 1 },
-  greeting: { lines: [`よろしくね！「発進して」って言ってくれたら出発するよ`], mood: 'happy', priority: 1 },
+  greeting: { lines: [`よろしくね！「発進して」で出発、行きたい向きは「3秒たったらひだり」みたいに教えてね`], mood: 'happy', priority: 1 },
   idle: { lines: ['運転って楽しいね', 'ちゃんと前見てるよ！', 'このへん、いい景色だね', '行きたい方向があったら言ってね'], mood: 'happy', priority: 0 },
   notUnderstood: { lines: ['え？なんて？', 'ごめん、もう一回言って？'], mood: 'neutral', priority: 1 },
 };
@@ -83,6 +103,9 @@ export class Dialogue {
       table = EVENTS[key];
     }
     if (!table) return null;
+    if (trigger.type === 'ack' && trigger.delaySeconds) {
+      return { text: `${trigger.delaySeconds}秒たったら${LATER[trigger.command] ?? 'そうするね'}`, mood: 'neutral', priority: 2 };
+    }
     let text = this.pick(key, table.lines);
     if (trigger.type === 'ack' && trigger.speedKmh !== undefined && trigger.command !== 'start') {
       text += `（${trigger.speedKmh}km/h）`;
