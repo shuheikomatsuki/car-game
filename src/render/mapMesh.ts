@@ -1,6 +1,6 @@
 import * as THREE from 'three';
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
-import type { BoxObstacle, MapObstacles } from '../map/obstacles';
+import { BARRIER_HEIGHT, type BoxObstacle, type MapObstacles } from '../map/obstacles';
 import { type Shortcut, shortcutPoint } from '../map/shortcuts';
 import type { Terrain } from '../map/terrain';
 import { type ParsedMap, type Tile, DIR_OFFSET, roadShape, tileCenter } from '../map/tilemap';
@@ -24,7 +24,18 @@ const COLORS = {
   guardrail: 0xe6e8ea,
   guardrailPost: 0x8c9196,
   shortcut: 0xa9a59b,
+  water: 0x2f6f9a,
+  bank: 0x8a8478,
+  city: 0x6b6d70,
+  concrete: 0xc4c2bb,
+  deck: 0x9a9890,
+  lamp: 0xffc46b,
 };
+
+/** 川の水面の深さ（地面からの高さの差）[m] */
+const WATER_DEPTH = 3;
+/** 橋・高架の床の厚さ [m] */
+const DECK_THICKNESS = 1.4;
 
 const ROAD_Y = 0.01;
 const LINE_Y = 0.02;
@@ -58,6 +69,9 @@ function flatArc(
 
 function buildRoadGeometry(map: ParsedMap) {
   const { tileSize, roadWidth } = map.def;
+  // 車線の境目（中央からのずれ）。高架の道路は車線の数で区切り、それ以外は中央の1本
+  const lanes = map.def.highway?.lanes ?? 2;
+  const dividers = Array.from({ length: lanes - 1 }, (_, i) => -roadWidth / 2 + (roadWidth * (i + 1)) / lanes);
   const half = tileSize / 2;
   const rw = roadWidth / 2;
   const road: THREE.BufferGeometry[] = [];
@@ -80,7 +94,7 @@ function buildRoadGeometry(map: ParsedMap) {
       const outer = half + rw - edgeInset;
       edgeLines.push(flatArc(cx, cz, sx, sz, inner - lineW / 2, inner + lineW / 2, LINE_Y));
       edgeLines.push(flatArc(cx, cz, sx, sz, outer - lineW / 2, outer + lineW / 2, LINE_Y));
-      centerLines.push(flatArc(cx, cz, sx, sz, half - lineW / 2, half + lineW / 2, LINE_Y));
+      for (const d of dividers) centerLines.push(flatArc(cx, cz, sx, sz, half + d - lineW / 2, half + d + lineW / 2, LINE_Y));
       return;
     }
 
@@ -104,13 +118,15 @@ function buildRoadGeometry(map: ParsedMap) {
             : flatRect(x + s * edge, z, lineW, tileSize, LINE_Y),
         );
       }
-      // 破線のセンターライン
-      for (const offset of [-half / 2, half / 2]) {
-        centerLines.push(
-          alongX
-            ? flatRect(x + offset, z, 4, lineW, LINE_Y)
-            : flatRect(x, z + offset, lineW, 4, LINE_Y),
-        );
+      // 破線のセンターライン（車線の境目）
+      for (const d of dividers) {
+        for (const offset of [-half / 2, half / 2]) {
+          centerLines.push(
+            alongX
+              ? flatRect(x + offset, z + d, 4, lineW, LINE_Y)
+              : flatRect(x + d, z + offset, lineW, 4, LINE_Y),
+          );
+        }
       }
     }
   };
@@ -172,21 +188,53 @@ export function buildMapMesh(map: ParsedMap, obstacles: MapObstacles, terrain: T
   const centerX = width / 2 - half;
   const centerZ = depth / 2 - half;
 
-  // 外側の地面と、マップ内の草地
-  const outside = new THREE.Mesh(
-    new THREE.PlaneGeometry(2000, 2000).rotateX(-Math.PI / 2),
-    new THREE.MeshLambertMaterial({ color: COLORS.outside }),
-  );
-  outside.position.set(centerX, terrain ? terrain.grid.ground.reduce((a, b) => Math.min(a, b), Infinity) - 2 : -0.02, centerZ);
-  outside.receiveShadow = true;
-  group.add(outside);
+  // 外側の地面と、マップ内の草地。高架のマップは地面（街・海）が下にあり、川のあるマップは水の所に穴をあける
+  const highway = map.def.highway;
+  const hasWater = map.tiles.some((t) => t.kind === 'water' || t.bridge);
+  const lowY = highway ? -highway.depth : -WATER_DEPTH;
+  const outsideY = terrain ? terrain.grid.ground.reduce((a, b) => Math.min(a, b), Infinity) - 2 : highway ? lowY - 0.05 : -0.02;
+  const outsideMat = new THREE.MeshLambertMaterial({ color: highway ? COLORS.city : COLORS.outside });
+  if (hasWater && !highway && !terrain) {
+    // マップの周りだけを囲む（水面を覆わないように）
+    const big = 2000;
+    for (const [cx, cz, sx, sz] of [
+      [centerX, centerZ - depth / 2 - big / 2, big + width, big],
+      [centerX, centerZ + depth / 2 + big / 2, big + width, big],
+      [centerX - width / 2 - big / 2, centerZ, big, depth],
+      [centerX + width / 2 + big / 2, centerZ, big, depth],
+    ]) {
+      const m = new THREE.Mesh(flatRect(cx, cz, sx, sz, outsideY), outsideMat);
+      m.receiveShadow = true;
+      group.add(m);
+    }
+  } else {
+    const outside = new THREE.Mesh(new THREE.PlaneGeometry(2000, 2000).rotateX(-Math.PI / 2), outsideMat);
+    outside.position.set(centerX, outsideY, centerZ);
+    outside.receiveShadow = true;
+    group.add(outside);
+  }
 
+  const isWet = (t: Tile | undefined) => t !== undefined && (t.kind === 'water' || t.bridge);
+  let grassGeo: THREE.BufferGeometry;
+  if (terrain) grassGeo = terrainGeometry(terrain);
+  else if (highway) grassGeo = flatRect(centerX, centerZ, width, depth, lowY);
+  else if (hasWater) {
+    grassGeo = mergeGeometries(
+      map.tiles.filter((t) => !isWet(t)).map((t) => {
+        const c = tileCenter(map, t.col, t.row);
+        return flatRect(c.x, c.z, tileSize, tileSize, 0);
+      }),
+    );
+  } else grassGeo = flatRect(centerX, centerZ, width, depth, 0);
   const grass = new THREE.Mesh(
-    terrain ? terrainGeometry(terrain) : flatRect(centerX, centerZ, width, depth, 0),
-    terrain ? new THREE.MeshLambertMaterial({ vertexColors: true }) : new THREE.MeshLambertMaterial({ color: COLORS.grass }),
+    grassGeo,
+    terrain
+      ? new THREE.MeshLambertMaterial({ vertexColors: true })
+      : new THREE.MeshLambertMaterial({ color: highway ? COLORS.city : COLORS.grass }),
   );
   grass.receiveShadow = true;
   group.add(grass);
+  if (!terrain && (hasWater || highway)) group.add(buildWaterAndDecks(map, lowY, isWet));
 
   // 道路と白線
   const roads = buildRoadGeometry(map);
@@ -208,7 +256,8 @@ export function buildMapMesh(map: ParsedMap, obstacles: MapObstacles, terrain: T
   }
   if (roads.centerLines) {
     group.add(
-      new THREE.Mesh(roads.centerLines, new THREE.MeshBasicMaterial({ color: COLORS.centerLine, ...layer(2) })),
+      // 高架（高速道路）の車線の境目は白
+      new THREE.Mesh(roads.centerLines, new THREE.MeshBasicMaterial({ color: highway ? COLORS.line : COLORS.centerLine, ...layer(2) })),
     );
   }
 
@@ -221,11 +270,21 @@ export function buildMapMesh(map: ParsedMap, obstacles: MapObstacles, terrain: T
   ];
   const railMat = new THREE.MeshLambertMaterial({ color: COLORS.guardrail });
   const postMat = new THREE.MeshLambertMaterial({ color: COLORS.guardrailPost });
+  const barriers: THREE.BufferGeometry[] = [];
   for (const b of obstacles.boxes) {
     if (b.kind === 'guardrail') {
       group.add(createGuardrail(b, railMat, postMat, terrain));
       continue;
     }
+    if (b.kind === 'barrier') {
+      const g = new THREE.BoxGeometry(b.hx * 2, b.hy * 2, b.hz * 2);
+      g.rotateY(b.yaw ?? 0);
+      g.translate(b.x, b.y, b.z);
+      barriers.push(g);
+      continue;
+    }
+    // 高架のマップでは、マップの外周の壁は見せない（下の街の上に浮いて見えるので）
+    if (b.kind === 'wall' && highway) continue;
     const mat = b.kind === 'building' ? buildingMats[b.variant % buildingMats.length] : wallMats[b.variant];
     if (b.kind === 'wall' && terrain) {
       // 長い壁は、地形に沿うよう短く区切って並べる
@@ -251,6 +310,14 @@ export function buildMapMesh(map: ParsedMap, obstacles: MapObstacles, terrain: T
     }
   }
 
+  if (barriers.length) {
+    const mesh = new THREE.Mesh(mergeGeometries(barriers), new THREE.MeshLambertMaterial({ color: COLORS.concrete }));
+    mesh.castShadow = true;
+    mesh.receiveShadow = true;
+    group.add(mesh);
+  }
+  if (highway) group.add(buildStreetLamps(map));
+
   // 木
   const trunkMat = new THREE.MeshLambertMaterial({ color: COLORS.trunk });
   const leavesMat = new THREE.MeshLambertMaterial({ color: COLORS.leaves, flatShading: true });
@@ -258,7 +325,7 @@ export function buildMapMesh(map: ParsedMap, obstacles: MapObstacles, terrain: T
     const trunkH = t.height * 0.4;
     const trunk = new THREE.Mesh(new THREE.CylinderGeometry(t.trunkRadius, t.trunkRadius, trunkH, 8), trunkMat);
     // 坂の上でも浮かないよう、根元を少し埋める
-    const base = terrain ? heightAt(t.x, t.z) - 0.5 : 0;
+    const base = terrain ? heightAt(t.x, t.z) - 0.5 : highway ? lowY : 0;
     trunk.position.set(t.x, base + trunkH / 2, t.z);
     trunk.castShadow = true;
     group.add(trunk);
@@ -275,6 +342,120 @@ export function buildMapMesh(map: ParsedMap, obstacles: MapObstacles, terrain: T
     group.add(mesh);
   }
 
+  return group;
+}
+
+/** 角 (cornerX, cornerZ) を中心にした 1/4 円弧の板（カーブの橋・高架の床）。上面が top */
+function arcSlab(cornerX: number, cornerZ: number, sx: number, sz: number, inner: number, outer: number, top: number, thickness: number): THREE.BufferGeometry {
+  // flatArc と同じ角度の範囲を XY 平面で作り、厚さの向き（+Z）を上（+Y）に向ける
+  const a0 = Math.atan2(sz, -sx) - Math.PI / 4;
+  const a1 = a0 + Math.PI / 2;
+  const shape = new THREE.Shape();
+  shape.absarc(0, 0, outer, a0, a1, false);
+  shape.absarc(0, 0, inner, a1, a0, true);
+  shape.closePath();
+  const g = new THREE.ExtrudeGeometry(shape, { depth: thickness, bevelEnabled: false, curveSegments: 16 });
+  g.rotateX(-Math.PI / 2);
+  g.translate(cornerX, top - thickness, cornerZ);
+  return g;
+}
+
+/**
+ * 水面・川岸と、橋・高架の床と柱。高架のマップはすべての道路が、それ以外は橋のタイルが対象。
+ * lowY は下の地面（水面・街）の高さ
+ */
+function buildWaterAndDecks(map: ParsedMap, lowY: number, isWet: (t: Tile | undefined) => boolean): THREE.Group {
+  const group = new THREE.Group();
+  const { tileSize, roadWidth } = map.def;
+  const half = tileSize / 2;
+  const highway = map.def.highway;
+  const water: THREE.BufferGeometry[] = [];
+  const banks: THREE.BufferGeometry[] = [];
+  const decks: THREE.BufferGeometry[] = [];
+  const pillars: THREE.BufferGeometry[] = [];
+  const deckHalf = roadWidth / 2 + 1;
+  const deckTop = -0.03;
+  for (const t of map.tiles) {
+    const { x, z } = tileCenter(map, t.col, t.row);
+    if (isWet(t)) {
+      // 高架のマップの水面は、下の地面の少し上
+      water.push(flatRect(x, z, tileSize, tileSize, lowY + (highway ? 0.15 : 0.6)));
+      if (!highway) {
+        // 陸との境目の岸（縦の面）
+        for (const { dc, dr } of Object.values(DIR_OFFSET)) {
+          if (isWet(map.tileAt(t.col + dc, t.row + dr))) continue;
+          const g = new THREE.PlaneGeometry(tileSize, -lowY);
+          if (dc !== 0) g.rotateY(Math.PI / 2);
+          g.translate(x + dc * half, lowY / 2, z + dr * half);
+          banks.push(g);
+        }
+      }
+    }
+    if (t.kind !== 'road' || !(highway || t.bridge)) continue;
+    const pillarH = deckTop - DECK_THICKNESS - lowY;
+    let px = x;
+    let pz = z;
+    if (roadShape(t) === 'curve') {
+      const sx = t.connections.includes('E') ? 1 : -1;
+      const sz = t.connections.includes('S') ? 1 : -1;
+      decks.push(arcSlab(x + sx * half, z + sz * half, sx, sz, half - deckHalf, half + deckHalf, deckTop, DECK_THICKNESS));
+      px = x + sx * half - sx * half * Math.SQRT1_2;
+      pz = z + sz * half - sz * half * Math.SQRT1_2;
+    } else {
+      const alongX = t.connections.includes('E') || t.connections.includes('W');
+      const g = new THREE.BoxGeometry(alongX ? tileSize : deckHalf * 2, DECK_THICKNESS, alongX ? deckHalf * 2 : tileSize);
+      g.translate(x, deckTop - DECK_THICKNESS / 2, z);
+      decks.push(g);
+    }
+    const p = new THREE.CylinderGeometry(1.1, 1.3, pillarH, 10);
+    p.translate(px, lowY + pillarH / 2, pz);
+    pillars.push(p);
+  }
+  const add = (geos: THREE.BufferGeometry[], mat: THREE.Material, shadow = true) => {
+    if (!geos.length) return;
+    // 押し出した板（インデックスなし）と箱（インデックスあり）を混ぜるので、そろえてからまとめる
+    const mesh = new THREE.Mesh(mergeGeometries(geos.map((g) => (g.index ? g.toNonIndexed() : g))), mat);
+    mesh.receiveShadow = true;
+    mesh.castShadow = shadow;
+    group.add(mesh);
+  };
+  add(water, new THREE.MeshPhongMaterial({ color: COLORS.water, shininess: 40, specular: 0x30485a }), false);
+  add(banks, new THREE.MeshLambertMaterial({ color: COLORS.bank, side: THREE.DoubleSide }), false);
+  add(decks, new THREE.MeshLambertMaterial({ color: COLORS.deck }));
+  add(pillars, new THREE.MeshLambertMaterial({ color: COLORS.deck }));
+  return group;
+}
+
+/** 高架の道路の街灯（直線の壁の上に、1枚おきのタイルに左右交互に立てる） */
+function buildStreetLamps(map: ParsedMap): THREE.Group {
+  const group = new THREE.Group();
+  const { roadWidth } = map.def;
+  const poles: THREE.BufferGeometry[] = [];
+  const lamps: THREE.BufferGeometry[] = [];
+  const off = roadWidth / 2 + 0.55;
+  const height = 9;
+  for (const t of map.tiles) {
+    if (t.kind !== 'road' || roadShape(t) !== 'straight' || (t.col + t.row) % 2 !== 0) continue;
+    const { x, z } = tileCenter(map, t.col, t.row);
+    const alongX = t.connections.includes('E');
+    const s = (t.col + t.row) % 4 === 0 ? 1 : -1;
+    // 柱の位置と、道路の内側へ向かう向き
+    const bx = alongX ? x : x + s * off;
+    const bz = alongX ? z + s * off : z;
+    const ix = alongX ? 0 : -s;
+    const iz = alongX ? -s : 0;
+    const pole = new THREE.CylinderGeometry(0.12, 0.16, height, 6);
+    pole.translate(bx, BARRIER_HEIGHT + height / 2, bz);
+    poles.push(pole);
+    const arm = new THREE.BoxGeometry(ix ? 2.2 : 0.14, 0.14, iz ? 2.2 : 0.14);
+    arm.translate(bx + ix * 1.1, BARRIER_HEIGHT + height, bz + iz * 1.1);
+    poles.push(arm);
+    const lamp = new THREE.BoxGeometry(ix ? 0.9 : 0.4, 0.18, iz ? 0.9 : 0.4);
+    lamp.translate(bx + ix * 2.2, BARRIER_HEIGHT + height - 0.15, bz + iz * 2.2);
+    lamps.push(lamp);
+  }
+  if (poles.length) group.add(new THREE.Mesh(mergeGeometries(poles), new THREE.MeshLambertMaterial({ color: 0x7d8186 })));
+  if (lamps.length) group.add(new THREE.Mesh(mergeGeometries(lamps), new THREE.MeshBasicMaterial({ color: COLORS.lamp })));
   return group;
 }
 

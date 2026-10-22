@@ -493,6 +493,49 @@ body {
   background: #2f5fa8;
 }
 
+/* 最初の画面のプレイモードは大きめのボタン */
+#menu .chips.modes {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+}
+
+#menu .chips.modes .chip {
+  padding: 12px 14px;
+  font-size: 15px;
+}
+
+/* 何枚目の画面か（選び終えた画面は薄く、いまの画面は強調） */
+#menu-steps {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin: 0 0 4px;
+  padding: 0;
+  list-style: none;
+  font-size: 11px;
+}
+
+#menu-steps li {
+  padding: 2px 8px;
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.08);
+  opacity: 0.6;
+}
+
+#menu-steps li.done {
+  opacity: 0.9;
+}
+
+#menu-steps li.current {
+  background: #2f5fa8;
+  opacity: 1;
+}
+
+#menu-actions.hidden,
+#menu .dialog-buttons .hidden {
+  display: none;
+}
+
 #menu-actions {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));

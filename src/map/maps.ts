@@ -454,11 +454,87 @@ export const MARATHON_MAP: MapDefinition = {
   elevation: { from: { col: 17, row: 17 }, rise: 200, profile: [0, 0.3, 0.15, 0.45, 0.35, 0.7, 0.5, 0.85, 1, 0.75, 0.55, 0.3, 0.1] },
 };
 
+/** 川を4回渡る周回コース。橋の上は欄干に囲まれ、川岸には柵がある */
+export const RIVERSIDE_MAP: MapDefinition = {
+  id: 'riverside',
+  name: '川と橋のコース',
+  tileSize: 30,
+  roadWidth: 12,
+  layout: [
+    '.........~~.........',
+    '.RRRRRRRR==RRRRRRRR.',
+    '.R.......~~.......R.',
+    '.R..T....~~...T...R.',
+    '.R.RRRRRR==RRRRRRRR.',
+    '.R.R.....~~.....T...',
+    '.R.R..T..~~.........',
+    '.R.RRRRRR==RRRRRRRR.',
+    '.R.......~~.......R.',
+    '.R...T...~~...T...R.',
+    '.RRRRRRRR==RRRRRRRR.',
+    '.........~~.........',
+  ],
+  start: { col: 4, row: 1, heading: 'E' },
+  guardrails: true,
+  race: { laps: 2 },
+};
+
+/** 1km を超える長いストレートと、奥のくねくねした区間の周回コース。最高速の伸びが大事 */
+export const SPEEDWAY_MAP: MapDefinition = {
+  id: 'speedway',
+  name: 'ロングストレート',
+  tileSize: 40,
+  roadWidth: 16,
+  layout: [
+    '...BB.BBB.BB.BBB.BB.BBB.BB...',
+    '.RRRRRRRRRRRRRRRRRRRRRRRRRRR.',
+    '.R..T...T...T...T...T...T..R.',
+    '.R..T......T.....T.....T...R.',
+    '.RRRRR..RRRRR..RRRRRRR.....R.',
+    'T....R..R...R..R.....R..T..R.',
+    '..T..RRRR...RRRR..T..RRRRRRR.',
+    'T..T..T..T..T..T..T..T..T..T.',
+  ],
+  start: { col: 4, row: 1, heading: 'E' },
+  guardrails: true,
+  race: { laps: 2 },
+};
+
+/**
+ * 首都高のような高架の周回コース。海の上の 1.2km の直線（湾岸線）と、ビルの間を縫う区間がある。
+ * 道路の両側は壁で、3車線
+ */
+export const WANGAN_MAP: MapDefinition = {
+  id: 'wangan',
+  name: '首都高（湾岸線）',
+  tileSize: 40,
+  roadWidth: 15,
+  layout: [
+    '~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~',
+    '~RRRRRRRRRRRRRRRRRRRRRRRRRRRRRR~',
+    '~R~~~~~~~~~~~~~~~~~~~~~~~~~~~~R~',
+    '.R.BB.B.BB.B.B..BB.B.BB.B.B.B.R.',
+    'BR.B.BB.B.BB.BB.B.BB.B.BB.BB..RB',
+    '.RRRRRR.B.B..RRRRRR.B.BB.RRRRRR.',
+    'B.B...R.BB.B.R.BB.R.B..B.R.B.B.B',
+    '.B..B.R.B..B.R.B..R.BB.B.R..B...',
+    'B..B..RRRRRRRR.BB.RRRRRRRR.BB.B.',
+    '.BB.B..B.BB.B.B..B.B.BB.B.BB.B.B',
+    '..B..B.B..B..B.B.B..B.B..B.B..B.',
+  ],
+  start: { col: 4, row: 1, heading: 'E' },
+  race: { laps: 2 },
+  highway: { depth: 14, lanes: 3 },
+};
+
 export const MAPS: readonly MapDefinition[] = [
   TOWN_MAP,
   SCHOOL_MAP,
   CIRCUIT_MAP,
   TECHNICAL_MAP,
+  RIVERSIDE_MAP,
+  SPEEDWAY_MAP,
+  WANGAN_MAP,
   HILLCLIMB_MAP,
   DOWNHILL_MAP,
   PASS_OVER_MAP,

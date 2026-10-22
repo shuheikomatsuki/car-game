@@ -100,6 +100,8 @@ export class RaceHud {
     field?: readonly Standing[];
     /** ランキングから選んだ、一緒に走るゴーストの人 */
     rival?: { name: string; total: number };
+    /** 先行後追いのバトルの様子（何本目・先行か後追いか・差） */
+    battle?: string;
   }): void {
     // レースゲームでよく見る「3rd」の形にし、台数は小さく添える
     const pos = s.position ? `${ordinal(s.position.rank)}<small>/${s.position.total}</small>` : '';
@@ -112,7 +114,7 @@ export class RaceHud {
     this.timeEl.textContent = formatTime(s.time);
     // NPC 対戦では自己ベストを比べないので出さない
     const best = s.best === null ? 'ベスト --:--.--' : `ベスト ${formatTime(s.best)}`;
-    this.bestEl.textContent = s.position ? '' : s.rival ? `VS ${s.rival.name} ${formatTime(s.rival.total)}　${best}` : best;
+    this.bestEl.textContent = s.battle ? s.battle : s.position ? '' : s.rival ? `VS ${s.rival.name} ${formatTime(s.rival.total)}　${best}` : best;
     const field = s.field && !s.finished ? s.field.map((r, i) => `<li class="${r.isPlayer ? 'me' : ''}"><span class="dot" style="background:${hexColor(r.color)}"></span>${ordinal(i + 1)} ${escapeHtml(r.name)}</li>`).join('') : '';
     if (field !== this.shownField) {
       this.shownField = field;
@@ -234,6 +236,14 @@ export class RaceHud {
       this.standingsHtml = html;
       this.resultBody.innerHTML = html;
     }
+    this.result.classList.remove('hidden');
+  }
+
+  /** 先行後追いのバトルの結果（1本ごとの引き分け・決着） */
+  showBattleResult(title: string, text: string): void {
+    this.resultTitle.textContent = title;
+    this.standingsHtml = '';
+    this.resultBody.innerHTML = `<p class="note">${escapeHtml(text)}</p>`;
     this.result.classList.remove('hidden');
   }
 

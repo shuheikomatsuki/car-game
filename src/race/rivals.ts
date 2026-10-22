@@ -20,6 +20,9 @@ export interface Rival {
 
 /** 弱い順 */
 export const RIVALS: readonly Rival[] = [
+  { id: 'itsuki', name: '武内樹', team: '秋名スピードスターズ', car: 'ae85', course: 'circuit', level: 'easy' },
+  { id: 'iketani', name: '池谷浩一郎', team: '秋名スピードスターズ', car: 's13', course: 'downhill', level: 'easy' },
+  { id: 'kenta', name: '中村賢太', team: '赤城レッドサンズ', car: 's14', course: 'hillclimb', level: 'normal' },
   { id: 'shingo', name: '庄司慎吾', team: '妙義ナイトキッズ', car: 'eg6', course: 'pass-over', level: 'normal' },
   { id: 'nakazato', name: '中里毅', team: '妙義ナイトキッズ', car: 'gtr', course: 'downhill', level: 'hard' },
   { id: 'iwaki', name: '岩城清次', team: 'チームエンペラー', car: 'evo', course: 'uturn', level: 'hard' },
