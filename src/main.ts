@@ -3,7 +3,7 @@ import { GamepadInput, KeyboardInput, PAD_BUTTON, mergeInputs } from './core/inp
 import { FixedStepLoop } from './core/loop';
 import { FallRecovery } from './game/fall';
 import { Level } from './game/level';
-import { NpcField, rankEntrants, velocityOf } from './game/npcRace';
+import { NpcField, npcEntries, rankEntrants, velocityOf } from './game/npcRace';
 import { PLAYER_COLORS, RemoteCars, carStateOf, createLabel } from './game/remoteCars';
 import { MAPS } from './map/maps';
 import type { MapDefinition } from './map/tilemap';
@@ -12,6 +12,7 @@ import type { SubmitResult } from './net/leaderboard';
 import { LeaderboardClient, myEntryId, playerId, uploadedTotal } from './net/leaderboardClient';
 import { type GhostData, type GhostPose, GhostRecorder, ghostPoseAt } from './race/ghost';
 import { NPC_LEVELS } from './race/npcDriver';
+import { RIVALS, loadBeatenRivals, markRivalBeaten, rivalLevel } from './race/rivals';
 import { type RaceRecord, loadRecord, mergeRecord, saveRecord } from './race/records';
 import { TimeAttack, formatTime } from './race/timeAttack';
 import { isRoomCode, normalizeRoomCode } from './net/protocol';
@@ -50,6 +51,9 @@ function lerpSnapshot(a: CarSnapshot, b: CarSnapshot, t: number): CarSnapshot {
     wheelSpin: lerp(a.wheelSpin, b.wheelSpin),
   };
 }
+
+/** レースの種類（タイムアタック・NPC 対戦・ライバルとのバトル） */
+type RaceMode = 'timeAttack' | 'npc' | 'battle';
 
 async function main() {
   const rapier = await loadRapier();
@@ -94,7 +98,10 @@ async function main() {
   // --- タイムアタック・NPC 対戦 ---
   let race: TimeAttack | null = null;
   /** いま走っているレースの種類 */
-  let raceMode: 'timeAttack' | 'npc' = 'timeAttack';
+  let raceMode: RaceMode = 'timeAttack';
+  /** ライバルとのバトルの相手（RIVALS の番号） */
+  let battleIndex = 0;
+  const battleRival = () => RIVALS[battleIndex];
   /** NPC 対戦の NPC たち */
   let npcField: NpcField | null = null;
   /** NPC の強さ（?npc=pro のように指定できる） */
@@ -152,18 +159,25 @@ async function main() {
     else placeCar(level.spawn);
   };
 
-  const raceLabel = () => (raceMode === 'npc' ? `NPC対戦（${NPC_LEVELS[npcLevelIndex].label}）` : 'タイムアタック');
+  const raceLabel = () =>
+    raceMode === 'npc' ? `NPC対戦（${NPC_LEVELS[npcLevelIndex].label}）` : raceMode === 'battle' ? `バトル（${battleRival().name}）` : 'タイムアタック';
 
   /**
    * レース用のコースのスタートラインの手前に並び、カウントダウンから始める。
-   * いまのマップがレース用でなければサーキットへ移動する。NPC 対戦では NPC が前に並び、自分は最後尾から
+   * いまのマップがレース用でなければサーキットへ移動する。NPC 対戦では NPC が前に並び、自分は最後尾から。
+   * ライバルとのバトルは、ライバルと横に並ぶ。toHome ならライバルの得意なコースへ移動する（他のコースでもバトルできる）
    */
-  function startRace(mode: 'timeAttack' | 'npc') {
+  function startRace(mode: RaceMode, toHome = false) {
     raceMode = mode;
-    if (mode === 'npc') setRival(null);
-    if (!level.course) {
-      loadMap(raceMapIndex);
-      // 同じ部屋の全員もサーキットへ
+    if (mode !== 'timeAttack') setRival(null);
+    const target = mode === 'battle' && toHome ? MAPS.findIndex((m) => m.id === battleRival().course) : level.course ? mapIndex : raceMapIndex;
+    if (target !== mapIndex) {
+      // 前のレースを片付けてから移動する（移動先でこの後並び直す）
+      race = null;
+      npcField?.dispose();
+      npcField = null;
+      loadMap(target);
+      // 同じ部屋の全員も同じコースへ
       net.send({ t: 'map', map: mapIndex });
     }
     npcField?.dispose();
@@ -180,8 +194,15 @@ async function main() {
     const slot = (i: number) => course.gridSpot(6 + 7 * i, i % 2 === 0 ? side : -side);
     if (mode === 'npc') {
       const grid = Array.from({ length: NPC_COUNT }, (_, i) => slot(i));
-      npcField = new NpcField(level, view.scene, NPC_LEVELS[npcLevelIndex], vehicle().params, laps, grid);
+      npcField = new NpcField(level, view.scene, npcEntries(NPC_COUNT, NPC_LEVELS[npcLevelIndex], vehicle().params, carStyle(vehicle().id)), laps, grid);
       placeCar(slot(NPC_COUNT));
+    } else if (mode === 'battle') {
+      const r = battleRival();
+      const preset = VEHICLE_PRESETS.find((v) => v.id === r.car) ?? VEHICLE_PRESETS[0];
+      const style = carStyle(preset.id);
+      const entry = { name: r.name, color: style.color, level: rivalLevel(r), params: preset.params, style, variation: 1 };
+      npcField = new NpcField(level, view.scene, [entry], laps, [course.gridSpot(6, side)]);
+      placeCar(course.gridSpot(6, -side));
     } else {
       placeCar(course.gridSpot(6));
     }
@@ -223,7 +244,7 @@ async function main() {
     menu.refresh();
   }
 
-  const toggleRace = (mode: 'timeAttack' | 'npc') => (race && raceMode === mode ? stopRace() : startRace(mode));
+  const toggleRace = (mode: RaceMode) => (race && raceMode === mode ? stopRace() : startRace(mode, true));
   const cycleNpcLevel = () => {
     npcLevelIndex = (npcLevelIndex + 1) % NPC_LEVELS.length;
     hud.toast(`NPCの強さ: ${NPC_LEVELS[npcLevelIndex].label}`);
@@ -235,7 +256,7 @@ async function main() {
   const standings = () => {
     if (!race || !npcField) return [];
     return rankEntrants([
-      { name: 'あなた', color: carMesh.color, isPlayer: true, timer: race, x: curr.x, z: curr.z },
+      { name: loadPlayerName().trim() || 'あなた', color: carMesh.color, isPlayer: true, timer: race, x: curr.x, z: curr.z },
       ...npcField.npcs.map((n) => ({ name: n.name, color: n.color, isPlayer: false, timer: n.timer, x: n.curr.x, z: n.curr.z })),
     ]);
   };
@@ -257,8 +278,10 @@ async function main() {
           break;
         }
         case 'finish': {
-          if (raceMode === 'npc') {
-            raceHud.showStandings(standings(), r.totalLaps);
+          if (raceMode !== 'timeAttack') {
+            const list = standings();
+            if (raceMode === 'battle' && list[0]?.isPlayer) markRivalBeaten(battleRival().id);
+            raceHud.showStandings(list, r.totalLaps, raceMode === 'battle');
             raceHud.showRankingButton(false);
             raceHud.setWarning({ wrongWay: false, offCourse: false });
             sound.beep(true);
@@ -509,6 +532,7 @@ async function main() {
   keyboard.onAction('KeyR', resetCar);
   keyboard.onAction('KeyT', () => toggleRace('timeAttack'));
   keyboard.onAction('KeyY', () => toggleRace('npc'));
+  keyboard.onAction('KeyB', () => toggleRace('battle'));
   keyboard.onAction('KeyC', cycleCamera);
   keyboard.onAction('KeyN', nextMap);
   keyboard.onAction('KeyP', cycleCar);
@@ -546,14 +570,33 @@ async function main() {
           { id: 'free', label: '自由に走る' },
           { id: 'timeAttack', label: 'タイムアタック' },
           { id: 'npc', label: 'NPCと対戦' },
+          { id: 'battle', label: 'ライバルとバトル' },
         ],
         selected: raceModeId,
         select: (id) => {
           if (id === raceModeId()) return;
           if (id === 'free') stopRace();
-          else startRace(id as 'timeAttack' | 'npc');
+          else startRace(id as RaceMode, true);
         },
         detail: () => (race ? 'スタートの位置で、アクセルを踏むとカウントダウンが始まります' : ''),
+      },
+      {
+        title: 'ライバル（1対1・得意なコースで勝負）',
+        choices: () => {
+          const beaten = loadBeatenRivals();
+          return RIVALS.map((r) => {
+            const car = VEHICLE_PRESETS.find((v) => v.id === r.car)?.label ?? r.car;
+            const course = MAPS.find((m) => m.id === r.course)?.name ?? r.course;
+            return { id: r.id, label: `${beaten.has(r.id) ? '✓ ' : ''}${r.name}`, note: `${car}・${course}` };
+          });
+        },
+        selected: () => battleRival().id,
+        select: (id) => {
+          battleIndex = Math.max(0, RIVALS.findIndex((r) => r.id === id));
+          startRace('battle', true);
+        },
+        visible: () => race !== null && raceMode === 'battle',
+        detail: () => `${battleRival().team}・強さ ${rivalLevel(battleRival()).label}。自分の車は下の「車」で選べます（✓ は勝ったことのある相手）`,
       },
       {
         title: 'NPCの強さ',
@@ -724,10 +767,11 @@ async function main() {
           refLaps: best?.laps,
           finished: race.phase === 'finished',
           position: rank ? { rank: rank.index + 1, total: rank.list.length } : undefined,
+          field: rank?.list,
           rival: rival && raceMode === 'timeAttack' ? { name: rival.name, total: rival.total } : undefined,
         });
         // ゴールした後も、まだ走っている NPC がゴールするたびに順位表を更新する
-        if (rank && race.phase === 'finished') raceHud.showStandings(rank.list, race.totalLaps);
+        if (rank && race.phase === 'finished') raceHud.showStandings(rank.list, race.totalLaps, raceMode === 'battle');
         const hex = (c: number) => `#${c.toString(16).padStart(6, '0')}`;
         minimap.draw([
           ...(pose ? [{ x: pose.x, z: pose.z, color: '#7fd4ff' }] : []),
