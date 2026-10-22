@@ -4,6 +4,8 @@
 
 ## 開発
 
+- オーナーへの回答は日本語で書く。
+
 - `npm test`（Vitest）、`npm run build`（型チェック + ビルド）を通してからコミットする。
 - 車両モデル・マップ解析など描画に依存しないロジックには単体テストを書く。
 - マルチプレイのサーバーは `server/`（Cloudflare Workers + Durable Objects）。`npm run server:dev` で手元に起動し、ゲームは `?server=http://127.0.0.1:8787` を付けて開く。
