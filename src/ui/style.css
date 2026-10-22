@@ -246,8 +246,13 @@ body.mode-assist .manual-only {
 #online {
   position: fixed;
   inset: 0;
-  display: grid;
-  place-items: center;
+  /* 画面に収まらないとき（スマホの横向きなど）はスクロールできるようにする */
+  display: flex;
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+  overscroll-behavior: contain;
+  padding: max(8px, env(safe-area-inset-top)) max(8px, env(safe-area-inset-right)) max(8px, env(safe-area-inset-bottom))
+    max(8px, env(safe-area-inset-left));
   background: rgba(0, 0, 0, 0.35);
   z-index: 10;
 }
@@ -258,6 +263,8 @@ body.mode-assist .manual-only {
 }
 
 .dialog-panel {
+  /* margin: auto で中央に置く（はみ出したときに上が切れないように） */
+  margin: auto;
   width: min(440px, calc(100vw - 32px));
   padding: 16px 20px;
   border-radius: 12px;
@@ -320,6 +327,48 @@ body.mode-assist .manual-only {
 
 #face-zoom {
   width: 100%;
+}
+
+.dialog-panel .check {
+  display: flex;
+  gap: 6px;
+  align-items: flex-start;
+  margin: 6px 0;
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+/* 横向きで高さが足りない画面（スマホの横向き）では、写真と操作を左右に並べる */
+@media (orientation: landscape) and (max-height: 560px) {
+  #face-editor .dialog-panel {
+    width: min(760px, calc(100vw - 16px));
+    padding: 10px 14px;
+  }
+
+  #face-editor .dialog-panel > .note {
+    margin: 2px 0 6px;
+  }
+
+  .face-body {
+    display: flex;
+    gap: 14px;
+    align-items: flex-start;
+  }
+
+  .face-body .face-crop {
+    flex: none;
+    width: min(46vw, calc(100dvh - 90px));
+    min-width: 200px;
+  }
+
+  .face-side {
+    flex: 1;
+    min-width: 0;
+  }
+
+  .face-side .note {
+    margin-top: 0;
+  }
 }
 
 .dialog-buttons {

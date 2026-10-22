@@ -1,5 +1,5 @@
 import { FaceLandmarker, FilesetResolver } from '@mediapipe/tasks-vision';
-import type { FacePoints } from './shape';
+import { type FacePoints, holeTriangles } from './shape';
 
 /**
  * 顔写真から顔の形（特徴点）を読み取る（Google の MediaPipe を使う）。
@@ -51,7 +51,7 @@ export async function detectFacePoints(image: HTMLCanvasElement): Promise<FacePo
   return face.flatMap((p) => [p.x * kx - pad / image.width, p.y * ky - pad / image.height, p.z * kx]);
 }
 
-/** 顔の立体の三角形（特徴点の番号を3つずつ） */
+/** 顔の立体の三角形（特徴点の番号を3つずつ）。目と口の穴もふさぐ */
 export function faceTriangles(): number[] {
-  return FaceLandmarker.FACE_LANDMARKS_TESSELATION.map((c) => c.start);
+  return [...FaceLandmarker.FACE_LANDMARKS_TESSELATION.map((c) => c.start), ...holeTriangles()];
 }

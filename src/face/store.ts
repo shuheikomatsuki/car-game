@@ -41,3 +41,22 @@ export function saveFaceShape(encoded: string | null): void {
     // 保存できなくても、そのセッションの間は使える
   }
 }
+
+const SHAPE_MODE_KEY = 'car-game:face-3d';
+
+/** 顔写真を立体にするか（外すと写真をそのまま貼る）。初期値は立体にする */
+export function loadFace3d(): boolean {
+  try {
+    return localStorage.getItem(SHAPE_MODE_KEY) !== '0';
+  } catch {
+    return true;
+  }
+}
+
+export function saveFace3d(enabled: boolean): void {
+  try {
+    localStorage.setItem(SHAPE_MODE_KEY, enabled ? '1' : '0');
+  } catch {
+    // 保存できなくても、そのセッションの間は使える
+  }
+}

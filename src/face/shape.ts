@@ -77,6 +77,28 @@ export function buildFaceMesh(points: FacePoints, triangles: ArrayLike<number>, 
   return { positions, uvs, indices };
 }
 
+/**
+ * MediaPipe の顔の三角形は、目と口の中が抜けている（穴の縁の特徴点を、目尻・口角から順に並べたもの）。
+ * そのままだと目と口が空洞に見えるので、この縁で穴をふさいで写真の目と口を貼る。
+ */
+export const FACE_HOLE_LOOPS: readonly (readonly number[])[] = [
+  // 右目（写真の左側）
+  [33, 7, 163, 144, 145, 153, 154, 155, 133, 173, 157, 158, 159, 160, 161, 246],
+  // 左目
+  [263, 249, 390, 373, 374, 380, 381, 382, 362, 398, 384, 385, 386, 387, 388, 466],
+  // 口（唇の内側）
+  [78, 95, 88, 178, 87, 14, 317, 402, 318, 324, 308, 415, 310, 311, 312, 13, 82, 81, 80, 191],
+];
+
+/** 穴の縁をふさぐ三角形（目尻・口角を要にした扇形。向きは buildFaceMesh がそろえる） */
+export function holeTriangles(loops: readonly (readonly number[])[] = FACE_HOLE_LOOPS): number[] {
+  const result: number[] = [];
+  for (const loop of loops) {
+    for (let i = 1; i + 1 < loop.length; i++) result.push(loop[0], loop[i], loop[i + 1]);
+  }
+  return result;
+}
+
 /** 保存用に小数を丸めて文字列にする（478 点で 10KB ほど） */
 export function encodeFacePoints(points: FacePoints): string {
   return JSON.stringify(points.map((v) => Math.round(v * 10000) / 10000));

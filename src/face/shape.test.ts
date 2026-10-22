@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { buildFaceMesh, decodeFacePoints, encodeFacePoints } from './shape';
+import { FACE_HOLE_LOOPS, buildFaceMesh, decodeFacePoints, encodeFacePoints, holeTriangles } from './shape';
 
 const R = 0.1;
 /** 正面を向いた簡単な「顔」: 中央（鼻）が手前に出た 3x3 の点 */
@@ -65,5 +65,30 @@ describe('face points storage', () => {
     expect(decodeFacePoints('{"a":1}')).toBeNull();
     expect(decodeFacePoints('[1,2]')).toBeNull();
     expect(decodeFacePoints('not json')).toBeNull();
+  });
+});
+
+describe('holeTriangles', () => {
+  it('fills each loop with a fan of triangles that uses every edge of the loop', () => {
+    const loop = [10, 11, 12, 13, 14];
+    const tris = holeTriangles([loop]);
+    expect(tris.length / 3).toBe(loop.length - 2);
+    const edges = new Set<string>();
+    for (let i = 0; i < tris.length; i += 3) {
+      const t = tris.slice(i, i + 3);
+      for (let k = 0; k < 3; k++) {
+        const [a, b] = [t[k], t[(k + 1) % 3]];
+        edges.add(`${Math.min(a, b)}-${Math.max(a, b)}`);
+      }
+    }
+    for (let i = 0; i < loop.length; i++) {
+      const [a, b] = [loop[i], loop[(i + 1) % loop.length]];
+      expect(edges.has(`${Math.min(a, b)}-${Math.max(a, b)}`)).toBe(true);
+    }
+  });
+
+  it('covers both eyes and the mouth', () => {
+    expect(FACE_HOLE_LOOPS).toHaveLength(3);
+    expect(holeTriangles().length / 3).toBe(14 + 14 + 18);
   });
 });

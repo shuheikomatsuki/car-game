@@ -32,6 +32,10 @@ const cases: [string, Command | null][] = [
   ['ユーターン', 'uturn'],
   ['引き返して', 'uturn'],
   ['もっと飛ばして', 'faster'],
+  ['右に寄って', 'shiftRight'],
+  ['ちょっと左', 'shiftLeft'],
+  ['もう少し右に寄せて', 'shiftRight'],
+  ['車線に戻って', 'keepLane'],
   ['こんにちは', null],
   ['', null],
 ];

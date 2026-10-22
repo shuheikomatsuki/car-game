@@ -36,6 +36,9 @@ const ACK: Record<string, Table> = {
   correctLeft: { lines: ['えっ、ここじゃないの！？', 'あ、その次ね！'], mood: 'nervous', priority: 3 },
   correctRight: { lines: ['えっ、ここじゃないの！？', 'あ、その次ね！'], mood: 'nervous', priority: 3 },
   uturn: { lines: ['くるっと戻るね！', '引き返すね！'], mood: 'happy', priority: 2 },
+  shiftLeft: { lines: ['ひだり寄りね', 'ちょっとひだりに寄せるね'], mood: 'neutral', priority: 2 },
+  shiftRight: { lines: ['みぎ寄りね', 'ちょっとみぎに寄せるね'], mood: 'neutral', priority: 2 },
+  keepLane: { lines: ['いつもの位置に戻るね', '車線の真ん中を走るね'], mood: 'neutral', priority: 2 },
 };
 
 const EVENTS: Record<string, Table> = {
@@ -45,6 +48,7 @@ const EVENTS: Record<string, Table> = {
   uturning: { lines: ['くるっとね…！', '大回りするよ〜'], mood: 'happy', priority: 1 },
   wrongTurn: { lines: ['あっ、間違えた…！', 'あれ？こっちじゃなかった…', 'ご、ごめん、逆に曲がっちゃった'], mood: 'sad', priority: 4 },
   tooLate: { lines: ['もう曲がっちゃった…！', 'えっ、もう遅いよぉ'], mood: 'sad', priority: 3 },
+  avoid: { lines: ['よけて通るね', 'ちょっと回り込むよ', 'すり抜けるよ〜'], mood: 'happy', priority: 2 },
   obstacle: { lines: ['前に何かあるよ', 'これ以上進めないよ？'], mood: 'nervous', priority: 3 },
   suddenBrake: { lines: ['わっ、なんか怖くて…', 'ご、ごめん、足が勝手に…'], mood: 'nervous', priority: 3 },
   stopped: { lines: ['ふぅ…', 'ちゃんとできた…！', 'セーフ…かな？'], mood: 'neutral', priority: 1 },

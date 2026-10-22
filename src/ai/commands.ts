@@ -12,7 +12,10 @@ export type Command =
   | 'straight'
   | 'correctLeft'
   | 'correctRight'
-  | 'uturn';
+  | 'uturn'
+  | 'shiftLeft'
+  | 'shiftRight'
+  | 'keepLane';
 
 /** 即座に反応すべき緊急の指示（音声認識の途中結果でも実行する） */
 export function isEmergency(c: Command): boolean {
@@ -38,6 +41,9 @@ export const COMMAND_BUTTONS: readonly CommandInfo[] = [
   { command: 'correctLeft', label: 'そこじゃなくて次を左', key: '9' },
   { command: 'correctRight', label: 'そこじゃなくて次を右', key: '0' },
   { command: 'uturn', label: 'Uターン', key: 'U' },
+  { command: 'shiftLeft', label: '左に寄って', key: 'Z' },
+  { command: 'shiftRight', label: '右に寄って', key: 'X' },
+  { command: 'keepLane', label: '車線に戻って', key: 'L' },
 ];
 
 /** 句読点・空白・長音を除き、カタカナをひらがなにそろえる（パターンもこの形で書く） */
@@ -55,6 +61,18 @@ const RIGHT = /(右|みぎ)/;
 const RULES: { command: Command | ((t: string) => Command | null); pattern: RegExp }[] = [
   { command: 'danger', pattern: /(危な|あぶな|あぶね|危険|きけん|ぶつかる)/ },
   { command: 'stop', pattern: /(止まって|とまって|止まれ|とまれ|止めて|とめて|すとっぷ|stop|停止|ていし|ぶれき)/ },
+  // 「車線に戻って」は Uターンの「戻って」より先に判定する
+  { command: 'keepLane', pattern: /(車線|しゃせん|元の位置|もとのいち|普通に走|ふつうに走)/ },
+  {
+    // 「右に寄って」「ちょっと左」: 曲がらずに走る位置だけ変える
+    command: (t) => {
+      const l = t.search(/(左|ひだり)(?!.*(左|ひだり))/);
+      const r = t.search(/(右|みぎ)(?!.*(右|みぎ))/);
+      if (l < 0 && r < 0) return null;
+      return l > r ? 'shiftLeft' : 'shiftRight';
+    },
+    pattern: /(寄って|よって|寄せて|よせて|寄り|より|ずれて|ちょっと|少し|すこし)/,
+  },
   { command: 'uturn', pattern: /(uた|ｕた|ゆた|ゆうた|引き返|ひきかえ|戻って|もどって|逆に行|反対に行)/ },
   {
     command: (t) => (LEFT.test(t) ? 'correctLeft' : RIGHT.test(t) ? 'correctRight' : null),

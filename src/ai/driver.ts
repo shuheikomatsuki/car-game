@@ -20,6 +20,18 @@ const TURN_ENTRY_SPEED = 4;
 /** 計画上の減速度 [m/s^2]（実際のブレーキ性能より十分小さくして余裕を持たせる） */
 const PLAN_DECEL = 2.5;
 
+/**
+ * 車線からの横のずれ [m]（+ が左）。左車線の中心が 0、道の中央線が -3、反対車線の中心が -6。
+ * 指示で寄せたり、障害物をよけたりするときに使う。
+ */
+const SHIFT_STEP = 1.5;
+const SHIFT_MIN = -6;
+const SHIFT_MAX = 1.5;
+/** 障害物をよけるときに試す横のずれ（道の中央寄り → 反対車線 → 路肩寄りの順に近いものから） */
+const AVOID_SHIFTS = [-3, -1.5, -4.5, 1.5, -6];
+/** よけた障害物を通り過ぎてから元の位置へ戻るまでの距離 [m] */
+const AVOID_CLEARANCE = 12;
+
 export type DriverState = 'parked' | 'driving' | 'stopping' | 'panic';
 
 export type DriverEvent =
@@ -30,6 +42,7 @@ export type DriverEvent =
   | { type: 'wrongTurn' }
   | { type: 'tooLate' }
   | { type: 'obstacle' }
+  | { type: 'avoid' }
   | { type: 'suddenBrake' }
   | { type: 'stopped' }
   | { type: 'collision' }
@@ -48,6 +61,11 @@ const TURN_OF: Partial<Record<Command, Turn>> = {
   correctRight: 'right',
 };
 
+const SHIFT_OF: Partial<Record<Command, number>> = {
+  shiftLeft: SHIFT_STEP,
+  shiftRight: -SHIFT_STEP,
+};
+
 const MIRROR: Partial<Record<Command, Command>> = {
   turnLeft: 'turnRight',
   turnRight: 'turnLeft',
@@ -57,6 +75,7 @@ const MIRROR: Partial<Record<Command, Command>> = {
  * 運転が苦手なキャラクター。指示と道路状況から、手動運転と同じ DriverInput を作る。
  * - 経路は RoutePlanner が左車線に沿って作る。交差点の方向は指示で決まる。
  * - ハンドルは Pure Pursuit（少し先の経路上の点に向けて舵を切る）、速度は目標速度への比例制御。
+ *   狙う点は車線から横にずらせる（指示で寄せる・障害物をよける・ゆるやかに揺らぐ）ので、線の上をなぞるだけにはならない。
  * - 性格（Personality）に応じて、反応の遅れ・聞き間違い・曲がり間違い・急ブレーキ・ふらつきが入る。
  */
 export class CharacterDriver {
@@ -75,6 +94,16 @@ export class CharacterDriver {
   /** 最後に見た車の速さ [m/s] */
   private lastSpeed = 0;
   private readonly wobblePhase: number;
+  /** 指示で寄せた横のずれ [m] */
+  private userShift = 0;
+  /** 障害物をよけるための横のずれ [m]（よけていなければ null） */
+  private avoidShift: number | null = null;
+  /** よけ終わる走行距離 */
+  private avoidUntil = 0;
+  /** いまハンドルで狙っている横のずれ [m]（目標へなめらかに近づける） */
+  private shift = 0;
+  /** 走った距離の合計 [m] */
+  private travelled = 0;
 
   constructor(
     map: ParsedMap,
@@ -117,6 +146,14 @@ export class CharacterDriver {
     this.localized = false;
     this.obstacleAhead = false;
     this.speedLevel = DEFAULT_SPEED_LEVEL;
+    this.userShift = 0;
+    this.avoidShift = null;
+    this.shift = 0;
+  }
+
+  /** いま狙っている車線からの横のずれ [m]（+ が左） */
+  get lateralShift(): number {
+    return this.shift;
   }
 
   /** 指示を受け取る。反応の遅れの後で実行される */
@@ -151,6 +188,7 @@ export class CharacterDriver {
 
     const v = car.forwardSpeed;
     this.lastSpeed = v;
+    this.travelled += Math.abs(v) * dt;
     if (!this.localized) {
       this.localized = this.planner.localize(car.x, car.z, car.yaw);
       if (!this.localized) return this.lost(v);
@@ -169,10 +207,14 @@ export class CharacterDriver {
       const horizon = Math.max(30, (v * v) / (2 * PLAN_DECEL) + 10);
       target = Math.min(this.speedKmh / 3.6, this.params.maxForwardSpeed * 0.9, this.planner.safeSpeed(horizon, PLAN_DECEL));
 
-      // 止まりきれる距離の少し先まで、経路上の点に向けて障害物を探す。
+      // 先に障害物があれば、通れる横の位置を探してよける
+      const pushing = this.time < this.pushThroughUntil;
+      if (!pushing) this.planAvoidance(car, sense, v);
+
+      // 止まりきれる距離の少し先まで、狙っている走行ラインに沿って障害物を探す。
       // 一度止まったら少し余裕を持たせて、近づく→止まる→動くを繰り返さないようにする
       const stopDistance = (v * v) / (2 * 4) + 4 + (this.obstacleAhead ? 1.5 : 0);
-      const blocked = this.time > this.pushThroughUntil && this.senseAlongRoute(car, sense, stopDistance);
+      const blocked = !pushing && this.senseAlongRoute(car, sense, stopDistance, this.targetShift()) !== null;
       if (blocked && !this.obstacleAhead) this.events.push({ type: 'obstacle' });
       this.obstacleAhead = blocked;
       if (blocked) target = 0;
@@ -182,6 +224,7 @@ export class CharacterDriver {
       if (this.time < this.suddenBrakeUntil) target = 0;
     }
 
+    this.updateShift(dt, v);
     const input = this.speedControl(target, v);
     input.steer = this.stateValue === 'parked' && Math.abs(v) < 0.3 ? 0 : this.steering(car);
 
@@ -240,6 +283,15 @@ export class CharacterDriver {
           this.events.push({ type: 'lost' });
         }
         break;
+      case 'shiftLeft':
+      case 'shiftRight':
+        this.userShift = Math.max(SHIFT_MIN, Math.min(SHIFT_MAX, this.userShift + SHIFT_OF[command]!));
+        ack();
+        break;
+      case 'keepLane':
+        this.userShift = 0;
+        ack();
+        break;
       case 'correctLeft':
       case 'correctRight': {
         const result = this.planner.correct(TURN_OF[command]!);
@@ -296,19 +348,69 @@ export class CharacterDriver {
     return input;
   }
 
-  private senseAlongRoute(car: CarSnapshot, sense: ObstacleSensor, distance: number): boolean {
+  /** ハンドルで目指す横のずれ（よけている間はそちらを優先） */
+  private targetShift(): number {
+    return this.avoidShift ?? this.userShift;
+  }
+
+  /**
+   * 障害物をよける位置を決める。いまの走行ラインの先に障害物があれば、通れる横の位置へずらす。
+   * 通り過ぎたら元の位置へ戻る（戻る先がまだふさがっていれば、もう少しそのまま進む）。
+   */
+  private planAvoidance(car: CarSnapshot, sense: ObstacleSensor, v: number): void {
+    const probe = Math.max(14, v * 1.8 + 8);
+    if (this.avoidShift !== null && this.travelled > this.avoidUntil) {
+      if (this.senseAlongRoute(car, sense, probe, this.userShift) === null) this.avoidShift = null;
+      else this.avoidUntil = this.travelled + 4;
+    }
+    const current = this.targetShift();
+    const hit = this.senseAlongRoute(car, sense, probe, current);
+    if (hit === null) return;
+    const candidates = AVOID_SHIFTS.filter((c) => Math.abs(c - current) >= 1).sort(
+      (a, b) => Math.abs(a - this.userShift) - Math.abs(b - this.userShift),
+    );
+    for (const c of candidates) {
+      if (this.senseAlongRoute(car, sense, probe, c) !== null) continue;
+      if (this.avoidShift === null) this.events.push({ type: 'avoid' });
+      this.avoidShift = c;
+      this.avoidUntil = this.travelled + hit + AVOID_CLEARANCE;
+      return;
+    }
+  }
+
+  /** 狙う横のずれを目標へなめらかに近づける。性格に応じて、ゆっくり左右に揺らぐ */
+  private updateShift(dt: number, v: number): void {
+    const wander = Math.min(0.6, this.personality.steerWobble * 6) * Math.sin(this.time * 0.23 + this.wobblePhase * 3);
+    const goal = this.targetShift() + (this.avoidShift === null ? wander : 0);
+    const rate = (0.8 + 0.25 * Math.abs(v)) * dt;
+    this.shift += Math.max(-rate, Math.min(rate, goal - this.shift));
+  }
+
+  /** 経路上の距離 s の点を、進行方向の左へ shift [m] ずらした点 */
+  private shiftedPoint(s: number, shift: number): { x: number; z: number } {
+    const p = this.planner.pointAt(s);
+    if (shift === 0) return p;
+    const a = this.planner.pointAt(s - 1);
+    const b = this.planner.pointAt(s + 1);
+    const len = Math.hypot(b.x - a.x, b.z - a.z) || 1;
+    // 進行方向 (dx, dz) の左は (dz, -dx)
+    return { x: p.x + ((b.z - a.z) / len) * shift, z: p.z - ((b.x - a.x) / len) * shift };
+  }
+
+  /** 横に shift ずらした走行ラインの distance [m] 先へ向けて障害物を探し、見つかればその距離 */
+  private senseAlongRoute(car: CarSnapshot, sense: ObstacleSensor, distance: number, shift: number): number | null {
     const front = 2.25;
-    const target = this.planner.pointAt(this.planner.progress + front + distance);
+    const target = this.shiftedPoint(this.planner.progress + front + distance, shift);
     const yaw = Math.atan2(target.x - car.x, target.z - car.z);
     const hit = sense(yaw, distance);
-    return hit !== null && hit < distance;
+    return hit !== null && hit < distance ? hit : null;
   }
 
   /** Pure Pursuit: 少し先の経路上の点へ向かうように舵を切る */
   private steering(car: CarSnapshot): number {
     const v = Math.max(0, car.forwardSpeed);
     const lookahead = Math.min(12, Math.max(4, 3 + v * 0.6));
-    const target = this.planner.pointAt(this.planner.progress + lookahead);
+    const target = this.shiftedPoint(this.planner.progress + lookahead, this.shift);
     const fx = Math.sin(car.yaw);
     const fz = Math.cos(car.yaw);
     const dx = target.x - car.x;
