@@ -74,8 +74,19 @@ export class SoundSystem {
   /** ユーザー操作のイベント内で呼ぶ。2回目以降は何もしない */
   start(): void {
     if (this.voices) {
-      if (this.voices.ctx.state === 'suspended') void this.voices.ctx.resume();
+      // iOS では音声読み上げや着信の後に 'interrupted' になることがあるので、running 以外は再開を試みる
+      if (this.voices.ctx.state !== 'running') void this.voices.ctx.resume().catch(() => {});
       return;
+    }
+    // iPhone はマナーモード（消音スイッチ）だと Web Audio の音が消える（読み上げの声は鳴る）。
+    // 再生用の音声セッションにすると、動画アプリと同じく消音スイッチに関係なく鳴る（iOS 17 以降）
+    const session = (navigator as unknown as { audioSession?: { type: string } }).audioSession;
+    if (session) {
+      try {
+        session.type = 'playback';
+      } catch {
+        // 対応していなければそのまま
+      }
     }
     const Ctor = window.AudioContext ?? (window as unknown as { webkitAudioContext?: typeof AudioContext }).webkitAudioContext;
     if (!Ctor) return;
@@ -119,6 +130,7 @@ export class SoundSystem {
     screechSrc.connect(screechFilter).connect(screechGain).connect(master);
     screechSrc.start();
 
+    if (ctx.state !== 'running') void ctx.resume().catch(() => {});
     this.voices = { ctx, master, engineOsc, engineSub, engineFilter, engineGain, screechGain, noise };
   }
 

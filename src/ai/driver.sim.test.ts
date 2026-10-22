@@ -160,16 +160,38 @@ describe('CharacterDriver on the physics world', () => {
     expect(sim.distance).toBeGreaterThan(700);
   });
 
-  it('stops for cones in the lane and pushes through slowly when told to start again', () => {
+  it('steers around cones in the lane without stopping, then gets back into the lane', () => {
     const sim = createSim(TOWN_MAP);
     sim.say('start');
-    sim.run(25);
-    expect(sim.events.some((e) => e.type === 'obstacle')).toBe(true);
-    expect(Math.abs(sim.car.snapshot().forwardSpeed)).toBeLessThan(0.5);
-    const xBefore = sim.car.snapshot().x;
+    // コーンはスタート地点の東、x = 134..146 にある（左車線は z = 77、コーンは z = 77.5 と 82.5）
+    const zAtCones: number[] = [];
+    for (let t = 0; t < 25 * 10; t++) {
+      sim.run(0.1);
+      const { x, z } = sim.car.snapshot();
+      if (x > 132 && x < 148 && z < 90) zAtCones.push(z);
+    }
+    expect(sim.events.some((e) => e.type === 'avoid')).toBe(true);
+    expect(sim.events.some((e) => e.type === 'obstacle')).toBe(false);
+    expect(sim.events.filter((e) => e.type === 'collision')).toEqual([]);
+    expect(sim.maxImpact).toBeLessThan(1);
+    expect(zAtCones.length).toBeGreaterThan(0);
+    // 車線のまま（z ≒ 77）ではなく、横にずれて通った
+    expect(zAtCones.every((z) => Math.abs(z - 77) > 1)).toBe(true);
+    expect(Math.abs(sim.driver.lateralShift)).toBeLessThan(1);
+  });
+
+  it('drives off to the side when told to, and back into the lane', () => {
+    const sim = createSim(SCHOOL_NO_CONES);
     sim.say('start');
     sim.run(4);
-    expect(sim.car.snapshot().x).toBeGreaterThan(xBefore + 1);
+    sim.say('shiftRight');
+    sim.say('shiftRight');
+    sim.run(4);
+    expect(sim.driver.lateralShift).toBeLessThan(-2.5);
+    sim.say('keepLane');
+    sim.run(4);
+    expect(Math.abs(sim.driver.lateralShift)).toBeLessThan(0.7);
+    expect(sim.events.filter((e) => e.type === 'collision')).toEqual([]);
   });
 
   it('stops quickly on "danger" even with a clumsy personality', () => {

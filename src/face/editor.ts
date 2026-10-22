@@ -15,11 +15,23 @@ const MAX_ZOOM = 8;
 
 export interface FaceEditorHandlers {
   /**
-   * 決定したとき（null は顔写真をやめたとき）。
+   * 決定したとき（null は顔写真をはずしたとき）。
    * points は写真から読み取った顔の形（読み取れなかったときは null）
    */
   onApply: (texture: HTMLCanvasElement | null, points: FacePoints | null) => void;
   onOpenChange: (open: boolean) => void;
+  /** 「立体にする」を切り替えたとき（いま貼っている顔にもすぐ反映する） */
+  onShapeModeChange: (enabled: boolean) => void;
+}
+
+/** 顔写真（composeFaceTexture で作ったもの）から顔の形を読み取る。読み込めない・読み取れないときは null */
+export async function readFacePoints(texture: HTMLCanvasElement): Promise<FacePoints | null> {
+  try {
+    const { detectFacePoints } = await import('./landmarks');
+    return await detectFacePoints(texture);
+  } catch {
+    return null;
+  }
 }
 
 /**
@@ -35,13 +47,19 @@ export class FaceEditor {
   private readonly ok = el<HTMLButtonElement>('face-ok');
   private readonly empty = el('face-empty');
   private readonly status = el('face-status');
+  private readonly shape3d = el<HTMLInputElement>('face-3d');
   private busy = false;
   private image: ImageBitmap | null = null;
   private view: CropView = { scale: 1, x: 0, y: 0 };
   private drag: { id: number; x: number; y: number } | null = null;
   private openValue = false;
 
-  constructor(private readonly handlers: FaceEditorHandlers) {
+  constructor(
+    private readonly handlers: FaceEditorHandlers,
+    shape3d = true,
+  ) {
+    this.shape3d.checked = shape3d;
+    this.shape3d.addEventListener('change', () => this.handlers.onShapeModeChange(this.shape3d.checked));
     this.canvas.width = this.canvas.height = FRAME;
     this.zoom.max = String(ZOOM_STEPS);
     this.file.addEventListener('change', () => {
@@ -118,7 +136,7 @@ export class FaceEditor {
       this.zoom.value = '0';
       this.draw();
       // 決定を押したときに待たせないよう、顔の形を読み取る仕組みをいまのうちに読み込んでおく
-      void import('./landmarks').then((m) => m.preload()).catch(() => undefined);
+      if (this.shape3d.checked) void import('./landmarks').then((m) => m.preload()).catch(() => undefined);
     } catch {
       this.empty.textContent = 'この画像は読み込めませんでした。JPEG や PNG の写真を選んでください。';
     }
@@ -128,15 +146,12 @@ export class FaceEditor {
   private async apply(): Promise<void> {
     if (!this.image || this.busy) return;
     const texture = composeFaceTexture(this.image, this.view, FRAME);
-    this.setBusy(true);
     let points: FacePoints | null = null;
-    try {
-      const { detectFacePoints } = await import('./landmarks');
-      points = await detectFacePoints(texture);
-    } catch {
-      // 読み込めない・読み取れないときは、これまでどおり平らに貼る
+    if (this.shape3d.checked) {
+      this.setBusy(true);
+      points = await readFacePoints(texture);
+      this.setBusy(false);
     }
-    this.setBusy(false);
     this.handlers.onApply(texture, points);
     this.close();
   }
@@ -146,6 +161,7 @@ export class FaceEditor {
     this.status.textContent = busy ? '顔の形を読み取っています…（初回は少し時間がかかります）' : '';
     for (const b of this.root.querySelectorAll('button')) b.disabled = busy;
     this.file.disabled = busy;
+    this.shape3d.disabled = busy;
     if (!busy) this.draw();
   }
 

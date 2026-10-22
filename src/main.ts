@@ -3,9 +3,9 @@ import { CHARACTER_NAME, Dialogue, type DialogueTrigger } from './ai/dialogue';
 import { CharacterDriver } from './ai/driver';
 import { PERSONALITIES, createRng } from './ai/personality';
 import { SoundSystem } from './audio/sound';
-import { FaceEditor } from './face/editor';
+import { FaceEditor, readFacePoints } from './face/editor';
 import { buildFaceMesh, decodeFacePoints, encodeFacePoints, type FacePoints } from './face/shape';
-import { loadFace, loadFaceShape, saveFace, saveFaceShape } from './face/store';
+import { loadFace, loadFace3d, loadFaceShape, saveFace, saveFace3d, saveFaceShape } from './face/store';
 import { GamepadInput, KeyboardInput, PAD_BUTTON, mergeInputs } from './core/input';
 import { FixedStepLoop } from './core/loop';
 import { Level } from './game/level';
@@ -231,33 +231,63 @@ async function main() {
       character.setFaceShape(null);
     }
   };
+  /** いま貼っている顔写真（立体にするかを切り替えたときに、形を読み取り直すのに使う） */
+  let currentFace: HTMLCanvasElement | HTMLImageElement | null = null;
   const savedFace = loadFace();
   if (savedFace) {
     const img = new Image();
-    img.onload = () => character.setFace(img);
+    img.onload = () => {
+      currentFace = img;
+      character.setFace(img);
+    };
     img.src = savedFace;
-    void applyFaceShape(decodeFacePoints(loadFaceShape()));
+    void applyFaceShape(loadFace3d() ? decodeFacePoints(loadFaceShape()) : null);
   }
-  const faceEditor = new FaceEditor({
-    onApply: (texture, points) => {
-      character.setFace(texture);
-      void applyFaceShape(points);
-      const saved = saveFace(texture ? texture.toDataURL('image/jpeg', 0.9) : null);
-      saveFaceShape(points ? encodeFacePoints(points) : null);
-      if (texture && !saved) hud.toast('このブラウザでは保存できないため、ページを閉じるまでの間だけ使います');
-      else if (texture && !points) hud.toast('顔の形を読み取れなかったので、写真をそのまま貼りました');
-      else hud.toast(texture ? '顔写真を立体の顔にしました' : '顔写真をやめました');
+  const faceEditor = new FaceEditor(
+    {
+      onApply: (texture, points) => {
+        currentFace = texture;
+        character.setFace(texture);
+        void applyFaceShape(points);
+        const saved = saveFace(texture ? texture.toDataURL('image/jpeg', 0.9) : null);
+        saveFaceShape(points ? encodeFacePoints(points) : null);
+        if (texture && !saved) hud.toast('このブラウザでは保存できないため、ページを閉じるまでの間だけ使います');
+        else if (texture && !points && loadFace3d()) hud.toast('顔の形を読み取れなかったので、写真をそのまま貼りました');
+        else if (texture) hud.toast(points ? '顔写真を立体の顔にしました' : '顔写真を貼りました');
+        else hud.toast('顔写真をはずしました');
+      },
+      onShapeModeChange: async (enabled) => {
+        saveFace3d(enabled);
+        if (!currentFace) return;
+        if (!enabled) {
+          void applyFaceShape(null);
+          saveFaceShape(null);
+          hud.toast('写真をそのまま貼る顔にしました');
+          return;
+        }
+        hud.toast('顔の形を読み取っています…');
+        const canvas = document.createElement('canvas');
+        canvas.width = currentFace.width;
+        canvas.height = currentFace.height;
+        canvas.getContext('2d')!.drawImage(currentFace, 0, 0);
+        const points = await readFacePoints(canvas);
+        if (!loadFace3d()) return;
+        void applyFaceShape(points);
+        saveFaceShape(points ? encodeFacePoints(points) : null);
+        hud.toast(points ? '顔写真を立体の顔にしました' : '顔の形を読み取れませんでした');
+      },
+      onOpenChange: (open) => {
+        keyboard.enabled = !open;
+        touch.enabled = !open;
+        // 貼った顔を確認しやすいよう、顔を映す視点にする
+        if (open && assist) {
+          cameraRig.select('faceCam');
+          hud.setCameraName(cameraRig.modeName);
+        }
+      },
     },
-    onOpenChange: (open) => {
-      keyboard.enabled = !open;
-      touch.enabled = !open;
-      // 貼った顔を確認しやすいよう、顔を映す視点にする
-      if (open && assist) {
-        cameraRig.select('faceCam');
-        hud.setCameraName(cameraRig.modeName);
-      }
-    },
-  });
+    loadFace3d(),
+  );
   const openFaceEditor = () => assist && faceEditor.open();
   const faceButton = document.getElementById('face-button')!;
   faceButton.addEventListener('mousedown', (e) => e.preventDefault());
@@ -427,6 +457,7 @@ async function main() {
   window.addEventListener('pointerdown', unlockAudio);
   window.addEventListener('pointerup', unlockAudio);
   window.addEventListener('touchend', unlockAudio);
+  window.addEventListener('click', unlockAudio);
 
   hud.setCameraName(cameraRig.modeName);
   hud.setMapName(level.def.name);
