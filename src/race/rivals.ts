@@ -17,6 +17,11 @@ export interface Rival {
   course: string;
   /** 強さ（NPC_LEVELS の id） */
   level: string;
+  /**
+   * メニューに出す写真（public/ からのパス。例: 'rivals/takumi.jpg'）。書かなければ名前の頭文字の絵を出す。
+   * 縦長（3:4 くらい）の画像がよい
+   */
+  photo?: string;
 }
 
 /** 弱い順 */

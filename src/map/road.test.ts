@@ -159,6 +159,14 @@ describe('the four-section mountain pass', () => {
     expect(road.heightAt(road.length) - road.heightAt(road.pieceStart[bridge + 1])).toBeGreaterThan(80);
   });
 
+  it('runs on a flat road for a while after the climb before the U-turn', () => {
+    // 頂上の広場の手前 150m は、ほとんど平ら
+    for (let s = road.length - 150; s < road.length; s += 5) {
+      expect(Math.abs(road.heightAt(s + 5) - road.heightAt(s)) / 5).toBeLessThan(0.01);
+    }
+    expect(road.heightAt(road.length) - road.heightAt(road.length - 300)).toBeGreaterThan(8);
+  });
+
   it('has a long tunnel in a corner', () => {
     const tunnel = pieces.findIndex((p) => p.tunnel && p.arc);
     expect(tunnel).toBeGreaterThan(0);

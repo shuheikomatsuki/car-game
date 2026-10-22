@@ -26,6 +26,7 @@ export class CameraRig {
   private readonly lookAt = new THREE.Vector3();
   private initialized = false;
   private shake = 0;
+  private orbitAngle = 0;
 
   constructor(aspect: number) {
     this.camera = new THREE.PerspectiveCamera(CHASE_FOV, aspect, 0.3, 1500);
@@ -60,6 +61,24 @@ export class CameraRig {
   /** 衝突時の揺れ。strength は衝突の強さ [m/s] */
   addShake(strength: number): void {
     this.shake = Math.min(0.5, this.shake + strength * 0.03);
+  }
+
+  /**
+   * タイトル・メニューの後ろの景色: 止まっている車の周りをゆっくり回って見せる。
+   * 走りに戻ったら update で、いまの視点へ滑らかに戻る
+   */
+  orbit(car: CarSnapshot, frameDt: number): void {
+    this.orbitAngle += frameDt * 0.12;
+    const a = car.yaw + 2.4 + this.orbitAngle;
+    this.position.set(car.x + Math.sin(a) * 7.5, car.y + 2.1, car.z + Math.cos(a) * 7.5);
+    this.lookAt.set(car.x, car.y + 0.8, car.z);
+    this.camera.position.copy(this.position);
+    this.camera.lookAt(this.lookAt);
+    if (this.camera.fov !== 40 || this.camera.near !== 0.3) {
+      this.camera.fov = 40;
+      this.camera.near = 0.3;
+      this.camera.updateProjectionMatrix();
+    }
   }
 
   update(car: CarSnapshot, frameDt: number): void {

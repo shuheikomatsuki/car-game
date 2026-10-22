@@ -631,14 +631,14 @@ export const VALLEY_UP_MAP = roadMap('valley-up', '橋とトンネルの峠（�
 export const VALLEY_DOWN_MAP = roadMap('valley-down', '橋とトンネルの峠（ダウンヒル）', reverseRoad(VALLEY_ROAD, 60));
 
 /**
- * 八方ヶ原のような、4 つの区間に分かれた峠の往復（オリジナル・道路 3.3km、往復 6.4km）。中心線で描く道路
+ * 八方ヶ原のような、4 つの区間に分かれた峠の往復（オリジナル・道路 3.5km、往復 6.8km）。中心線で描く道路
  * （src/map/road.ts）。ふもとからスタートし、頂上の広場で U ターンして、同じ道を戻ってきたらゴール。
  *
  * - 第1セクション: 道幅の狭い古い道。木が道路のすぐ脇まで茂り、コーナーの先が見えない
  * - 第2セクション: 拡幅工事を終えた広くきれいな道。ただし路面は荒れていて、細かく波打って車が跳ねる
  * - ハイポイントコーナーを過ぎた第3セクション: きついダウンヒル。その先で高さ 55m の谷に架かる大きな橋を渡る
  * - 第4セクション: きついヒルクライム（道幅 10m で追い抜きやすい）。330° 回り込むループ橋（自分の下をくぐってきた道の上を越える）、
- *   カーブの途中にある 240m のトンネルを抜け、さらに上って頂上の広場へ
+ *   カーブの途中にある 240m のトンネルを抜け、さらに上り切った先の平らな道を 200m ほど走って頂上の広場へ
  */
 export const HAPPOGAHARA_MAP: MapDefinition = {
   id: 'happogahara',
@@ -709,6 +709,10 @@ export const HAPPOGAHARA_MAP: MapDefinition = {
       { straight: 50, width: 10 },
       { arc: { radius: 50, turn: -60 }, width: 10 },
       { straight: 60, h: 95, width: 10 },
+      // 頂上: 登り切った後、少し平らな道を走ってから U ターンの広場へ
+      { straight: 50, h: 96, width: 10 },
+      { arc: { radius: 160, turn: 25 }, width: 10 },
+      { straight: 90, h: 96, width: 10 },
     ],
   },
 };

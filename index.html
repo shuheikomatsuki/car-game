@@ -26,7 +26,7 @@
       <div><kbd>W</kbd>/<kbd>↑</kbd> アクセル　<kbd>S</kbd>/<kbd>↓</kbd> ブレーキ・後退</div>
       <div><kbd>A</kbd><kbd>D</kbd>/<kbd>←</kbd><kbd>→</kbd> ハンドル</div>
       <div><kbd>C</kbd> カメラ切替 <span id="camera-name"></span></div>
-      <div><kbd>Esc</kbd> メニュー（走り方・コース・車を選ぶ）</div>
+      <div><kbd>Esc</kbd> ポーズ・メニュー（走り方・コース・車を選ぶ）</div>
       <div><kbd>L</kbd> ランキング（ゴーストと対戦）</div>
       <div><kbd>T</kbd> タイムアタック　<kbd>Y</kbd> NPCと対戦（<kbd>K</kbd> 強さ・<kbd>N</kbd> コース）</div>
       <div><kbd>B</kbd> ライバルとバトル（相手は <kbd>Esc</kbd> メニューで選ぶ）</div>
@@ -84,21 +84,32 @@
       </div>
     </div>
     <div id="menu" class="hidden" role="dialog" aria-label="メニュー">
-      <div class="dialog-panel">
-        <h2 id="menu-title">メニュー</h2>
-        <ol id="menu-steps"></ol>
-        <p id="menu-info" class="note"></p>
-        <div id="menu-groups"></div>
-        <div id="menu-actions"></div>
-        <p id="touch-install" class="note hidden">
-          アドレスバーを消して遊ぶには、Safari の共有ボタン（□に↑）から「ホーム画面に追加」を選び、追加したアイコンから開いてください。
-        </p>
-        <div class="dialog-buttons">
-          <button id="menu-back" class="hidden">戻る</button>
-          <span class="spacer"></span>
-          <button id="menu-close">閉じる</button>
-          <button id="menu-next" class="primary hidden">次へ</button>
+      <div id="menu-title-screen" class="hidden">
+        <div class="title-stripes" aria-hidden="true"><i></i><i></i><i></i></div>
+        <div class="title-logo">
+          <p class="title-kicker">3D DRIVING · TOUGE / CIRCUIT / SHUTOKO</p>
+          <h1>CAR<span>GAME</span></h1>
+          <p class="title-sub">峠・サーキット・首都高を走る</p>
         </div>
+        <p class="title-press"><span class="pc">PRESS ANY KEY</span><span class="tap">TAP TO START</span></p>
+      </div>
+      <div id="menu-frame" class="hidden">
+        <header class="menu-head">
+          <p id="menu-crumb"></p>
+          <h2><span id="menu-title-en"></span><span id="menu-title"></span></h2>
+          <ol id="menu-steps"></ol>
+          <p id="menu-summary"></p>
+        </header>
+        <div class="menu-body">
+          <div id="menu-list"></div>
+          <aside id="menu-detail"></aside>
+        </div>
+        <footer class="menu-foot">
+          <button id="menu-back" type="button" class="ghost">戻る</button>
+          <p class="menu-keys"><kbd>↑</kbd><kbd>↓</kbd> 選ぶ <kbd>Enter</kbd> 決定 <kbd>Esc</kbd> 戻る</p>
+          <span class="spacer"></span>
+          <button id="menu-next" type="button" class="go hidden">次へ</button>
+        </footer>
       </div>
     </div>
     <div id="race" class="hidden">
