@@ -72,7 +72,8 @@ export class RaceHud {
     refLaps?: readonly number[];
     finished: boolean;
   }): void {
-    this.lapEl.textContent = `LAP ${s.lap}/${s.totalLaps}`;
+    // 一本道のコース（1本だけ走る）では周回を出さない
+    this.lapEl.textContent = s.totalLaps > 1 ? `LAP ${s.lap}/${s.totalLaps}` : '';
     this.timeEl.textContent = formatTime(s.time);
     this.bestEl.textContent = s.best === null ? 'ベスト --:--.--' : `ベスト ${formatTime(s.best)}`;
     if (s.laps.length !== this.shownLaps || (s.finished && this.currentLapEl)) this.renderLaps(s.laps, s.refLaps, s.finished, s.totalLaps);
@@ -82,6 +83,11 @@ export class RaceHud {
   /** これまでの周回タイムの表。自己ベストの同じ周より速ければ緑、遅ければ赤で差を出す */
   private renderLaps(laps: readonly number[], ref: readonly number[] | undefined, finished: boolean, totalLaps: number): void {
     this.shownLaps = laps.length;
+    if (totalLaps <= 1) {
+      this.lapsEl.innerHTML = '';
+      this.currentLapEl = null;
+      return;
+    }
     const fastest = Math.min(...laps);
     const rows = laps.map((t, i) => {
       const r = ref?.[i];

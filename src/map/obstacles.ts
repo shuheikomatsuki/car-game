@@ -1,4 +1,4 @@
-import { type ParsedMap, type SignType, DIR_YAW, roadShape, tileCenter } from './tilemap';
+import { type ParsedMap, type SignType, DIR_OFFSET, DIR_YAW, roadShape, tileCenter } from './tilemap';
 
 /**
  * マップから障害物の配置を求める。物理（衝突体）と描画（メッシュ）の両方がこの結果を使う。
@@ -103,6 +103,25 @@ export function buildObstacles(map: ParsedMap): MapObstacles {
     for (const tile of map.tiles) {
       if (tile.kind !== 'road' || roadShape(tile) !== 'curve') continue;
       boxes.push(...curveGuardrail(map, tile.col, tile.row, tile.connections, half + rw + 0.8));
+    }
+    // 行き止まり（一本道のコースの端）は、道路の端をガードレールでふさぐ
+    for (const tile of map.tiles) {
+      if (tile.kind !== 'road' || roadShape(tile) !== 'deadEnd') continue;
+      const { x, z } = tileCenter(map, tile.col, tile.row);
+      const back = DIR_OFFSET[tile.connections[0]];
+      const d = rw + 1;
+      boxes.push({
+        kind: 'guardrail',
+        x: x - back.dc * d,
+        y: GUARDRAIL_HEIGHT / 2,
+        z: z - back.dr * d,
+        hx: 0.15,
+        hy: GUARDRAIL_HEIGHT / 2,
+        hz: rw + 1,
+        // ガードレールは長さがローカル +Z。道路を横切る向きにする
+        yaw: back.dc !== 0 ? 0 : Math.PI / 2,
+        variant: 0,
+      });
     }
   }
 

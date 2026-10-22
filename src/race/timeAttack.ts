@@ -42,7 +42,8 @@ export class TimeAttack {
     readonly course: Course,
     readonly totalLaps: number,
   ) {
-    this.progress = course.tiles.length - 1;
+    // 周回コースはスタートラインの手前（最後のタイル）から、一本道のコースはコースの手前（-1）から
+    this.progress = course.closed ? course.tiles.length - 1 : -1;
     this.events.push({ type: 'count', value: COUNTDOWN_SECONDS });
   }
 
@@ -81,6 +82,10 @@ export class TimeAttack {
   }
 
   private trackProgress(x: number, z: number): void {
+    if (!this.course.closed) {
+      this.trackOpen(x, z);
+      return;
+    }
     const n = this.course.tiles.length;
     const index = this.course.indexAt(x, z);
     if (index < 0 || index === this.progress) return;
@@ -100,6 +105,23 @@ export class TimeAttack {
       this.started = true;
       return;
     }
+    this.completeLap();
+  }
+
+  /** 一本道のコース: スタートからゴールのタイルまで順にたどったらゴール */
+  private trackOpen(x: number, z: number): void {
+    const index = this.course.indexAt(x, z);
+    if (index < 0 || index <= this.progress) return;
+    if (index - this.progress > MAX_SKIP) {
+      this.setOffCourse(true);
+      return;
+    }
+    this.setOffCourse(false);
+    this.progress = index;
+    if (index >= this.course.finishIndex) this.completeLap();
+  }
+
+  private completeLap(): void {
     const lapTime = this.time - this.lapStart;
     this.laps.push(lapTime);
     this.lapStart = this.time;
@@ -113,7 +135,7 @@ export class TimeAttack {
 
   private checkDirection(dt: number, car: { vx: number; vz: number }): void {
     const speed = Math.hypot(car.vx, car.vz);
-    const dir = this.course.directionAt(this.progress);
+    const dir = this.course.directionAt(Math.max(0, this.progress));
     const backwards = speed > 3 && (car.vx * dir.x + car.vz * dir.z) / speed < -0.5;
     this.wrongWayTime = backwards ? this.wrongWayTime + dt : 0;
     this.setWrongWay(this.wrongWayTime >= WRONG_WAY_SECONDS || (this.wrongWay && backwards));

@@ -38,9 +38,9 @@ export class GameScene {
   }
 
   /** 太陽光（影の範囲）を注目点に追従させる */
-  followTarget(x: number, z: number): void {
-    this.sun.target.position.set(x, 0, z);
-    this.sun.position.set(x + SUN_OFFSET.x, SUN_OFFSET.y, z + SUN_OFFSET.z);
+  followTarget(x: number, z: number, y = 0): void {
+    this.sun.target.position.set(x, y, z);
+    this.sun.position.set(x + SUN_OFFSET.x, y + SUN_OFFSET.y, z + SUN_OFFSET.z);
   }
 
   resize(camera: THREE.PerspectiveCamera): void {

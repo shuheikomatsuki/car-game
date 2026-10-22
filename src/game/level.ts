@@ -1,10 +1,11 @@
 import * as THREE from 'three';
 import { buildObstacles } from '../map/obstacles';
+import { type Terrain, buildTerrain } from '../map/terrain';
 import { DIR_YAW, type MapDefinition, type ParsedMap, parseMap, tileCenter } from '../map/tilemap';
 import { type Course, buildCourse } from '../race/course';
 import { buildMapMesh, createConeMesh } from '../render/mapMesh';
-import { buildStartLine } from '../render/raceMesh';
-import { Car } from '../sim/car';
+import { buildRaceLines } from '../render/raceMesh';
+import { Car, type CarSnapshot } from '../sim/car';
 import { type PhysicsWorld, type Rapier, createPhysicsWorld } from '../sim/physics';
 import { type ObstacleSensor, createObstacleSensor } from '../sim/sensors';
 
@@ -20,6 +21,8 @@ export class Level {
   readonly sense: ObstacleSensor;
   /** レース用のマップなら周回コース */
   readonly course: Course | null;
+  /** 高低差のあるマップなら地形 */
+  readonly terrain: Terrain | null;
   readonly group = new THREE.Group();
   private readonly coneMeshes: THREE.Mesh[];
 
@@ -31,17 +34,18 @@ export class Level {
     this.map = map;
     const obstacles = buildObstacles(map);
     this.physics = createPhysicsWorld(rapier, obstacles);
+    this.terrain = buildTerrain(map);
     const yaw = DIR_YAW[def.start.heading];
     this.spawn = { ...tileCenter(map, def.start.col, def.start.row), yaw };
     // 左方向 = (cos yaw, -sin yaw)
     const lane = 3;
     this.laneSpawn = { x: this.spawn.x + Math.cos(yaw) * lane, z: this.spawn.z - Math.sin(yaw) * lane, yaw };
-    this.car = new Car(this.physics, this.spawn);
+    this.car = this.createCar(this.spawn);
     this.sense = createObstacleSensor(this.physics, this.car);
 
-    this.group.add(buildMapMesh(map, obstacles));
+    this.group.add(buildMapMesh(map, obstacles, this.terrain));
     this.course = def.race ? buildCourse(map) : null;
-    if (this.course) this.group.add(buildStartLine(this.course));
+    if (this.course) this.group.add(buildRaceLines(this.course, this.terrain));
     this.coneMeshes = this.physics.cones.map(() => {
       const m = createConeMesh();
       this.group.add(m);
@@ -49,12 +53,38 @@ export class Level {
     });
   }
 
+  /** このマップの物理ワールドに車を1台置く（坂道では重力がかかる） */
+  createCar(spawn: { x: number; z: number; yaw: number }): Car {
+    const car = new Car(this.physics, spawn);
+    const terrain = this.terrain;
+    if (terrain) car.slope = (x, z) => terrain.gradientAt(x, z);
+    return car;
+  }
+
+  /**
+   * 物理（平ら）での車の状態を、描画用に地形の上へ載せる。
+   * 高さを足し、坂の勾配に合わせて車体を前後・左右に傾ける
+   */
+  ground(s: CarSnapshot): CarSnapshot {
+    if (!this.terrain) return s;
+    const g = this.terrain.gradientAt(s.x, s.z);
+    const sin = Math.sin(s.yaw);
+    const cos = Math.cos(s.yaw);
+    return {
+      ...s,
+      y: s.y + this.terrain.heightAt(s.x, s.z),
+      // 前方 (sin, cos)・左 (cos, -sin) の向きの勾配
+      pitch: Math.atan(g.x * sin + g.z * cos),
+      roll: Math.atan(g.x * cos - g.z * sin),
+    };
+  }
+
   /** 動く小物（コーン）の見た目を物理に合わせる */
   syncProps(): void {
     this.physics.cones.forEach((c, i) => {
       const t = c.body.translation();
       const r = c.body.rotation();
-      this.coneMeshes[i].position.set(t.x, t.y, t.z);
+      this.coneMeshes[i].position.set(t.x, t.y + (this.terrain?.heightAt(t.x, t.z) ?? 0), t.z);
       this.coneMeshes[i].quaternion.set(r.x, r.y, r.z, r.w);
     });
   }

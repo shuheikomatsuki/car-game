@@ -35,7 +35,16 @@ export interface CarSnapshot {
   steerAngle: number;
   /** タイヤの回転角 [rad] */
   wheelSpin: number;
+  /** 描画用: 車体の前後の傾き [rad]（前が上がると正）。坂道のマップだけ */
+  pitch?: number;
+  /** 描画用: 車体の左右の傾き [rad]（左が上がると正） */
+  roll?: number;
 }
+
+/** 重力加速度 [m/s^2] */
+const GRAVITY = 9.81;
+/** この速度未満でアクセルを踏んでいなければ、坂道でも止まっていられる（坂道発進の補助） */
+const HILL_HOLD_SPEED = 0.5;
 
 /**
  * 物理ワールド内の1台の車。
@@ -47,6 +56,8 @@ export class Car {
   params: VehicleParams;
   private steerAngle = 0;
   private wheelSpin = 0;
+  /** 坂道のマップなら、その位置の地形の勾配。物理は平らなまま、坂の重力だけを前後の速度に加える */
+  slope: ((x: number, z: number) => { x: number; z: number }) | null = null;
   /** 直前のステップで剛体に指示した水平速度（衝突の強さを測るため） */
   private commanded = { x: 0, z: 0 };
 
@@ -107,6 +118,13 @@ export class Car {
       this.params,
       dt,
     );
+    if (this.slope && !(Math.abs(next.forwardSpeed) < HILL_HOLD_SPEED && input.throttle === 0)) {
+      const t = this.body.translation();
+      const g = this.slope(t.x, t.z);
+      // 進行方向の勾配 → 坂を下る向きの加速度 g・sinθ
+      const grade = g.x * fx + g.z * fz;
+      next.forwardSpeed -= (GRAVITY * grade * dt) / Math.sqrt(1 + grade * grade);
+    }
 
     this.steerAngle = next.steerAngle;
     this.wheelSpin += (next.forwardSpeed / CAR_DIMENSIONS.wheelRadius) * dt;

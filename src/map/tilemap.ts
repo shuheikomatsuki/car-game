@@ -67,8 +67,13 @@ export interface MapDefinition {
   /** カーブの外側にガードレールを置くか */
   guardrails?: boolean;
   signs?: SignPlacement[];
-  /** レース用の周回コースなら、タイムアタックの周回数（スタート地点から一周をたどれること） */
+  /**
+   * レース用のコースなら、タイムアタックの周回数。スタート地点から一周をたどれる周回コースか、
+   * 行き止まりで終わる一本道のコース（周回数は 1）にする
+   */
   race?: { laps: number };
+  /** 高低差。道路の行き止まり from から、道路に沿って反対の端まで rise [m] 上る */
+  elevation?: { from: { col: number; row: number }; rise: number };
 }
 
 export interface ParsedMap {

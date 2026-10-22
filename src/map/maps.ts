@@ -79,4 +79,74 @@ export const CIRCUIT_MAP: MapDefinition = {
   race: { laps: 3 },
 };
 
-export const MAPS: readonly MapDefinition[] = [TOWN_MAP, SCHOOL_MAP, CIRCUIT_MAP];
+/** 短い直線とコーナーが続く周回コース。カーブの半径は 15m と小さめ */
+export const TECHNICAL_MAP: MapDefinition = {
+  name: 'テクニカルコース',
+  tileSize: 30,
+  roadWidth: 14,
+  layout: [
+    '.................',
+    '.RRRRR..T..RRRRR.',
+    '.R.T.R.....R.T.R.',
+    '.R...RRR.RRR...R.',
+    '.R..T..R.R..T..R.',
+    '.RRR...RRR...RRR.',
+    '...R..T...T..R...',
+    '.RRR..RRRRR..RRR.',
+    '.R....R.B.R....R.',
+    '.R..RRR...RRR..R.',
+    '.R..R..T.T..R..R.',
+    '.RRRR.......RRRR.',
+    '.................',
+  ],
+  start: { col: 8, row: 7, heading: 'E' },
+  guardrails: true,
+  race: { laps: 2 },
+};
+
+/** 峠道のレイアウト。左下の行き止まりがふもと、左上の行き止まりが頂上 */
+const PASS_LAYOUT = [
+  '...................',
+  '.RRRRRR..T....T....',
+  '..T...R..RRRR...T..',
+  '......R..R..R......',
+  '.T....RRRR..R..T...',
+  '....T.......R......',
+  '..RRRRRR..RRR...T..',
+  '..R....R..R...T....',
+  '..R..T.RRRR.....T..',
+  '..R.........T......',
+  '..RRRR..RRRRRRRRR..',
+  '.T...R..R..T....R..',
+  '.....RRRR...RRRRR..',
+  '..T.....T...R...T..',
+  '..RRRRRRRRRRR......',
+  '...................',
+];
+const PASS_ELEVATION = { from: { col: 2, row: 14 }, rise: 150 };
+
+/** ふもとから頂上まで上る一本道。坂で車が重くなる */
+export const HILLCLIMB_MAP: MapDefinition = {
+  name: '峠（ヒルクライム）',
+  tileSize: 30,
+  roadWidth: 11,
+  layout: PASS_LAYOUT,
+  start: { col: 5, row: 14, heading: 'E' },
+  guardrails: true,
+  race: { laps: 1 },
+  elevation: PASS_ELEVATION,
+};
+
+/** 同じ峠を頂上から下る。スピードが乗るので早めのブレーキが大事 */
+export const DOWNHILL_MAP: MapDefinition = {
+  name: '峠（ダウンヒル）',
+  tileSize: 30,
+  roadWidth: 11,
+  layout: PASS_LAYOUT,
+  start: { col: 4, row: 1, heading: 'E' },
+  guardrails: true,
+  race: { laps: 1 },
+  elevation: PASS_ELEVATION,
+};
+
+export const MAPS: readonly MapDefinition[] = [TOWN_MAP, SCHOOL_MAP, CIRCUIT_MAP, TECHNICAL_MAP, HILLCLIMB_MAP, DOWNHILL_MAP];

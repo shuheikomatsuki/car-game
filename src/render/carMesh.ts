@@ -235,7 +235,8 @@ export class CarMesh {
 
   update(s: CarSnapshot): void {
     this.root.position.set(s.x, s.y, s.z);
-    this.root.rotation.set(0, s.yaw, 0);
+    // 坂道では車体を傾ける（ヨー → ピッチ → ロールの順）
+    this.root.rotation.set(-(s.pitch ?? 0), s.yaw, s.roll ?? 0, 'YXZ');
     for (const p of this.frontPivots) p.rotation.y = s.steerAngle;
     for (const w of this.wheels) w.rotation.x = s.wheelSpin;
     // 運転席から見て、左に切るとハンドルは反時計回り
