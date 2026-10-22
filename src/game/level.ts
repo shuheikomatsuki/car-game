@@ -1,7 +1,9 @@
 import * as THREE from 'three';
 import { buildObstacles } from '../map/obstacles';
 import { DIR_YAW, type MapDefinition, type ParsedMap, parseMap, tileCenter } from '../map/tilemap';
+import { type Course, buildCourse } from '../race/course';
 import { buildMapMesh, createConeMesh } from '../render/mapMesh';
+import { buildStartLine } from '../render/raceMesh';
 import { Car } from '../sim/car';
 import { type PhysicsWorld, type Rapier, createPhysicsWorld } from '../sim/physics';
 import { type ObstacleSensor, createObstacleSensor } from '../sim/sensors';
@@ -16,6 +18,8 @@ export class Level {
   /** スタート地点の左車線（キャラクターが運転するとき） */
   readonly laneSpawn: { x: number; z: number; yaw: number };
   readonly sense: ObstacleSensor;
+  /** レース用のマップなら周回コース */
+  readonly course: Course | null;
   readonly group = new THREE.Group();
   private readonly coneMeshes: THREE.Mesh[];
 
@@ -36,6 +40,8 @@ export class Level {
     this.sense = createObstacleSensor(this.physics, this.car);
 
     this.group.add(buildMapMesh(map, obstacles));
+    this.course = def.race ? buildCourse(map) : null;
+    if (this.course) this.group.add(buildStartLine(this.course));
     this.coneMeshes = this.physics.cones.map(() => {
       const m = createConeMesh();
       this.group.add(m);

@@ -12,10 +12,14 @@ import { Level } from './game/level';
 import { PLAYER_COLORS, RemoteCars, carStateOf } from './game/remoteCars';
 import { MAPS } from './map/maps';
 import { NetClient } from './net/client';
+import { GhostRecorder, ghostPoseAt } from './race/ghost';
+import { type RaceRecord, loadRecord, mergeRecord, saveRecord } from './race/records';
+import { TimeAttack, formatTime } from './race/timeAttack';
 import { isRoomCode, normalizeRoomCode } from './net/protocol';
 import { CameraRig } from './render/camera';
 import { CarMesh } from './render/carMesh';
 import { CharacterMesh, HEAD_RADIUS } from './render/character';
+import { createGhostMesh } from './render/raceMesh';
 import { GameScene } from './render/scene';
 import type { CarSnapshot } from './sim/car';
 import { loadRapier } from './sim/physics';
@@ -23,6 +27,7 @@ import { NEUTRAL_INPUT, VEHICLE_PRESETS } from './sim/vehicle';
 import { AssistPanel, commandLabel } from './ui/assistPanel';
 import { Hud, hideLoading, showError } from './ui/hud';
 import { OnlinePanel } from './ui/onlinePanel';
+import { RaceHud } from './ui/raceHud';
 import { canRequestFullscreen, enterFullscreen, isFullscreen, isStandalone, needsHomeScreenForFullscreen } from './ui/fullscreen';
 import { TouchControls, prefersTouch } from './ui/touchControls';
 import { VoiceInput } from './voice/recognition';
@@ -143,16 +148,115 @@ async function main() {
   const remoteCars = new RemoteCars(view.scene);
   remoteCars.attachLevel(level);
 
-  const resetCar = () => {
-    level.car.reset(assist ? level.laneSpawn : level.spawn);
+  // --- タイムアタック ---
+  let race: TimeAttack | null = null;
+  let ghostRecorder = new GhostRecorder();
+  /** いまのコースと車での自己ベスト */
+  let best: RaceRecord | null = null;
+  const ghostMesh = createGhostMesh();
+  ghostMesh.root.visible = false;
+  view.scene.add(ghostMesh.root);
+  const raceMapIndex = MAPS.findIndex((m) => m.race);
+  const raceHud = new RaceHud({
+    onRetry: () => race && startTimeAttack(),
+    onQuit: () => stopTimeAttack(),
+  });
+
+  const placeCar = (spawn: { x: number; z: number; yaw: number }) => {
+    level.car.reset(spawn);
     prev = curr = level.car.snapshot();
     driver.reset();
     cameraRig.snap();
     // スタート地点で他の車と重なっても弾き飛ばされないように
     remoteCars.ghost(performance.now());
   };
+  const resetCar = () => {
+    // タイムアタック中のリセットは、スタートからやり直し
+    if (race) startTimeAttack();
+    else placeCar(assist ? level.laneSpawn : level.spawn);
+  };
+
+  /** サーキットのスタートラインの手前に並び、カウントダウンから始める */
+  function startTimeAttack() {
+    if (assist) setAssist(false);
+    if (!level.course) {
+      loadMap(raceMapIndex);
+      // 同じ部屋の全員もサーキットへ
+      net.send({ t: 'map', map: mapIndex });
+    }
+    const course = level.course!;
+    race = new TimeAttack(course, level.def.race!.laps);
+    ghostRecorder = new GhostRecorder();
+    best = loadRecord(level.def.name, vehicle().id);
+    placeCar(course.gridSpot(6));
+    raceHud.show(true);
+    raceHud.hideResult();
+    raceHud.setWarning({ wrongWay: false, offCourse: false });
+    hud.setMode(false, 'タイムアタック');
+    touch.refresh();
+  }
+
+  function stopTimeAttack() {
+    if (!race) return;
+    race = null;
+    raceHud.show(false);
+    ghostMesh.root.visible = false;
+    hud.setMode(false, '自分で運転');
+    resetCar();
+    touch.refresh();
+  }
+
+  const toggleTimeAttack = () => (race ? stopTimeAttack() : startTimeAttack());
+
+  const handleRaceEvents = (r: TimeAttack) => {
+    for (const e of r.drainEvents()) {
+      switch (e.type) {
+        case 'count':
+          raceHud.count(e.value);
+          sound.beep(e.value === 0);
+          break;
+        case 'lap': {
+          if (r.phase === 'finished') break;
+          const ref = best?.laps[e.lap - 1];
+          const diff = ref === undefined ? '' : `（${e.time - ref >= 0 ? '+' : '−'}${Math.abs(e.time - ref).toFixed(2)}）`;
+          raceHud.split(`${e.lap}周目 ${formatTime(e.time)}${diff}`, ref !== undefined && e.time < ref);
+          sound.beep();
+          break;
+        }
+        case 'finish': {
+          const previousBest = best?.total ?? null;
+          const merged = mergeRecord(best, { total: e.total, laps: e.laps, ghost: ghostRecorder.frames });
+          const saved = merged.newTotal || merged.newLap ? saveRecord(level.def.name, vehicle().id, merged.record) : true;
+          best = merged.record;
+          raceHud.showResult({
+            total: e.total,
+            laps: e.laps,
+            previousBest,
+            newTotal: merged.newTotal,
+            newLap: merged.newLap,
+            bestLap: merged.record.bestLap,
+            notSaved: !saved,
+          });
+          raceHud.setWarning({ wrongWay: false, offCourse: false });
+          sound.beep(true);
+          break;
+        }
+        case 'wrongWay':
+          raceHud.setWarning({ wrongWay: e.on });
+          break;
+        case 'offCourse':
+          raceHud.setWarning({ offCourse: e.on });
+          break;
+      }
+    }
+  };
 
   const setAssist = (on: boolean) => {
+    if (on && race) {
+      race = null;
+      raceHud.show(false);
+      ghostMesh.root.visible = false;
+    }
     assist = on;
     character.root.visible = on;
     panel.show(on);
@@ -180,6 +284,14 @@ async function main() {
     view.scene.add(level.group);
     remoteCars.attachLevel(level);
     driver = createDriver();
+    // サーキット以外のマップに替わったらタイムアタックをやめる（サーキットならやり直し）
+    if (race && !level.course) {
+      race = null;
+      raceHud.show(false);
+      ghostMesh.root.visible = false;
+      hud.setMode(false, '自分で運転');
+      touch.refresh();
+    }
     resetCar();
     hud.setMapName(level.def.name);
     hud.toast(message);
@@ -387,6 +499,7 @@ async function main() {
   const keyboard = new KeyboardInput();
   keyboard.onAction('KeyO', () => onlinePanel.open());
   keyboard.onAction('KeyR', resetCar);
+  keyboard.onAction('KeyT', toggleTimeAttack);
   keyboard.onAction('KeyC', cycleCamera);
   keyboard.onAction('KeyN', nextMap);
   keyboard.onAction('KeyP', cycleCar);
@@ -414,7 +527,8 @@ async function main() {
         },
         quick: true,
       },
-      { label: () => 'リセット', run: resetCar, quick: true },
+      { label: () => (race ? 'やり直す' : 'リセット'), run: resetCar, quick: true },
+      { label: () => (race ? 'タイムアタックをやめる' : 'タイムアタック'), run: toggleTimeAttack },
       { label: () => (assist ? '自分で運転する' : `${CHARACTER_NAME}に運転してもらう`), run: () => setAssist(!assist) },
       {
         label: () => `ハンドル: ${touch.steerMode === 'tilt' ? '傾ける' : 'なぞる'}`,
@@ -433,7 +547,7 @@ async function main() {
       { label: () => '顔写真', run: openFaceEditor, visible: () => assist },
       { label: () => `サウンド: ${sound.isMuted ? 'OFF' : 'ON'}`, run: toggleMute },
     ],
-    () => `${level.def.name}・${assist ? `${CHARACTER_NAME}に指示` : '自分で運転'}・${vehicle().label}・カメラ: ${cameraRig.modeName}`,
+    () => `${level.def.name}・${race ? 'タイムアタック' : assist ? `${CHARACTER_NAME}に指示` : '自分で運転'}・${vehicle().label}・カメラ: ${cameraRig.modeName}`,
   );
   touch.refresh();
   // iPhone の Safari はページから全画面にできないので、ホーム画面に追加する方法を案内する
@@ -480,6 +594,8 @@ async function main() {
         input = driver.update(dt, curr, level.sense);
       } else {
         input = mergeInputs(mergeInputs(keyboard.read(), pad), touch.read());
+        // カウントダウン中は発進させない（ハンドルだけ切れる）
+        if (race && !race.canDrive) input = { ...NEUTRAL_INPUT, steer: input.steer };
       }
       remoteCars.step(performance.now());
       level.physics.world.timestep = dt;
@@ -497,6 +613,17 @@ async function main() {
       curr = level.car.snapshot();
       // マップ外に落ちた場合の保険
       if (curr.y < -5) resetCar();
+      if (race) {
+        const r = race;
+        const sin = Math.sin(curr.yaw);
+        const cos = Math.cos(curr.yaw);
+        // 前方 (sin, cos)・左 (cos, -sin) の速度を足して、地面に対する速度にする
+        const vx = sin * curr.forwardSpeed + cos * curr.lateralSpeed;
+        const vz = cos * curr.forwardSpeed - sin * curr.lateralSpeed;
+        r.update(dt, { x: curr.x, z: curr.z, vx, vz });
+        if (r.phase === 'racing') ghostRecorder.sample(r.time, curr);
+        handleRaceEvents(r);
+      }
       // タブが裏に回っている間は送らない（他の人からは止まって見え、やがて放置として部屋から外れる）
       if (net.isOnline && !document.hidden && ++stepCount % SEND_EVERY_STEPS === 0) {
         net.send({ t: 'state', time: performance.now(), s: carStateOf(curr) });
@@ -511,6 +638,12 @@ async function main() {
       const s = lerpSnapshot(prev, curr, alpha);
       carMesh.update(s);
       remoteCars.render(performance.now());
+      if (race) {
+        const pose = best ? ghostPoseAt(best.ghost, Math.max(0, race.time)) : null;
+        ghostMesh.root.visible = pose !== null;
+        if (pose) ghostMesh.update({ x: pose.x, y: 0, z: pose.z, yaw: pose.yaw, forwardSpeed: 0, lateralSpeed: 0, steerAngle: 0, wheelSpin: 0 });
+        raceHud.update(race.lap, race.totalLaps, race.time, best?.total ?? null);
+      }
       character.update(frameDt, s.steerAngle);
       level.syncProps();
       cameraRig.update(s, frameDt);
@@ -525,7 +658,7 @@ async function main() {
   // ?debug を付けるとブラウザの開発者ツールや自動テストから状態を触れる
   if (params.has('debug')) {
     Object.assign(window, {
-      __game: { getLevel: () => level, getDriver: () => driver, faceEditor, net, remoteCars, touch, onlinePanel, cameraRig, sound, giveCommand, setAssist },
+      __game: { getLevel: () => level, getRace: () => race, startTimeAttack, stopTimeAttack, getDriver: () => driver, faceEditor, net, remoteCars, touch, onlinePanel, cameraRig, sound, giveCommand, setAssist },
     });
   }
 

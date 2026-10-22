@@ -67,6 +67,8 @@ export interface MapDefinition {
   /** カーブの外側にガードレールを置くか */
   guardrails?: boolean;
   signs?: SignPlacement[];
+  /** レース用の周回コースなら、タイムアタックの周回数（スタート地点から一周をたどれること） */
+  race?: { laps: number };
 }
 
 export interface ParsedMap {

@@ -178,4 +178,21 @@ export class SoundSystem {
     src.connect(filter).connect(gain).connect(v.master);
     src.start(t, Math.random() * 0.5, 0.4);
   }
+
+  /** 合図の電子音（カウントダウン・ラップ）。high は高い音（スタート・ゴール） */
+  beep(high = false): void {
+    const v = this.voices;
+    if (!v) return;
+    const t = v.ctx.currentTime;
+    const osc = v.ctx.createOscillator();
+    osc.type = 'square';
+    osc.frequency.value = high ? 1320 : 660;
+    const gain = v.ctx.createGain();
+    const length = high ? 0.5 : 0.18;
+    gain.gain.setValueAtTime(0.12, t);
+    gain.gain.exponentialRampToValueAtTime(0.001, t + length);
+    osc.connect(gain).connect(v.master);
+    osc.start(t);
+    osc.stop(t + length);
+  }
 }
