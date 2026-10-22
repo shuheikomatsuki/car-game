@@ -5,9 +5,18 @@ import type { ParsedMap } from './tilemap';
 const GRID_STEP = 4;
 /** マップの外側にも地形を広げる幅 [m] */
 const MARGIN = 160;
+/**
+ * 道路の外の崖。道路の端から CLIFF_START [m] の路肩の先で、CLIFF_WIDTH [m] の間に CLIFF_DEPTH [m] 下がる。
+ * 路肩の幅は、道路の上の高さを補間するときに崖の格子点が混ざらない幅（格子の対角線）にしている
+ */
+export const CLIFF_START = 6;
+const CLIFF_WIDTH = 6;
+const CLIFF_DEPTH = 10;
 
 /**
  * 高低差のある地形。道路に沿って高さが決まり、道路から離れた場所は周りの道路の高さをなめらかにつなぐ。
+ *
+ * 道路の外は少しの路肩の先が崖になっていて、はみ出すと落ちる（Level.fellOff）。
  *
  * 物理（衝突）は平らなまま計算し、見た目の高さと、坂道で車にかかる重力だけをこの地形から求める。
  */
@@ -106,7 +115,7 @@ export function buildTerrain(map: ParsedMap): Terrain | null {
       const nearestH = interpolateAlong(nearestK, x, z);
       // 道路の上は道路の高さ、離れるほど周りの道路の高さの重み付き平均に近づける
       const t = smoothstep((d - rw - 2) / 30);
-      const h = nearestH + (hSum / wSum - nearestH) * t;
+      const h = nearestH + (hSum / wSum - nearestH) * t - CLIFF_DEPTH * smoothstep((d - rw - CLIFF_START) / CLIFF_WIDTH);
       surface[j * nx + i] = h;
       // 道路の面と重ならないよう、道路の下の地面は少し下げる
       ground[j * nx + i] = h - 0.25 * (1 - smoothstep((d - rw) / 3));

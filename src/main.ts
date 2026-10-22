@@ -1,6 +1,7 @@
 import { SoundSystem } from './audio/sound';
 import { GamepadInput, KeyboardInput, PAD_BUTTON, mergeInputs } from './core/input';
 import { FixedStepLoop } from './core/loop';
+import { FallRecovery } from './game/fall';
 import { Level } from './game/level';
 import { NpcField, rankEntrants, velocityOf } from './game/npcRace';
 import { PLAYER_COLORS, RemoteCars, carStateOf } from './game/remoteCars';
@@ -69,6 +70,8 @@ async function main() {
   let prev = level.car.snapshot();
   let curr = prev;
   let input = { ...NEUTRAL_INPUT };
+  /** 峠で道路から落ちたとき */
+  const fall = new FallRecovery();
 
   const remoteCars = new RemoteCars(view.scene);
   remoteCars.attachLevel(level);
@@ -98,6 +101,7 @@ async function main() {
 
   const placeCar = (spawn: { x: number; z: number; yaw: number }) => {
     level.car.reset(spawn);
+    fall.cancel();
     prev = curr = level.car.snapshot();
     cameraRig.snap();
     // スタート地点で他の車と重なっても弾き飛ばされないように
@@ -452,6 +456,7 @@ async function main() {
       input = mergeInputs(mergeInputs(keyboard.read(), pad), touch.read());
       // カウントダウン中は発進させない（ハンドルだけ切れる）
       if (race && !race.canDrive) input = { ...NEUTRAL_INPUT, steer: input.steer };
+      if (fall.falling) input = NEUTRAL_INPUT;
       remoteCars.step(performance.now());
       level.physics.world.timestep = dt;
       level.car.applyInput(input, dt);
@@ -469,6 +474,20 @@ async function main() {
       curr = level.car.snapshot();
       // マップ外に落ちた場合の保険
       if (curr.y < -5) resetCar();
+      switch (fall.update(dt, level, level.car, curr)) {
+        case 'fell':
+          hud.toast('コースアウト！');
+          sound.impact(6);
+          break;
+        case 'recovered':
+          prev = curr = level.car.snapshot();
+          cameraRig.snap();
+          remoteCars.ghost(performance.now());
+          break;
+      }
+      // 草地を走るとガタガタ揺れる
+      const grass = level.car.offRoad?.(curr.x, curr.z) ?? 0;
+      if (grass > 0 && !fall.falling) cameraRig.addShake(grass * Math.min(1, Math.abs(curr.forwardSpeed) / 15) * 0.6);
       if (race) {
         const r = race;
         r.update(dt, { x: curr.x, z: curr.z, ...velocityOf(curr) });
@@ -483,6 +502,7 @@ async function main() {
     },
     (alpha, frameDt) => {
       const s = level.ground(lerpSnapshot(prev, curr, alpha));
+      s.y -= fall.drop;
       carMesh.update(s);
       remoteCars.render(performance.now());
       npcField?.render(alpha);

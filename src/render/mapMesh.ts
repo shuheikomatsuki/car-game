@@ -8,6 +8,7 @@ import { SignFactory } from './signs';
 
 const COLORS = {
   grass: 0x7fb069,
+  rock: 0x8a7f72,
   outside: 0x5f8a4f,
   road: 0x4a4e57,
   line: 0xf2f2f2,
@@ -144,6 +145,17 @@ function terrainGeometry(terrain: Terrain): THREE.BufferGeometry {
     for (let i = 0; i < nx; i++) pos.setY(j * nx + i, ground[j * nx + i]);
   }
   g.computeVertexNormals();
+  // 急な斜面（道路の外の崖）は岩の色にして、落ちる場所だとわかるようにする
+  const normal = g.attributes.normal;
+  const colors = new Float32Array(normal.count * 3);
+  const grass = new THREE.Color(COLORS.grass);
+  const rock = new THREE.Color(COLORS.rock);
+  const c = new THREE.Color();
+  for (let k = 0; k < normal.count; k++) {
+    const steep = Math.min(1, Math.max(0, (0.93 - normal.getY(k)) / 0.2));
+    c.copy(grass).lerp(rock, steep).toArray(colors, k * 3);
+  }
+  g.setAttribute('color', new THREE.BufferAttribute(colors, 3));
   return g;
 }
 
@@ -169,7 +181,7 @@ export function buildMapMesh(map: ParsedMap, obstacles: MapObstacles, terrain: T
 
   const grass = new THREE.Mesh(
     terrain ? terrainGeometry(terrain) : flatRect(centerX, centerZ, width, depth, 0),
-    new THREE.MeshLambertMaterial({ color: COLORS.grass }),
+    terrain ? new THREE.MeshLambertMaterial({ vertexColors: true }) : new THREE.MeshLambertMaterial({ color: COLORS.grass }),
   );
   grass.receiveShadow = true;
   group.add(grass);
