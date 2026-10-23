@@ -861,14 +861,17 @@ async function main() {
         select: (id) => (draft.map = id),
       },
     ],
-    detail: () =>
-      courseDetail(
-        draftMap(),
-        carLabel,
-        home
-          ? { badge: draftMap().id === home ? `${draftRival().name}のホーム` : undefined, note: '先行後追いは、周回コースでも1周で1本です' }
-          : undefined,
-      ),
+    detail: () => {
+      if (!home) return courseDetail(draftMap(), carLabel);
+      const r = draftRival();
+      const script = RIVAL_DIALOGUES[r.id];
+      // セリフがホームコースだけのライバルなら、ほかのコースを選んだときに知らせる
+      const silent = draftMap().id !== home && script && (script.onlyHomeCourse ?? true);
+      return courseDetail(draftMap(), carLabel, {
+        badge: draftMap().id === home ? `${r.name}のホーム` : undefined,
+        note: `${silent ? `${r.name}のセリフは、ホームの「${mapLabel(home)}」でのバトルだけ出ます。` : ''}先行後追いは、周回コースでも1周で1本です`,
+      });
+    },
   });
   const carScreen: MenuScreen = {
     title: '自分の車',

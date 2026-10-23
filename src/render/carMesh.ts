@@ -46,7 +46,7 @@ const CAR_STYLES: Record<string, CarStyle> = {
   ae86: { roof: 1.4, window: [-1.95, 0.95, 0.35, -1.05], lowerColor: 0x1d1d1f, color: 0xf2f2ee },
   eg6: { roof: 1.38, window: [-2.0, 0.95, 0.35, -1.85], color: 0xc8202a },
   ek9: { roof: 1.4, window: [-2.0, 0.95, 0.35, -1.85], wing: 'low', color: 0xf3d41c },
-  s13: { roof: 1.32, window: [-1.6, 1.0, 0.25, -0.85], color: 0xc9cdd2 },
+  s13: { roof: 1.32, window: [-1.6, 1.0, 0.25, -0.85], color: 0x1a9e74 },
   s14: { roof: 1.34, window: [-1.65, 1.0, 0.25, -0.9], wing: 'low', color: 0xe2601f },
   fd3s: { roof: 1.34, window: [-1.8, 1.05, 0.15, -0.7], wing: 'low', color: 0xf2c318 },
   evo3: { roof: 1.43, window: [-1.45, 0.95, 0.4, -1.1], wing: 'high', color: 0x141517 },
