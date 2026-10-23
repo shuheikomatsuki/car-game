@@ -265,7 +265,7 @@ export function rivalDetail(rival: Rival, level: NpcLevel, info: { car: string; 
         <p class="d-level">${stars(level)}<span>${escapeHtml(level.label)}</span></p>
         ${specs([
           ['マシン', info.car],
-          ['ホーム', info.course],
+          ['得意コース', info.course],
         ])}
         ${levelRows(level)}
         <div class="d-garage"><div class="preview-slot"></div></div>

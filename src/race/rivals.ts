@@ -1,9 +1,10 @@
+import type { TimeOfDay, Weather } from '../game/environment';
 import { NPC_LEVELS, type NpcLevel } from './npcDriver';
 
 /**
  * 1対1でバトルする名前付きのライバル。それぞれ自分の車と得意なコースを持つ。
  * バトルはライバルの得意なコースで、ライバルと横に並んでスタートする（自分の車は自由に選べる）。
- * 得意なコースはライバルごとに別々（イニシャルDでバトルした峠に近いコース）。
+ * 得意なコースはライバルごとに別々。
  */
 export interface Rival {
   /** 変わらない id（勝ったかどうかの保存に使う） */
@@ -15,6 +16,8 @@ export interface Rival {
   car: string;
   /** 得意なコース（MapDefinition.id） */
   course: string;
+  /** 得意な時間帯・天気。書いてあれば、この相手を選んだときの時間帯・天気を最初にこれにする（後の画面で変えられる） */
+  conditions?: { time: TimeOfDay; weather: Weather };
   /** 強さ（NPC_LEVELS の id） */
   level: string;
   /**
@@ -26,19 +29,19 @@ export interface Rival {
 
 /** 弱い順 */
 export const RIVALS: readonly Rival[] = [
-  { id: 'itsuki', name: '武内樹', team: '秋名スピードスターズ', car: 'ae85', course: 'circuit-gp', level: 'easy' },
-  { id: 'iketani', name: '池谷浩一郎', team: '秋名スピードスターズ', car: 's13', course: 'valley-up', level: 'easy' },
-  { id: 'kenta', name: '中村賢太', team: '赤城レッドサンズ', car: 's14', course: 'straight-up-r', level: 'normal' },
-  { id: 'shingo', name: '庄司慎吾', team: '妙義ナイトキッズ', car: 'eg6', course: 'pass-over-r', level: 'normal' },
-  { id: 'nakazato', name: '中里毅', team: '妙義ナイトキッズ', car: 'gtr', course: 'straight-down-r', level: 'hard' },
-  { id: 'iwaki', name: '岩城清次', team: 'チームエンペラー', car: 'evo', course: 'uturn', level: 'hard' },
-  { id: 'sakamoto', name: '坂本', team: 'カプチーノ使い', car: 'cappuccino', course: 'technical-circuit', level: 'hard' },
-  { id: 'keisuke', name: '高橋啓介', team: '赤城レッドサンズ', car: 'fd3s', course: 'pass-up', level: 'pro' },
+  { id: 'itsuki', name: '武内樹', team: '秋名スピードスターズ', car: 'ae85', course: 'pass-down', level: 'easy' },
+  { id: 'iketani', name: '池谷浩一郎', team: '秋名スピードスターズ', car: 's13', course: 'pass-up', level: 'easy' },
+  { id: 'kenta', name: '中村賢太', team: '赤城レッドサンズ', car: 's14', course: 'pass-over-r', conditions: { time: 'night', weather: 'rain' }, level: 'normal' },
+  { id: 'shingo', name: '庄司慎吾', team: '妙義ナイトキッズ', car: 'eg6', course: 'uturn', level: 'normal' },
+  { id: 'nakazato', name: '中里毅', team: '妙義ナイトキッズ', car: 'gtr', course: 'long-r', level: 'hard' },
+  { id: 'iwaki', name: '岩城清次', team: 'チームエンペラー', car: 'evo', course: 'hairpin', level: 'hard' },
+  { id: 'sakamoto', name: '坂本', team: 'カプチーノ使い', car: 'cappuccino', course: 'steep-down', conditions: { time: 'night', weather: 'rain' }, level: 'hard' },
+  { id: 'keisuke', name: '高橋啓介', team: '赤城レッドサンズ', car: 'fd3s', course: 'valley-up', level: 'pro' },
   { id: 'sudo', name: '須藤京一', team: 'チームエンペラー', car: 'evo3', course: 'hairpin-down', level: 'pro' },
-  { id: 'hoshino', name: '星野好造', team: 'パープルシャドウ', car: 'r34', course: 'long-r', level: 'legend' },
+  { id: 'hoshino', name: '星野好造', team: 'パープルシャドウ', car: 'r34', course: 'shutoko-loop-2', level: 'legend' },
   { id: 'tachi', name: '舘智幸', team: 'プロレーサー', car: 'ek9', course: 'happogahara', level: 'legend' },
   { id: 'rin', name: '北条凛', team: '死神', car: 'gtr', course: 'marathon', level: 'legend' },
-  { id: 'takumi', name: '藤原拓海', team: '藤原とうふ店', car: 'ae86', course: 'pass-down', level: 'legend' },
+  { id: 'takumi', name: '藤原拓海', team: '藤原とうふ店', car: 'ae86', course: 'valley-down', level: 'legend' },
 ];
 
 export function rivalLevel(rival: Rival): NpcLevel {
