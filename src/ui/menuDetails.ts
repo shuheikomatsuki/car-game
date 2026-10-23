@@ -181,9 +181,9 @@ export function courseDetail(def: MapDefinition, carLabel: (id: string) => strin
           ['道幅', Math.abs(p.width.max - p.width.min) < 0.5 ? `${p.width.max.toFixed(0)} m` : `${p.width.min.toFixed(1)}〜${p.width.max.toFixed(0)} m`],
         ];
   const html = `<div class="d-course">
-    <div class="d-hero d-map"><canvas class="course-map"></canvas><span class="d-tag">${escapeHtml(kind)}</span>${
+    <div class="d-hero d-map"><canvas class="course-map"></canvas><div class="d-tags"><span class="d-tag">${escapeHtml(kind)}</span>${
       extra?.badge ? `<span class="d-tag hot">${escapeHtml(extra.badge)}</span>` : ''
-    }</div>
+    }</div></div>
     <div class="d-body">
       <h2 class="d-name">${escapeHtml(def.name)}</h2>
       ${note ? `<p class="d-text">${escapeHtml(note.text)}</p>` : ''}

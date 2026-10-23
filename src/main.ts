@@ -770,6 +770,12 @@ async function main() {
     touch.refresh();
     menu.refresh();
   }
+  /** オンラインの部屋から退出する（対戦中なら対戦もやめる） */
+  function leaveRoom() {
+    if (race && raceMode === 'online') stopRace();
+    net.disconnect();
+    hud.toast('部屋から退出しました');
+  }
   /** 自分だけオンライン対戦から抜ける（まだゴールしていなければサーバーに知らせる） */
   function leaveOnlineRace() {
     if (onlineSeq !== null && roomRace?.seq === onlineSeq && race?.phase !== 'finished') net.send({ t: 'raceCancel' });
@@ -1059,10 +1065,7 @@ async function main() {
         roomCode = room;
         net.connect(serverUrl, room, { name, car: vehicle().id, map: mapIndex, lights: lightsOn });
       },
-      onLeave: () => {
-        net.disconnect();
-        hud.toast('部屋から退出しました');
-      },
+      onLeave: () => leaveRoom(),
       onOpenChange: (open) => {
         keyboard.enabled = !open;
         touch.enabled = !open;
@@ -1495,6 +1498,8 @@ async function main() {
   const onlineItem: MenuItem = {
     label: () => 'みんなで走る',
     en: 'ONLINE',
+    note: () => (net.isOnline ? `部屋 ${roomCode} に参加中` : '部屋のみんなと同じマップを走る'),
+    major: true,
     run: () => {
       menu.close();
       onlinePanel.open();
@@ -1521,7 +1526,11 @@ async function main() {
     label: () => (roomRace ? 'エントリー画面' : 'オンライン対戦'),
     en: 'ONLINE RACE',
     run: () => {
-      if (roomRace?.phase === 'entry') {
+      if (!net.isOnline) {
+        menu.close();
+        onlinePanel.open();
+        hud.toast('先に「みんなで走る」で部屋に参加してください');
+      } else if (roomRace?.phase === 'entry') {
         menu.close();
         onlineRacePanel.open();
       } else if (!roomRace) {
@@ -1530,7 +1539,9 @@ async function main() {
         hud.toast('いまは対戦の最中です。終わったら始められます');
       }
     },
-    visible: () => net.isOnline && !(race && raceMode === 'online'),
+    note: () => (net.isOnline ? '部屋のみんなとレース' : '部屋に参加すると選べます'),
+    major: true,
+    visible: () => !(race && raceMode === 'online'),
     detail: settingDetail('オンライン対戦', ['部屋のみんなと同じコース・同じ条件でレースする。', 'コースと時間帯・天気を決めた人が主催になり、各自が車を選んでからスタートします。']),
   };
   const rankingItem: MenuItem = {
@@ -1550,9 +1561,8 @@ async function main() {
   const menu = new GameMenu(
     menuModes,
     {
-      home: [onlineRaceItem, rankingItem, onlineItem, openSettings],
+      home: [onlineItem, onlineRaceItem, rankingItem, openSettings],
       pause: [
-        { label: () => '走りに戻る', en: 'RESUME', run: () => menu.close(), detail: pauseDetail },
         {
           label: () => (race && raceMode === 'online' ? 'コースに戻る' : 'やり直す'),
           en: 'RETRY',
@@ -1567,10 +1577,18 @@ async function main() {
           detail: settingDetail('コース・車を変える', ['同じモードのまま、コースと車を選び直してスタートからやり直す。']),
         },
         { label: () => (raceMode === 'online' ? '対戦から抜ける' : 'レースをやめる'), en: 'QUIT RACE', run: () => (menu.close(), stopRace()), visible: () => race !== null, detail: pauseDetail },
-        { label: () => 'トップメニュー', en: 'MAIN MENU', run: () => menu.openHome(), detail: settingDetail('トップメニュー', ['プレイモード・コース・車を選び直す。']) },
-        onlineRaceItem,
-        rankingItem,
-        onlineItem,
+        {
+          label: () => '部屋から抜ける',
+          en: 'LEAVE ROOM',
+          run: () => {
+            menu.close();
+            leaveRoom();
+          },
+          visible: () => net.isOnline,
+          detail: () => settingDetail('部屋から抜ける', [`部屋 ${roomCode} から退出して、ひとりで走る。`, race && raceMode === 'online' ? '走っている対戦も途中でやめます。' : 'また「みんなで走る」から参加できます。'])(),
+        },
+        { label: () => 'トップメニュー', en: 'MAIN MENU', run: () => menu.openHome(), detail: settingDetail('トップメニュー', ['プレイモード・コースを選び直す。オンラインの部屋もここから。']) },
+        { ...rankingItem, visible: () => board !== null && race !== null && raceMode === 'timeAttack' },
         openSettings,
       ],
       settings: settingItems,
