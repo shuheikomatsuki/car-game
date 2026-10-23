@@ -16,6 +16,12 @@ const BELT_Y = CAR_DIMENSIONS.wheelRadius + 0.475;
 /** 座面の高さ */
 export const SEAT_Y = BELT_Y + 0.11;
 
+/** 左右のタイヤの間の、つながった車体の半分の幅 [m]（その外側がタイヤハウス） */
+const CORE_HALF = 0.55;
+/** タイヤハウスの上端の高さと、前後の半分の長さ [m]（ハンドルを切ったタイヤが収まる大きさ） */
+const ARCH_TOP = CAR_DIMENSIONS.wheelRadius * 2 + 0.07;
+const ARCH_HALF = CAR_DIMENSIONS.wheelRadius + 0.12;
+
 /** 車種ごとの見た目（当たり判定の大きさはどの車も同じで、形と色だけを変える） */
 export interface CarStyle {
   /** 屋根の高さ [m] */
@@ -32,6 +38,14 @@ export interface CarStyle {
   tailRadii?: [inner: number, outer: number];
   /** 一人で走るときのボディの色 */
   color: number;
+  /** 見た目の大きさの倍率（小さな車。当たり判定は変えない） */
+  scale?: number;
+  /** 2人乗り（後ろの席を置かない） */
+  twoSeater?: boolean;
+  /** 丸いヘッドライト */
+  roundHead?: boolean;
+  /** 窓と屋根を、ボディの側面からこれだけ内側に寄せる [m]（屋根のすぼまったオープンカーなど） */
+  cabinInset?: number;
 }
 
 const DEFAULT_STYLE: CarStyle = { roof: 1.42, window: [-1.5, 0.95, 0.4, -1.15], color: 0xd94141 };
@@ -40,8 +54,8 @@ const DEFAULT_STYLE: CarStyle = { roof: 1.42, window: [-1.5, 0.95, 0.4, -1.15], 
 const CAR_STYLES: Record<string, CarStyle> = {
   standard: DEFAULT_STYLE,
   kei: { roof: 1.56, window: [-1.8, 0.95, 0.6, -1.72], color: 0x8fc7e8 },
-  cappuccino: { roof: 1.32, window: [-1.75, 0.55, 0.05, -1.35], color: 0xdc3a5c },
-  sport: { roof: 1.34, window: [-1.6, 1.0, 0.2, -0.8], wing: 'low', color: 0xd94141 },
+  // 全長 3.3m・全幅 1.4m の小さな2人乗り。長いボンネットの後ろに、低く短いハードトップ
+  cappuccino: { roof: 1.4, window: [-1.4, 0.72, -0.12, -1.05], color: 0xdc3a5c, scale: 0.76, twoSeater: true, roundHead: true, cabinInset: 0.16 },
   ae85: { roof: 1.4, window: [-1.6, 0.95, 0.35, -1.0], lowerColor: 0x1d1d1f, color: 0xf2f2ee },
   ae86: { roof: 1.4, window: [-1.95, 0.95, 0.35, -1.05], lowerColor: 0x1d1d1f, color: 0xf2f2ee },
   eg6: { roof: 1.38, window: [-2.0, 0.95, 0.35, -1.85], color: 0xc8202a },
@@ -105,14 +119,20 @@ export class CarMesh {
     this.buildCabin(paint, trim);
     this.buildInterior(trim);
     this.buildWheels(dark);
+    this.root.scale.setScalar(style.scale ?? 1);
   }
 
   private buildBody(paint: THREE.Material, dark: THREE.Material): void {
     const { width, length, wheelRadius } = CAR_DIMENSIONS;
-    const lower = new THREE.Mesh(new THREE.BoxGeometry(width, 0.55, length), paint);
-    lower.position.y = wheelRadius + 0.2;
-    lower.castShadow = true;
-    this.root.add(lower);
+    this.addShell(wheelRadius - 0.075, wheelRadius + 0.475, 0, paint, true);
+    // タイヤハウスの奥（暗くして、タイヤがはっきり見えるように）
+    for (const z of [CAR_DIMENSIONS.frontAxle, CAR_DIMENSIONS.rearAxle]) {
+      for (const s of [-1, 1]) {
+        const well = new THREE.Mesh(new THREE.BoxGeometry(0.02, ARCH_TOP - (wheelRadius - 0.075), ARCH_HALF * 2), dark);
+        well.position.set(s * (CORE_HALF + 0.011), (ARCH_TOP + wheelRadius - 0.075) / 2, z);
+        this.root.add(well);
+      }
+    }
 
     for (const z of [length / 2, -length / 2]) {
       const bumper = new THREE.Mesh(new THREE.BoxGeometry(width + 0.04, 0.2, 0.16), dark);
@@ -123,9 +143,7 @@ export class CarMesh {
     const { lowerColor, roundTail, wing } = this.style;
     if (lowerColor !== undefined) {
       // ツートン: ボディの下半分を別の色にする
-      const band = new THREE.Mesh(new THREE.BoxGeometry(width + 0.02, 0.26, length + 0.02), new THREE.MeshLambertMaterial({ color: lowerColor }));
-      band.position.y = wheelRadius + 0.06;
-      this.root.add(band);
+      this.addShell(wheelRadius - 0.07, wheelRadius + 0.19, 0.01, new THREE.MeshLambertMaterial({ color: lowerColor }), false);
     }
 
     const lightGeo = new THREE.BoxGeometry(0.4, 0.14, 0.05);
@@ -135,7 +153,7 @@ export class CarMesh {
     const headMat = new THREE.MeshBasicMaterial({ color: 0xfff6d5 });
     const tailMat = new THREE.MeshBasicMaterial({ color: 0xc81e1e });
     for (const s of [-1, 1]) {
-      const head = new THREE.Mesh(lightGeo, headMat);
+      const head = new THREE.Mesh(this.style.roundHead ? roundGeo(0.13) : lightGeo, headMat);
       head.position.set(s * (width / 2 - 0.3), wheelRadius + 0.3, length / 2 + 0.01);
       this.root.add(head);
       if (roundTail) {
@@ -175,6 +193,38 @@ export class CarMesh {
     }
   }
 
+  /**
+   * ボディの下半分（高さ y0〜y1 の箱）。タイヤの上はえぐって（タイヤハウス）、ハンドルを切った前輪も車体に埋まらないようにする。
+   * inflate: 外側にふくらませる量（ツートンの帯を本体の上に重ねるとき）
+   */
+  private addShell(y0: number, y1: number, inflate: number, mat: THREE.Material, shadow: boolean): void {
+    const { width, length, frontAxle, rearAxle } = CAR_DIMENSIONS;
+    const half = width / 2 + inflate;
+    const add = (w: number, h: number, d: number, x: number, y: number, z: number) => {
+      if (w <= 0 || h <= 0 || d <= 0) return;
+      const m = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), mat);
+      m.position.set(x, y, z);
+      m.castShadow = shadow;
+      this.root.add(m);
+    };
+    // 真ん中（左右のタイヤの間）は前から後ろまでつながった箱
+    add(CORE_HALF * 2, y1 - y0, length + inflate * 2, 0, (y0 + y1) / 2, 0);
+    // 左右の外側: タイヤハウスより上はつながり、下はタイヤの前後で切れる
+    const side = half - CORE_HALF;
+    const cx = (half + CORE_HALF) / 2;
+    const top = Math.max(y0, Math.min(y1, ARCH_TOP));
+    const front = length / 2 + inflate;
+    const cuts: [number, number][] = [
+      [-front, rearAxle - ARCH_HALF],
+      [rearAxle + ARCH_HALF, frontAxle - ARCH_HALF],
+      [frontAxle + ARCH_HALF, front],
+    ];
+    for (const s of [-1, 1]) {
+      add(side, y1 - top, length + inflate * 2, s * cx, (top + y1) / 2, 0);
+      for (const [z0, z1] of cuts) add(side, top - y0, z1 - z0, s * cx, (y0 + top) / 2, (z0 + z1) / 2);
+    }
+  }
+
   private buildCabin(paint: THREE.Material, trim: THREE.Material): void {
     const { width } = CAR_DIMENSIONS;
     const glass = new THREE.MeshPhongMaterial({
@@ -187,7 +237,7 @@ export class CarMesh {
     });
     const [rearLow, frontLow, frontHigh, rearHigh] = this.windowProfile;
     const roofY = this.roofY;
-    const halfW = width / 2 - 0.06;
+    const halfW = width / 2 - 0.06 - (this.style.cabinInset ?? 0);
 
     // 側面の窓（台形）
     const shape = new THREE.Shape(this.windowProfile.map(([z, y]) => new THREE.Vector2(z, y)));
@@ -212,7 +262,7 @@ export class CarMesh {
 
     // 屋根とピラー
     const roof = new THREE.Mesh(
-      new THREE.BoxGeometry(width - 0.08, 0.06, frontHigh[0] - rearHigh[0] + 0.1),
+      new THREE.BoxGeometry(halfW * 2 + 0.04, 0.06, frontHigh[0] - rearHigh[0] + 0.1),
       paint,
     );
     roof.position.set(0, roofY + 0.03, (frontHigh[0] + rearHigh[0]) / 2);
@@ -220,7 +270,7 @@ export class CarMesh {
     this.root.add(roof);
     // 天井の内張り（車内視点で屋根の裏が暗く見えないように）
     const headliner = new THREE.Mesh(
-      new THREE.BoxGeometry(width - 0.14, 0.02, frontHigh[0] - rearHigh[0]),
+      new THREE.BoxGeometry(halfW * 2 - 0.02, 0.02, frontHigh[0] - rearHigh[0]),
       // 下向きの面は地面の照り返し色（緑）を受けるので、照明の影響を受けない素材にする
       new THREE.MeshBasicMaterial({ color: 0x8f8a82 }),
     );
@@ -243,27 +293,38 @@ export class CarMesh {
     floor.position.set(0, BELT_Y + 0.01, -0.45);
     this.root.add(floor);
 
-    const dash = new THREE.Mesh(new THREE.BoxGeometry(width - 0.16, 0.12, 0.3), trim);
-    dash.position.set(0, BELT_Y + 0.06, 0.78);
+    // ダッシュボードはフロントガラスの内側に置く
+    const dashZ = Math.min(0.78, this.windowProfile[1][0] - 0.17);
+    const dash = new THREE.Mesh(new THREE.BoxGeometry(width - 0.16 - 2 * (this.style.cabinInset ?? 0), 0.12, 0.3), trim);
+    dash.position.set(0, BELT_Y + 0.06, dashZ);
     this.root.add(dash);
 
     // メーターフード（運転席側）
     const hood = new THREE.Mesh(new THREE.BoxGeometry(0.4, 0.06, 0.16), trim);
-    hood.position.set(CABIN.driverEye.x, BELT_Y + 0.14, 0.68);
+    hood.position.set(CABIN.driverEye.x, BELT_Y + 0.14, dashZ - 0.1);
     this.root.add(hood);
 
     for (const x of [CABIN.driverEye.x, CABIN.passengerEye.x]) {
       const cushion = new THREE.Mesh(new THREE.BoxGeometry(0.5, 0.12, 0.5), seatMat);
       cushion.position.set(x, SEAT_Y - 0.06, -0.2);
       this.root.add(cushion);
-      const back = new THREE.Mesh(new THREE.BoxGeometry(0.5, 0.6, 0.1), seatMat);
-      back.position.set(x, BELT_Y + 0.35, -0.5);
+      // 背もたれは屋根を突き抜けない高さにする
+      const backH = Math.min(0.6, this.roofY - 0.08 - (BELT_Y + 0.05));
+      const back = new THREE.Mesh(new THREE.BoxGeometry(0.5, backH, 0.1), seatMat);
+      back.position.set(x, BELT_Y + 0.05 + backH / 2, -0.5);
       back.rotation.x = -0.15;
       this.root.add(back);
     }
-    const rear = new THREE.Mesh(new THREE.BoxGeometry(width - 0.3, 0.5, 0.1), seatMat);
-    rear.position.set(0, BELT_Y + 0.25, -1.3);
-    this.root.add(rear);
+    // 後ろの席は、リアガラスの下に収まる高さにする（収まらない車には置かない）
+    const [rearLow, , , rearHigh] = this.windowProfile;
+    const rearZ = -1.3;
+    const glassY = rearLow[1] + ((rearZ - 0.05 - rearLow[0]) / (rearHigh[0] - rearLow[0])) * (rearHigh[1] - rearLow[1]);
+    const rearH = Math.min(0.5, Math.min(glassY, this.roofY) - 0.05 - BELT_Y);
+    if (!this.style.twoSeater && rearH > 0.15) {
+      const rear = new THREE.Mesh(new THREE.BoxGeometry(width - 0.3, rearH, 0.1), seatMat);
+      rear.position.set(0, BELT_Y + rearH / 2, rearZ);
+      this.root.add(rear);
+    }
 
     // ハンドル: 少し上向きに傾けたリング + スポーク
     const column = new THREE.Group();

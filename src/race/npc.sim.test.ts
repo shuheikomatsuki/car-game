@@ -101,10 +101,10 @@ describe('NPC race', () => {
     for (let i = 1; i < times.length; i++) expect(times[i]).toBeLessThan(times[i - 1]);
   }, 60000);
 
-  it('drives the sports car on the circuit', () => {
-    const sport = VEHICLE_PRESETS.find((v) => v.id === 'sport')!.params;
+  it('drives the RX-7 on the circuit', () => {
+    const sport = VEHICLE_PRESETS.find((v) => v.id === 'fd3s')!.params;
     const { racers } = race(CIRCUIT_MAP, [NPC_LEVELS[3]], sport);
-    console.log('sport pro', racers[0].timer.laps[0].toFixed(2), 'off', racers[0].maxOffset.toFixed(1));
+    console.log('fd3s pro', racers[0].timer.laps[0].toFixed(2), 'off', racers[0].maxOffset.toFixed(1));
     expect(racers[0].timer.phase).toBe('finished');
   }, 60000);
 

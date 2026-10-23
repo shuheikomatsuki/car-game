@@ -6,6 +6,7 @@ import { Airborne } from './game/airborne';
 import { TIMES_OF_DAY, type TimeOfDay, WEATHERS, type Weather, loadEnvironment, paramsForWeather, saveEnvironment } from './game/environment';
 import { FallRecovery } from './game/fall';
 import { Level } from './game/level';
+import { clearPlayData } from './game/playData';
 import { NpcField, npcEntries, rankEntrants, velocityOf } from './game/npcRace';
 import { PLAYER_COLORS, RemoteCars, carStateOf, createLabel } from './game/remoteCars';
 import { MAPS } from './map/maps';
@@ -97,7 +98,7 @@ async function main() {
   // ?map=1 のように開始マップを指定できる
   const requested = Number(params.get('map'));
   let mapIndex = Number.isInteger(requested) && requested >= 0 && requested < MAPS.length ? requested : 0;
-  // ?car=sport のように開始時の車を指定できる
+  // ?car=fd3s のように開始時の車を指定できる
   let carIndex = Math.max(0, VEHICLE_PRESETS.findIndex((v) => v.id === params.get('car')));
   const vehicle = () => VEHICLE_PRESETS[carIndex];
   // 時間帯と天気（?time=night&weather=rain のように指定もできる）
@@ -113,11 +114,13 @@ async function main() {
   let assignedColor: number | null = null;
   let carMesh = new CarMesh(undefined, carStyle(vehicle().id));
   view.scene.add(carMesh.root);
+  cameraRig.setCarScale(carStyle(vehicle().id).scale ?? 1);
   /** 車を替えたら、その車の形の車体に作り直す */
   const rebuildCarMesh = () => {
     carMesh.dispose();
     carMesh = new CarMesh(assignedColor ?? undefined, carStyle(vehicle().id));
     view.scene.add(carMesh.root);
+    cameraRig.setCarScale(carStyle(vehicle().id).scale ?? 1);
   };
   let level = new Level(rapier, MAPS[mapIndex]);
   level.car.params = carParams();
@@ -206,6 +209,7 @@ async function main() {
     onRetry: () => race && startRace(raceMode),
     onQuit: () => stopRace(),
     onRanking: () => openRanking(),
+    onChange: () => openChangeFlow(),
   });
 
   const placeCar = (spawn: Spawn) => {
@@ -1036,7 +1040,19 @@ async function main() {
       finish: () => applyDraft('battle'),
     },
   ];
+  /** いまのレースのモードのまま、コースと車だけを選び直す（ポーズ画面・ゴールの画面から） */
+  function openChangeFlow() {
+    const base = menuModes.find((m) => m.id === raceMode);
+    if (!base) return;
+    menu.openFlow({
+      ...base,
+      begin: () => beginDraft(true),
+      screens: () => [raceMode === 'battle' ? courseScreen(true, draftRival().course) : courseScreen(true), carScreen],
+    });
+  }
   const settingDetail = (title: string, lines: string[]) => () => textDetail({ kicker: 'OPTIONS', title, lines });
+  /** プレイデータを消すボタンを1回押してから、この時刻 [ms] までにもう一度押すと消す */
+  let clearArmedUntil = 0;
   const settingItems: MenuItem[] = [
     { label: () => 'カメラ', value: () => cameraRig.modeName, run: () => cycleCamera(), detail: settingDetail('カメラ', ['走っているときの視点。走行中は C キーでも切り替えられます。']) },
     { label: () => '効果音', value: () => (sound.isMuted ? 'OFF' : 'ON'), run: toggleMute, detail: settingDetail('効果音', ['エンジン音・タイヤの音・ぶつかった音。M キーでも切り替えられます。']) },
@@ -1081,6 +1097,29 @@ async function main() {
         'アドレスバーを消して遊ぶには、Safari の共有ボタン（□に↑）から「ホーム画面に追加」を選び、追加したアイコンから開いてください。',
       ]),
     },
+    {
+      label: () => 'プレイデータを消す',
+      // まちがって消さないよう、続けてもう一度押したときだけ消す
+      value: () => (clearArmedUntil > performance.now() ? 'もう一度押すと消す' : '消す'),
+      run: () => {
+        if (clearArmedUntil <= performance.now()) {
+          clearArmedUntil = performance.now() + 4000;
+          menu.refresh();
+          window.setTimeout(() => menu.refresh(), 4100);
+          return;
+        }
+        clearArmedUntil = 0;
+        clearPlayData();
+        best = null;
+        hud.toast('プレイデータを消しました');
+        menu.refresh();
+      },
+      detail: settingDetail('プレイデータを消す', [
+        'このブラウザに残っている、タイムアタックの自己ベストとゴースト・勝ったライバルの記録を消します。',
+        '名前・サウンド・ハンドルなどの設定は残ります。ランキングに送った記録は消えません。',
+        '押したあと、もう一度押すと消します。元には戻せません。',
+      ]),
+    },
   ];
   const openSettings = { label: () => '設定', en: 'OPTIONS', run: () => menu.openSettings(), detail: settingDetail('設定', ['カメラ・サウンド・ハンドルなど。']) };
   const onlineItem: MenuItem = {
@@ -1113,6 +1152,13 @@ async function main() {
       pause: [
         { label: () => '走りに戻る', en: 'RESUME', run: () => menu.close(), detail: pauseDetail },
         { label: () => 'やり直す', en: 'RETRY', run: () => (menu.close(), race ? startRace(raceMode) : resetCar()), detail: pauseDetail },
+        {
+          label: () => 'コース・車を変える',
+          en: 'CHANGE',
+          run: () => openChangeFlow(),
+          visible: () => race !== null,
+          detail: settingDetail('コース・車を変える', ['同じモードのまま、コースと車を選び直してスタートからやり直す。']),
+        },
         { label: () => 'レースをやめる', en: 'QUIT RACE', run: () => (menu.close(), stopRace()), visible: () => race !== null, detail: pauseDetail },
         { label: () => 'トップメニュー', en: 'MAIN MENU', run: () => menu.openHome(), detail: settingDetail('トップメニュー', ['プレイモード・コース・車を選び直す。']) },
         rankingItem,

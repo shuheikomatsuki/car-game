@@ -195,7 +195,7 @@ const HAIRPIN_DOWN_LAYOUT = [
 /** 斜面をつづら折りで上る。ヘアピンが十数個続く */
 export const HAIRPIN_MAP: MapDefinition = {
   id: 'hairpin',
-  name: 'つづら折り（ヘアピン）',
+  name: 'つづら折り（ヒルクライム）',
   tileSize: 22,
   roadWidth: 10,
   layout: HAIRPIN_LAYOUT,

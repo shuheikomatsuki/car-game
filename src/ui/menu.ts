@@ -100,6 +100,8 @@ export class GameMenu {
   private stage: Stage = 'title';
   /** 設定画面を閉じたときに戻る画面 */
   private settingsReturn: Stage = 'home';
+  /** openFlow で開いた流れの最初の画面で「戻る」を押したときの行き先（トップ画面から入ったときは null） */
+  private flowReturn: 'pause' | 'close' | null = null;
   /** 選んでいるプレイモード */
   private mode: MenuMode | null = null;
   private step = 0;
@@ -176,6 +178,16 @@ export class GameMenu {
     this.show('pause');
   }
 
+  /**
+   * トップ画面を通らずに、選ぶ画面の流れ（コース・車を変えるなど）を開く。
+   * 最初の画面で「戻る」を押すと、ポーズ画面から開いたならポーズ画面へ、そうでなければ閉じる
+   */
+  openFlow(mode: MenuMode): void {
+    this.flowReturn = this.openValue && this.stage === 'pause' ? 'pause' : 'close';
+    this.enterMode(mode);
+    this.reveal();
+  }
+
   close(): void {
     if (!this.openValue) return;
     this.openValue = false;
@@ -192,6 +204,10 @@ export class GameMenu {
 
   private show(stage: Stage): void {
     this.go(stage);
+    this.reveal();
+  }
+
+  private reveal(): void {
     if (this.openValue) return;
     this.openValue = true;
     this.root.classList.remove('hidden');
@@ -199,6 +215,7 @@ export class GameMenu {
   }
 
   private go(stage: Stage): void {
+    if (stage !== 'mode') this.flowReturn = null;
     if (stage === 'settings') this.settingsReturn = this.stage === 'pause' ? 'pause' : 'home';
     if (stage !== 'mode') this.mode = null;
     this.stage = stage;
@@ -256,6 +273,10 @@ export class GameMenu {
           this.step--;
           this.focusGroup = 0;
           this.render();
+        } else if (this.flowReturn === 'pause') {
+          this.go('pause');
+        } else if (this.flowReturn === 'close') {
+          this.close();
         } else {
           const index = this.modes.indexOf(this.mode!);
           this.go('home');

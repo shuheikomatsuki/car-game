@@ -27,9 +27,16 @@ export class CameraRig {
   private initialized = false;
   private shake = 0;
   private orbitAngle = 0;
+  /** 車の見た目の大きさの倍率（小さな車では車内の目の位置も低く・内側にする） */
+  private carScale = 1;
 
   constructor(aspect: number) {
     this.camera = new THREE.PerspectiveCamera(CHASE_FOV, aspect, 0.3, 1500);
+  }
+
+  /** 乗っている車の見た目の大きさの倍率（CarStyle.scale） */
+  setCarScale(scale: number): void {
+    this.carScale = scale;
   }
 
   get modeName(): string {
@@ -107,7 +114,8 @@ export class CameraRig {
       near = 0.3;
     } else {
       // 車体ローカル座標の目の位置をワールド座標へ（前方 +Z、左 +X）
-      const { x: ex, y: ey, z: ez } = mode.eye;
+      const k = this.carScale;
+      const [ex, ey, ez] = [mode.eye.x * k, mode.eye.y * k, mode.eye.z * k];
       this.position.set(car.x + ex * fz + ez * fx, car.y + ey, car.z - ex * fx + ez * fz);
       const lx = Math.sin(car.yaw + mode.lookYaw);
       const lz = Math.cos(car.yaw + mode.lookYaw);
