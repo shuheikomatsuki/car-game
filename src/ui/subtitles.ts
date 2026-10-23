@@ -7,9 +7,14 @@ export interface Speaker {
   photo?: string;
   /** 自分のセリフか（色を変える） */
   isPlayer?: boolean;
+  /** 効果音の字幕（名前を出さない） */
+  isEffect?: boolean;
 }
 
+type Item = { speaker: Speaker; text: string; sound?: string };
+
 function face(s: Speaker): string {
+  if (s.isEffect) return '<span>！</span>';
   if (s.photo) return `<img src="${escapeHtml(import.meta.env.BASE_URL + s.photo)}" alt="" />`;
   return `<span>${escapeHtml([...s.name][0] ?? '?')}</span>`;
 }
@@ -24,13 +29,16 @@ export class Subtitles {
   private readonly sceneFace = this.scene.querySelector<HTMLElement>('.scene-face')!;
   private readonly sceneName = this.scene.querySelector<HTMLElement>('.scene-name')!;
   private readonly sceneText = this.scene.querySelector<HTMLElement>('.scene-text')!;
-  private queue: { speaker: Speaker; text: string }[] = [];
+  private queue: Item[] = [];
   private lineTimer = 0;
-  private sceneLines: { speaker: Speaker; text: string }[] = [];
+  private sceneLines: Item[] = [];
   private sceneIndex = 0;
   private sceneDone: (() => void) | null = null;
 
-  constructor(private readonly resolve: (who: string) => Speaker) {
+  constructor(
+    private readonly resolve: (who: string) => Speaker,
+    private readonly playSound: (name: string) => void = () => {},
+  ) {
     this.scene.addEventListener('click', (e) => {
       if ((e.target as HTMLElement).closest('.scene-skip')) this.endScene();
       else this.advance();
@@ -51,7 +59,7 @@ export class Subtitles {
 
   /** 走っている間のセリフ（前のセリフが出ている間は順番を待つ） */
   say(lines: readonly DialogueLine[]): void {
-    for (const l of lines) this.queue.push({ speaker: this.resolve(l.who), text: l.text });
+    for (const l of lines) this.queue.push(this.item(l));
     if (this.lineTimer <= 0) this.next();
   }
 
@@ -73,7 +81,7 @@ export class Subtitles {
       done();
       return;
     }
-    this.sceneLines = lines.map((l) => ({ speaker: this.resolve(l.who), text: l.text }));
+    this.sceneLines = lines.map((l) => this.item(l));
     this.sceneIndex = 0;
     this.sceneDone = done;
     this.scene.classList.remove('hidden');
@@ -96,8 +104,11 @@ export class Subtitles {
       this.line.classList.remove('visible');
       return;
     }
-    this.line.innerHTML = `<span class="who${item.speaker.isPlayer ? ' me' : ''}">${escapeHtml(item.speaker.name)}</span>${escapeHtml(item.text)}`;
+    const who = item.speaker.isEffect ? '' : `<span class="who${item.speaker.isPlayer ? ' me' : ''}">${escapeHtml(item.speaker.name)}</span>`;
+    this.line.innerHTML = `${who}<span class="text">${escapeHtml(item.text)}</span>`;
+    this.line.classList.toggle('effect', !!item.speaker.isEffect);
     this.line.classList.add('visible');
+    if (item.sound) this.playSound(item.sound);
     this.lineTimer = lineDuration(item.text);
   }
 
@@ -110,13 +121,19 @@ export class Subtitles {
   }
 
   private showSceneLine(): void {
-    const { speaker, text } = this.sceneLines[this.sceneIndex];
+    const { speaker, text, sound } = this.sceneLines[this.sceneIndex];
+    this.scene.classList.toggle('effect', !!speaker.isEffect);
+    if (sound) this.playSound(sound);
     this.sceneFace.innerHTML = face(speaker);
     this.sceneFace.classList.toggle('photo', !!speaker.photo);
     this.sceneName.textContent = speaker.name;
     this.sceneName.classList.toggle('me', !!speaker.isPlayer);
     this.sceneText.textContent = text;
     this.scene.classList.toggle('last', this.sceneIndex === this.sceneLines.length - 1);
+  }
+
+  private item(l: DialogueLine): Item {
+    return { speaker: this.resolve(l.who), text: l.text, sound: l.sound };
   }
 
   private endScene(callDone = true): void {

@@ -7,27 +7,105 @@ import type { RivalDialogue } from './dialogue';
  * - 書かなければ、ライバルの得意なコースでバトルしたときだけ出る（onlyHomeCourse: false でどのコースでも）
  * - who: ライバルの id、'player'（自分）、下の CHARACTERS の id。どれでもなければ、書いた文字をそのまま名前として出す
  * - ?debug を付けて開くと、走っている間に「いまの場所（スタートからの距離）」が画面の左下に出る（at を決めるのに使う）
- *
- * いまのセリフは動作を確かめるための見本（武内樹）。好きなものに書き換えたり、消したりしてよい。
+ * - 効果音の字幕は who: 'sfx'。sound: 'slap' のように書くと、public/sounds/slap.mp3 を鳴らす（無ければ合成した音）
  */
 export const RIVAL_DIALOGUES: Readonly<Record<string, RivalDialogue>> = {
-  itsuki: {
+  iketani: {
+    intro: [{ say: [{ who: 'iketani', text: 'わりーな 本気で走るときは助手席にヒトを乗せないことにしてんだ！！' }] }],
+  },
+
+  nakazato: {
+    race: [
+      // 中里が前にいるとき（スタート直後の横並びは除く）
+      {
+        when: { position: 'behind', gap: { min: 5 }, elapsed: { min: 5 } },
+        say: [{ who: 'nakazato', text: 'リアサイドについているRのバッジは不敗神話のRだ！！ オレのRについて来れるか！？' }],
+      },
+      // 終盤、中里が前だが、すぐ後ろまで迫られたとき
+      {
+        when: { progress: { min: 0.7 }, position: 'behind', gap: { max: 6 } },
+        say: [{ who: 'nakazato', text: 'なめてんじゃねーぞっ！！ 外から行かすかよ！！' }],
+      },
+    ],
+  },
+
+  iwaki: {
+    intro: [{ say: [{ who: 'iwaki', text: 'ジョーダンは顔だけにしておいてくれよ、少年' }] }],
+    race: [{ when: { position: 'behind', elapsed: { min: 8 } }, say: [{ who: 'iwaki', text: '峠の王者はランエボだ！！' }] }],
+    // 清次が負けた（自分が勝った）あと: 須藤京一に引っ叩かれる
+    win: [
+      {
+        say: [
+          { who: 'sfx', text: 'バシィッ！！\n（須藤京一が岩城清次を引っ叩く）', sound: 'slap' },
+          { who: 'sudo', text: 'いろは坂のサルじゃねえんだから、ちったァ頭使えよ' },
+        ],
+      },
+    ],
+  },
+
+  sudo: {
+    intro: [{ say: [{ who: 'sudo', text: 'おまえに教えてやる これは講習会（セミナー）だ' }] }],
+    race: [
+      { when: { elapsed: { min: 10 } }, say: [{ who: 'sudo', text: 'ハイパワーターボ プラス 4WD この条件にあらずんばクルマにあらずだ' }] },
+      // 終盤、京一が前だが、差が詰まったとき
+      { when: { progress: { min: 0.7 }, position: 'behind', gap: { max: 8 } }, say: [{ who: 'sudo', text: 'オレのエボⅢは曲がる！！' }] },
+    ],
+  },
+
+  keisuke: {
+    // 先行後追いで啓介が先行（自分が後追い）のとき
+    intro: [
+      {
+        when: { rule: 'suddenDeath', playerLeads: false },
+        say: [{ who: 'keisuke', text: '上等じゃねーか！！ コーナー2コも抜けりゃバックミラーから消してみせるぜ！！' }],
+      },
+    ],
+    race: [
+      // 啓介が前だが、差が詰まっているとき（スタート直後は除く）
+      {
+        when: { position: 'behind', gap: { max: 8 }, elapsed: { min: 15 } },
+        say: [{ who: 'keisuke', text: 'どうしたんだ 今日に限ってFDがやけにノロく感じる！！\nクソッタレが セカンダリータービン止まってんじゃのーのか！！' }],
+      },
+    ],
+  },
+
+  hoshino: {
+    race: [{ when: { position: 'behind', elapsed: { min: 8 } }, say: [{ who: 'hoshino', text: 'オレは死ぬまで…GT-Rだ！！' }] }],
+  },
+
+  // 八方ヶ原風の峠（往復）: 第2セクションは 700m、ハイポイントコーナーの先の第3セクションは 1450m、谷の橋は 1990m から
+  tachi: {
     intro: [
       {
         say: [
-          { who: 'itsuki', text: 'よーし、オレのハチゴーの走り、見せてやるぜ！' },
-          { who: 'player', text: '……じゃあ、行くか' },
+          {
+            who: 'tachi',
+            text: 'やると決めたからには素人が相手でも手加減はしない\nプロとアマの間にどれくらいの差があるのか、お前らもよくみておけよ。',
+          },
         ],
       },
     ],
     race: [
-      { when: { at: 300, position: 'behind' }, say: [{ who: 'itsuki', text: 'へへっ、ついて来られるか？' }] },
-      { when: { event: 'overtaken' }, say: [{ who: 'itsuki', text: 'うわっ、抜かれた！？' }] },
-      { when: { event: 'overtake' }, say: [{ who: 'itsuki', text: 'よっしゃ、前に出たぜ！' }] },
-      { when: { event: 'crash' }, say: [{ who: 'itsuki', text: 'おいおい、大丈夫かよ！' }] },
+      {
+        when: { at: 710 },
+        say: [
+          {
+            who: 'tachi',
+            text: '見通しが悪く狭かった道路がここから急に変わる。拡幅工事が終わった新設の第2セクション。見た目は綺麗だが路面はひどいもんだな。アスファルトの継ぎ目がバンピーで跳ねまくる。',
+          },
+        ],
+      },
+      { when: { at: 1460 }, say: [{ who: 'tachi', text: 'ハイポイントコーナーを通過した。ここからはきついダウンヒルの第3セクション。' }] },
+      {
+        when: { at: 1750 },
+        say: [
+          {
+            who: 'tachi',
+            text: 'この橋の手前でこのコースの最高速を記録する。橋を渡ればその先はきつい登りの第4セクション。一気に引き離してジ・エンドだ。',
+          },
+        ],
+      },
     ],
-    win: [{ say: [{ who: 'itsuki', text: 'ちくしょー、負けたぁ……。でも、楽しかったぜ！' }] }],
-    lose: [{ say: [{ who: 'itsuki', text: 'やったー！ オレの勝ちだ！' }] }],
   },
 };
 

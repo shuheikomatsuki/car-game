@@ -145,11 +145,12 @@ async function main() {
   // --- バトルのセリフ ---
   const speakerOf = (who: string): Speaker => {
     if (who === 'player') return { name: loadPlayerName().trim() || 'あなた', isPlayer: true };
+    if (who === 'sfx') return { name: '', isEffect: true };
     const r = RIVALS.find((x) => x.id === who);
     if (r) return { name: r.name, photo: r.photo };
     return CHARACTERS[who] ?? { name: who };
   };
-  const subtitles = new Subtitles(speakerOf);
+  const subtitles = new Subtitles(speakerOf, (name) => sound.effect(name));
   /** いまのバトルのセリフ（セリフの無いライバルや、得意なコース以外では null） */
   let talk: { script: RivalDialogue; ctx: BattleContext; lines: BattleDialogue; overtakes: OvertakeWatcher } | null = null;
   let lastImpact = 0;
@@ -339,7 +340,9 @@ async function main() {
     const pass = t.overtakes.update(signedGap);
     if (pass) events.push(pass);
     if (lastImpact > CRASH_THRESHOLD) events.push('crash');
-    const lapDistance = level.course?.closed ? mine - (race.lap - 1) * level.course.length : mine;
+    const course = race.course;
+    const lapDistance = course.closed ? mine - (race.lap - 1) * course.length : mine;
+    const progress = Math.min(1, Math.max(0, mine / (course.length * (course.closed ? race.totalLaps : 1))));
     subtitles.say(
       t.lines.update({
         elapsed: race.time,
@@ -348,6 +351,7 @@ async function main() {
         ahead: signedGap > 0,
         gap: Math.abs(signedGap),
         speedKmh: Math.abs(curr.forwardSpeed) * 3.6,
+        progress,
         events,
       }),
     );
