@@ -128,18 +128,6 @@ export const VEHICLE_PRESETS: readonly VehiclePreset[] = [
     }),
   },
   {
-    id: 'sport',
-    label: 'スポーツカー',
-    description: '速くて曲がる、くせのない車',
-    params: car(250, {
-      engineAccel: 17,
-      brakeDecel: 22,
-      steerRate: 2.6,
-      maxLateralAccel: 18,
-      lateralGrip: 10,
-    }),
-  },
-  {
     id: 'ae85',
     label: 'AE85',
     description: 'FR・AE86の兄弟車。軽いが非力で、坂と直線は苦手',
@@ -228,14 +216,14 @@ export const VEHICLE_PRESETS: readonly VehiclePreset[] = [
   {
     id: 'fd3s',
     label: 'RX-7 (FD3S)',
-    description: 'FR・ロータリーターボ。速いがお尻が流れやすい',
+    description: 'FR・ロータリーターボ。軽くて前後のバランスがよく、速くてよく曲がる',
     params: car(260, {
       engineAccel: 17.5,
-      brakeDecel: 21,
+      brakeDecel: 22,
       wheelBase: 2.43,
       steerRate: 2.8,
-      maxLateralAccel: 17.5,
-      lateralGrip: 8,
+      maxLateralAccel: 18.5,
+      lateralGrip: 10,
     }),
   },
   {

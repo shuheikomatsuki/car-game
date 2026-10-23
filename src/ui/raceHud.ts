@@ -60,7 +60,7 @@ export class RaceHud {
 
   private readonly rankingButton = el('race-ranking');
 
-  constructor(handlers: { onRetry: () => void; onQuit: () => void; onRanking: () => void }) {
+  constructor(handlers: { onRetry: () => void; onQuit: () => void; onRanking: () => void; onChange: () => void }) {
     const button = (id: string, run: () => void) => {
       const b = el(id);
       b.addEventListener('mousedown', (e) => e.preventDefault());
@@ -69,6 +69,7 @@ export class RaceHud {
     button('race-retry', handlers.onRetry);
     button('race-quit', handlers.onQuit);
     button('race-ranking', handlers.onRanking);
+    button('race-change', handlers.onChange);
   }
 
   show(on: boolean): void {

@@ -91,7 +91,7 @@ describe('stepVehicle', () => {
     expect(lateralAccelAt(10, P)).toBe(P.maxLateralAccel);
     expect(lateralAccelAt(40, P)).toBeGreaterThan(P.maxLateralAccel * 1.3);
     expect(lateralAccelAt(60, P)).toBe(lateralAccelAt(40, P));
-    // スポーツカーなら 130km/h で半径 80m のカーブを曲がれる
+    // FD なら 130km/h で半径 80m のカーブを曲がれる
     const fd = VEHICLE_PRESETS.find((c) => c.id === 'fd3s')!.params;
     const v = 130 / 3.6;
     expect((v * v * Math.tan(steerLimitAt(v, fd))) / fd.wheelBase).toBeGreaterThanOrEqual((v * v) / 80);

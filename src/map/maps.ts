@@ -378,7 +378,7 @@ const HAIRPIN_ROAD: RoadSpec = {
   ],
 };
 
-export const HAIRPIN_MAP = roadMap('hairpin', 'つづら折り（ヘアピン）', HAIRPIN_ROAD);
+export const HAIRPIN_MAP = roadMap('hairpin', 'つづら折り（ヒルクライム）', HAIRPIN_ROAD);
 
 /**
  * つづら折りを上から下る。ヘアピンの内側には段差のある近道の帯があり、
