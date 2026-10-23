@@ -288,7 +288,7 @@ export function conditionsDetail(time: { id: string; label: string }, weather: {
   };
   return {
     html: `<div class="d-course">
-      <div class="d-hero d-sky sky-${escapeHtml(time.id)} wx-${escapeHtml(weather.id)}"><span class="d-tag">${escapeHtml(time.label)} / ${escapeHtml(weather.label)}</span><div class="ridge"></div></div>
+      <div class="d-hero d-sky sky-${escapeHtml(time.id)} wx-${escapeHtml(weather.id)}"><span class="d-tag">${escapeHtml(time.label)} / ${escapeHtml(weather.label)}</span><div class="ridge"></div>${weather.id === 'rain' ? '<canvas class="d-rain"></canvas>' : ''}</div>
       <div class="d-body">
         <p class="d-team">CONDITIONS</p>
         <h2 class="d-name">${escapeHtml(time.label)}・${escapeHtml(weather.label)}</h2>
@@ -296,6 +296,174 @@ export function conditionsDetail(time: { id: string; label: string }, weather: {
         ${specs(specRows)}
       </div>
     </div>`,
+    mount: (root) => {
+      const canvas = root.querySelector<HTMLCanvasElement>('.d-rain');
+      return canvas ? rainAnimation(canvas, time.id === 'night') : undefined;
+    },
+  };
+}
+
+interface Drop {
+  x: number;
+  y: number;
+  /** 奥行き 0（遠い）..1（近い）: 速さ・長さ・濃さが変わる */
+  z: number;
+  /** 落ちる地面の高さ（枠の高さに対する割合） */
+  ground: number;
+}
+
+interface Splash {
+  x: number;
+  y: number;
+  age: number;
+  size: number;
+}
+
+/**
+ * 雨の絵: 奥行きのある雨粒（遠いほど細く遅く薄い）、風で少し流れる筋、
+ * 濡れた路面に落ちたときの跳ねと波紋、遠くの山にかかる雨のもや
+ */
+function rainAnimation(canvas: HTMLCanvasElement, night: boolean): () => void {
+  let fit = fitCanvas(canvas);
+  const drops: Drop[] = [];
+  const splashes: Splash[] = [];
+  const wind = 0.16;
+  const tint = night ? '170, 190, 215' : '225, 232, 240';
+  const spawn = (d: Drop, anywhere: boolean) => {
+    const w = fit?.w ?? 300;
+    const h = fit?.h ?? 200;
+    d.z = Math.random() ** 1.6;
+    d.x = Math.random() * (w + h * wind) - h * wind * 0.5;
+    d.y = anywhere ? Math.random() * h : -40 - Math.random() * 60;
+    d.ground = 0.84 + Math.random() * 0.16;
+  };
+  const count = () => Math.round(((fit?.w ?? 300) * (fit?.h ?? 200)) / 160);
+  const fill = () => {
+    while (drops.length < count()) {
+      const d = { x: 0, y: 0, z: 0, ground: 1 };
+      spawn(d, true);
+      drops.push(d);
+    }
+    drops.length = Math.min(drops.length, count());
+  };
+  fill();
+
+  const draw = (dt: number) => {
+    if (!fit) return;
+    const { g, w, h } = fit;
+    g.clearRect(0, 0, w, h);
+    // 遠くの山にかかる雨のもや
+    const haze = g.createLinearGradient(0, h * 0.3, 0, h);
+    haze.addColorStop(0, `rgba(${tint}, 0)`);
+    haze.addColorStop(0.55, `rgba(${tint}, ${night ? 0.1 : 0.22})`);
+    haze.addColorStop(1, `rgba(${tint}, ${night ? 0.04 : 0.1})`);
+    g.fillStyle = haze;
+    g.fillRect(0, 0, w, h);
+    // 濡れた路面: 空を映した暗い面
+    const road = g.createLinearGradient(0, h * 0.84, 0, h);
+    road.addColorStop(0, night ? 'rgba(20, 26, 34, 0.92)' : 'rgba(58, 64, 70, 0.92)');
+    road.addColorStop(0.25, night ? 'rgba(40, 52, 66, 0.9)' : 'rgba(112, 122, 132, 0.9)');
+    road.addColorStop(1, night ? 'rgba(10, 13, 18, 0.95)' : 'rgba(40, 44, 50, 0.95)');
+    g.fillStyle = road;
+    g.fillRect(0, h * 0.84, w, h * 0.16);
+    // 路面の奥に映る空の明るさ
+    const sheen = g.createLinearGradient(0, h * 0.84, 0, h * 0.9);
+    sheen.addColorStop(0, `rgba(${tint}, ${night ? 0.08 : 0.28})`);
+    sheen.addColorStop(1, `rgba(${tint}, 0)`);
+    g.fillStyle = sheen;
+    g.fillRect(0, h * 0.84, w, h * 0.06);
+    // 夜は街灯: 雨ににじむ光と、濡れた路面に縦に伸びる映り込み
+    if (night) {
+      for (const x of [0.18, 0.46, 0.71, 0.9]) {
+        const lx = x * w;
+        const ly = h * 0.81;
+        const glow = g.createRadialGradient(lx, ly, 0, lx, ly, h * 0.12);
+        glow.addColorStop(0, 'rgba(255, 220, 170, 0.95)');
+        glow.addColorStop(0.06, 'rgba(255, 190, 120, 0.55)');
+        glow.addColorStop(1, 'rgba(255, 170, 90, 0)');
+        g.fillStyle = glow;
+        g.fillRect(lx - h * 0.12, ly - h * 0.12, h * 0.24, h * 0.24);
+        g.save();
+        g.translate(lx, h * 0.845);
+        g.scale(h * 0.018, h * 0.15);
+        const refl = g.createRadialGradient(0, 0, 0, 0, 0, 1);
+        refl.addColorStop(0, 'rgba(255, 190, 120, 0.6)');
+        refl.addColorStop(1, 'rgba(255, 190, 120, 0)');
+        g.fillStyle = refl;
+        g.fillRect(-1, 0, 2, 1);
+        g.restore();
+      }
+    }
+    // 波紋と跳ね
+    for (let i = splashes.length - 1; i >= 0; i--) {
+      const s = splashes[i];
+      s.age += dt;
+      const t = s.age / 0.45;
+      if (t >= 1) {
+        splashes.splice(i, 1);
+        continue;
+      }
+      const r = s.size * (0.4 + t * 2.2);
+      g.strokeStyle = `rgba(${tint}, ${0.45 * (1 - t)})`;
+      g.lineWidth = 0.8;
+      g.beginPath();
+      g.ellipse(s.x, s.y, r, r * 0.28, 0, 0, Math.PI * 2);
+      g.stroke();
+      if (t < 0.45) {
+        // 小さく跳ね上がるしぶき
+        const up = Math.sin((t / 0.45) * Math.PI) * s.size * 1.6;
+        g.fillStyle = `rgba(${tint}, ${0.7 * (1 - t / 0.45)})`;
+        for (const dx of [-1, -0.35, 0.4, 1]) g.fillRect(s.x + dx * s.size * (0.5 + t * 2), s.y - up * (1 - Math.abs(dx) * 0.3), 1, 1);
+      }
+    }
+
+    // 雨粒: 奥から順に描く
+    g.lineCap = 'round';
+    for (const d of drops) {
+      const speed = (380 + 900 * d.z) * (h / 220);
+      d.y += speed * dt;
+      d.x += speed * wind * dt;
+      const len = (6 + 22 * d.z) * (h / 220);
+      const groundY = h * d.ground;
+      if (d.y - len > (d.z > 0.45 ? groundY : h)) {
+        if (d.z > 0.45 && splashes.length < 80) splashes.push({ x: d.x, y: groundY, age: 0, size: 1 + 2.2 * d.z });
+        spawn(d, false);
+        continue;
+      }
+      const x0 = d.x - len * wind;
+      const y0 = d.y - len;
+      const grad = g.createLinearGradient(x0, y0, d.x, d.y);
+      grad.addColorStop(0, `rgba(${tint}, 0)`);
+      grad.addColorStop(1, `rgba(${tint}, ${0.12 + 0.5 * d.z})`);
+      g.strokeStyle = grad;
+      g.lineWidth = 0.5 + 1.1 * d.z;
+      g.beginPath();
+      g.moveTo(x0, y0);
+      g.lineTo(d.x, Math.min(d.y, d.z > 0.45 ? groundY : h));
+      g.stroke();
+    }
+  };
+
+  const still = window.matchMedia?.('(prefers-reduced-motion: reduce)').matches;
+  let frame = 0;
+  let last = performance.now();
+  const tick = (now: number) => {
+    frame = requestAnimationFrame(tick);
+    const dt = Math.min(0.05, (now - last) / 1000);
+    last = now;
+    draw(dt);
+  };
+  if (still) draw(0);
+  else frame = requestAnimationFrame(tick);
+  const observer = new ResizeObserver(() => {
+    fit = fitCanvas(canvas);
+    fill();
+    if (still) draw(0);
+  });
+  observer.observe(canvas);
+  return () => {
+    cancelAnimationFrame(frame);
+    observer.disconnect();
   };
 }
 
