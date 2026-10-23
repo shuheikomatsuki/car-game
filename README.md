@@ -3,6 +3,7 @@
 ブラウザ向け3Dドライビングゲーム「Prefix D」（個人開発）。
 自分で運転して街を走るほか、タイムアタック・NPC対戦・オンラインで友だちと走れる。
 
+- 遊ぶ: https://shuheikomatsuki.github.io/prefix-d/
 - 設計提案: [docs/design-proposal.md](docs/design-proposal.md)
 
 ## 遊び方
@@ -231,5 +232,6 @@ npm run dev                             # 別のターミナルで
 
 ### 公開
 
-`main` ブランチへ push すると GitHub Actions がテスト・ビルドし、GitHub Pages に公開する。
+`main` ブランチへ push すると GitHub Actions がテスト・ビルドし、GitHub Pages（https://shuheikomatsuki.github.io/prefix-d/ ）に公開する。
+ビルドは相対パスなので、リポジトリ名を変えても設定はいらない（URL の最後がリポジトリ名になる）。
 初回のみ、リポジトリの Settings → Pages → Source を **GitHub Actions** に設定する。
