@@ -985,6 +985,44 @@ body.touch .title-press .tap {
   transform: skewX(-12deg);
 }
 
+/* 種類と印を並べる（狭い画面では折り返して重ならない） */
+.d-tags {
+  position: absolute;
+  top: 14px;
+  left: 16px;
+  right: 16px;
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 6px 10px;
+  pointer-events: none;
+}
+
+.d-tags .d-tag {
+  position: static;
+  max-width: 100%;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.d-tags .d-tag.hot {
+  letter-spacing: 0.04em;
+}
+
+@media (max-height: 480px) {
+  .d-tags {
+    top: 10px;
+    left: 10px;
+    right: 10px;
+  }
+  .d-tags .d-tag {
+    padding: 3px 9px;
+    font-size: 11px;
+  }
+}
+
 .d-body {
   position: relative;
   padding: 20px 24px 24px;
@@ -1888,6 +1926,7 @@ body.racing #toast {
   left: 50%;
   transform: translate(-50%, -50%);
   font-size: 96px;
+  white-space: nowrap;
   font-weight: bold;
   text-shadow: 0 4px 16px rgba(0, 0, 0, 0.6);
   opacity: 0;
@@ -3158,5 +3197,20 @@ body.online-race #race-change {
     left: calc(env(safe-area-inset-left) + 10px);
     top: calc(env(safe-area-inset-top) + 62px);
     transform: none;
+  }
+}
+
+/* スマホの横向き: 結果の枠は、左上のボタン・周回の表示の右に出す（やり直すボタンに重ならない） */
+@media (orientation: landscape) and (max-height: 480px) {
+  body.touch #race-result {
+    top: calc(env(safe-area-inset-top) + 10px);
+    left: calc(env(safe-area-inset-left) + 240px);
+    right: calc(env(safe-area-inset-right) + 12px);
+    transform: none;
+    width: auto;
+    max-width: 420px;
+    margin: 0 auto;
+    max-height: calc(100dvh - env(safe-area-inset-top) - env(safe-area-inset-bottom) - 20px);
+    z-index: 6;
   }
 }

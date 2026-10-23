@@ -70,6 +70,8 @@ export interface MenuItem {
   run: () => void;
   visible?: () => boolean;
   detail?: () => DetailView;
+  /** トップ画面でプレイモードと同じ大きさで出す（みんなで走る・オンライン対戦など） */
+  major?: boolean;
 }
 
 type Stage = 'title' | 'home' | 'mode' | 'pause' | 'settings';
@@ -233,6 +235,7 @@ export class GameMenu {
         note: () => m.note,
         detail: m.detail,
         run: () => this.enterMode(m),
+        major: true,
       }));
       return [...modes, ...this.lists.home].filter((i) => i.visible?.() !== false);
     }
@@ -420,7 +423,7 @@ export class GameMenu {
       // トップ画面はプレイモードを大きく、その下にほかの項目を小さく並べる
       this.listEl.innerHTML = items
         .map((item, i) => {
-          const isModeItem = stage === 'home' && i < this.modes.length;
+          const isModeItem = stage === 'home' && item.major === true;
           const note = item.note?.();
           const value = item.value?.();
           return `<button type="button" class="item${isModeItem ? ' major' : ''}" data-item="${i}">${
