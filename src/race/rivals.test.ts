@@ -15,4 +15,9 @@ describe('RIVALS', () => {
     // 得意なコースはライバルごとに別々
     expect(new Set(RIVALS.map((r) => r.course)).size).toBe(RIVALS.length);
   });
+
+  it('give some rivals a favorite time and weather', () => {
+    for (const id of ['kenta', 'sakamoto']) expect(RIVALS.find((r) => r.id === id)?.conditions).toEqual({ time: 'night', weather: 'rain' });
+    expect(RIVALS.find((r) => r.id === 'takumi')?.conditions).toBeUndefined();
+  });
 });

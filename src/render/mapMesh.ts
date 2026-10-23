@@ -152,8 +152,11 @@ function liftGeometry(g: THREE.BufferGeometry, terrain: Terrain): THREE.BufferGe
   return g;
 }
 
-/** 地形の格子をそのままメッシュにする */
-export function terrainGeometry(terrain: Pick<Terrain, 'grid'>): THREE.BufferGeometry {
+/**
+ * 地形の格子をそのままメッシュにする。tint を渡すと、頂点ごとの色（急なほど 1 の steep で草と岩を混ぜた色）を
+ * その場所に合わせて変えられる
+ */
+export function terrainGeometry(terrain: Pick<Terrain, 'grid'>, tint?: (x: number, z: number, steep: number, color: THREE.Color) => void): THREE.BufferGeometry {
   const { minX, minZ, step, nx, nz, ground } = terrain.grid;
   const w = (nx - 1) * step;
   const d = (nz - 1) * step;
@@ -174,7 +177,9 @@ export function terrainGeometry(terrain: Pick<Terrain, 'grid'>): THREE.BufferGeo
   const c = new THREE.Color();
   for (let k = 0; k < normal.count; k++) {
     const steep = Math.min(1, Math.max(0, (0.93 - normal.getY(k)) / 0.2));
-    c.copy(grass).lerp(rock, steep).toArray(colors, k * 3);
+    c.copy(grass).lerp(rock, steep);
+    tint?.(pos.getX(k), pos.getZ(k), steep, c);
+    c.toArray(colors, k * 3);
   }
   g.setAttribute('color', new THREE.BufferAttribute(colors, 3));
   return g;

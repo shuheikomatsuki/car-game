@@ -16,7 +16,7 @@ import { type SubmitResult, mergeBoards } from './net/leaderboard';
 import { LeaderboardClient, myEntryId, playerId, uploadedTotal } from './net/leaderboardClient';
 import { type GhostData, type GhostPose, GhostRecorder, ghostPoseAt } from './race/ghost';
 import { NPC_LEVELS } from './race/npcDriver';
-import { RIVALS, loadBeatenRivals, markRivalBeaten, rivalLevel } from './race/rivals';
+import { RIVALS, type Rival, loadBeatenRivals, markRivalBeaten, rivalLevel } from './race/rivals';
 import { type BattleContext, BattleDialogue, type BattleEvent, OvertakeWatcher, type RivalDialogue, dialogueApplies, sceneLines } from './race/dialogue';
 import { CHARACTERS, RIVAL_DIALOGUES } from './race/dialogueScript';
 import { CHASE_START_GAP, type Runner, SAFE_SECONDS, SuddenDeath } from './race/suddenDeath';
@@ -813,6 +813,8 @@ async function main() {
   const mapLabel = (id: string) => MAPS.find((m) => m.id === id)?.name ?? id;
   /** 車の見た目（メニューの右側で回して見せる） */
   const carPreview = new CarPreview();
+  /** 選び始めたときの時間帯・天気（得意な条件のないライバルに選び直したら、これに戻す） */
+  let draftBaseEnv = { time: env.time, weather: env.weather };
   /** 選び始めるときに、下書きを今の状態にする（レースならレース用のコースから選ぶ） */
   const beginDraft = (raceOnly: boolean) => {
     draft.map = raceOnly && !level.def.race ? raceMaps[0].id : level.def.id;
@@ -822,7 +824,19 @@ async function main() {
     draft.rule = battleRule;
     draft.time = env.time;
     draft.weather = env.weather;
+    draftBaseEnv = { time: env.time, weather: env.weather };
   };
+  /** 対戦相手を選んだとき: コースと時間帯・天気を、まずライバルの得意なものにしておく（後の画面で変えられる） */
+  const draftRivalDefaults = () => {
+    const r = draftRival();
+    draft.map = r.course;
+    const c = r.conditions ?? draftBaseEnv;
+    draft.time = c.time;
+    draft.weather = c.weather;
+  };
+  /** ライバルの得意な時間帯・天気の書き方（「夜・雨」。なければ空） */
+  const rivalConditionsLabel = (r: Rival) =>
+    r.conditions ? `${TIMES_OF_DAY.find((t) => t.id === r.conditions!.time)!.label}・${WEATHERS.find((w) => w.id === r.conditions!.weather)!.label}` : '';
   /** 選んだ内容を反映して、そのモードで始める */
   const applyDraft = (mode: RaceMode | 'free') => {
     setEnvironment(draft.time, draft.weather, false);
@@ -856,7 +870,7 @@ async function main() {
             return {
               id: m.id,
               label: m.name,
-              badge: m.id === home ? 'HOME' : undefined,
+              badge: m.id === home ? '得意' : undefined,
               note: p.kind === 'free' ? '自由に走る' : `${(p.length / 1000).toFixed(1)}km・${p.kind === 'loop' ? `周回 ${p.laps}周` : p.kind === 'roundtrip' ? '往復' : '一本道'}`,
             };
           });
@@ -869,11 +883,11 @@ async function main() {
       if (!home) return courseDetail(draftMap(), carLabel);
       const r = draftRival();
       const script = RIVAL_DIALOGUES[r.id];
-      // セリフがホームコースだけのライバルなら、ほかのコースを選んだときに知らせる
+      // セリフが得意なコースだけのライバルなら、ほかのコースを選んだときに知らせる
       const silent = draftMap().id !== home && script && (script.onlyHomeCourse ?? true);
       return courseDetail(draftMap(), carLabel, {
-        badge: draftMap().id === home ? `${r.name}のホーム` : undefined,
-        note: `${silent ? `${r.name}のセリフは、ホームの「${mapLabel(home)}」でのバトルだけ出ます。` : ''}先行後追いは、周回コースでも1周で1本です`,
+        badge: draftMap().id === home ? `${r.name}の得意コース` : undefined,
+        note: `${silent ? `${r.name}のセリフは、得意コースの「${mapLabel(home)}」でのバトルだけ出ます。` : ''}先行後追いは、周回コースでも1周で1本です`,
       });
     },
   });
@@ -918,14 +932,13 @@ async function main() {
         selected: () => draft.rival,
         select: (id) => {
           draft.rival = id;
-          // コースは、まずライバルの得意なコースにしておく（後の画面で変えられる）
-          draft.map = draftRival().course;
+          draftRivalDefaults();
         },
       },
     ],
     detail: () => {
       const r = draftRival();
-      return rivalDetail(r, rivalLevel(r), { car: carLabel(r.car), course: mapLabel(r.course), beaten: loadBeatenRivals().has(r.id) }, carPreview);
+      return rivalDetail(r, rivalLevel(r), { car: carLabel(r.car), course: [mapLabel(r.course), rivalConditionsLabel(r)].filter(Boolean).join('・'), beaten: loadBeatenRivals().has(r.id) }, carPreview);
     },
   };
   const ruleScreen: MenuScreen = {
@@ -1033,7 +1046,7 @@ async function main() {
       detail: modeDetail('ライバルとバトル', 'BATTLE', [`${RIVALS.length}人のライバルと1対1。横に並んでのスタートか、先行後追いのサドンデスで勝負する。`, `勝った相手: ${loadBeatenRivals().size} / ${RIVALS.length}`]),
       begin: () => {
         beginDraft(true);
-        draft.map = draftRival().course;
+        draftRivalDefaults();
       },
       screens: () => [rivalScreen, ruleScreen, courseScreen(true, draftRival().course), carScreen, envScreen],
       summary: () => `VS ${draftRival().name} ／ ${BATTLE_RULES.find((r) => r.id === draft.rule)!.label} ／ ${draftMap().name} ／ ${draftCar().label}`,

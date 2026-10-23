@@ -1224,8 +1224,14 @@ body.touch .title-press .tap {
 }
 
 /* ライバル: 写真（未設定なら頭文字の絵）と強さ */
-/* マシン・ホームは2行分の高さをとり、相手を替えても下の車の絵が上下に動かないようにする */
+/* マシン・得意コースは2行分の高さをとり、相手を替えても下の車の絵が上下に動かないようにする */
+.d-rival .d-specs {
+  /* 得意コースは長い名前（「橋とトンネルの峠（ダウンヒル）・夜・雨」など）が多いので広くとる */
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1.7fr);
+}
+
 .d-rival .d-specs dd {
+  font-size: 15px;
   display: -webkit-box;
   min-height: 2.5em;
   overflow: hidden;
@@ -1482,6 +1488,17 @@ body.touch .menu-keys {
   .d-specs dd {
     font-size: 15px;
   }
+  /* 狭い画面では、マシン（1行）と得意コース（2行）を縦に並べて、長いコース名も収める */
+  .d-rival .d-specs {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .d-rival .d-specs dd {
+    font-size: 13px;
+  }
+  .d-rival .d-specs div:first-child dd {
+    min-height: 1.25em;
+    -webkit-line-clamp: 1;
+  }
   .d-profile canvas {
     height: 44px;
   }
@@ -1592,6 +1609,17 @@ body.touch .menu-keys {
   }
   .d-rival {
     grid-template-columns: 38% minmax(0, 1fr);
+  }
+  /* 狭い画面では、マシン（1行）と得意コース（2行）を縦に並べて、長いコース名も収める */
+  .d-rival .d-specs {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .d-rival .d-specs dd {
+    font-size: 13px;
+  }
+  .d-rival .d-specs div:first-child dd {
+    min-height: 1.25em;
+    -webkit-line-clamp: 1;
   }
   .d-portrait .photo {
     min-height: 0;

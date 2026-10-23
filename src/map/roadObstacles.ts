@@ -1,5 +1,5 @@
 import { BARRIER_HEIGHT, type BoxObstacle, type MapObstacles, type TreeObstacle, tileHash } from './obstacles';
-import { FLAG_BRIDGE, FLAG_OLD, FLAG_TUNNEL, LAYER_NONE, PointGrid, type RoadModel } from './road';
+import { FLAG_BRIDGE, FLAG_NEW, FLAG_OLD, FLAG_TUNNEL, LAYER_NONE, PointGrid, type RoadModel } from './road';
 import { type Shortcut, insideShortcut } from './shortcuts';
 
 /** 壁を区切る長さ [m] */
@@ -11,9 +11,14 @@ export function wallGap(road: RoadModel): number {
   return road.spec.scenery === 'circuit' ? (road.spec.runoff ?? 6) : 0.25;
 }
 
-/** 道路の点 i に壁があるか（首都高とサーキットはすべて、峠は橋とトンネル） */
+/** 道路の点 i に壁があるか（首都高とサーキットはすべて、峠は橋とトンネルと、ガードレールのある新しい道） */
 export function walledAt(road: RoadModel, i: number): boolean {
-  return road.spec.scenery !== 'touge' || (road.flags[i] & (FLAG_BRIDGE | FLAG_TUNNEL)) !== 0;
+  return road.spec.scenery !== 'touge' || (road.flags[i] & (FLAG_BRIDGE | FLAG_TUNNEL | FLAG_NEW)) !== 0;
+}
+
+/** 道路の点 i の壁が、コンクリートの壁ではなくガードレールか（峠の拡幅工事を終えた新しい道。橋とトンネルは除く） */
+export function guardrailAt(road: RoadModel, i: number): boolean {
+  return road.spec.scenery === 'touge' && (road.flags[i] & FLAG_NEW) !== 0 && (road.flags[i] & (FLAG_BRIDGE | FLAG_TUNNEL)) === 0;
 }
 
 /**
@@ -109,11 +114,13 @@ function roadTrees(road: RoadModel, shortcuts: readonly Shortcut[]): TreeObstacl
   for (let i = 0; i < road.count; i += every) {
     if (road.flags[i] & (FLAG_BRIDGE | FLAG_TUNNEL)) continue;
     const old = (road.flags[i] & FLAG_OLD) !== 0;
+    // 拡幅した新しい道は、山を切り開いたので木が遠い
+    const widened = (road.flags[i] & FLAG_NEW) !== 0;
     const yaw = road.yaw[i];
     for (const side of [-1, 1]) {
       // 古い道は手前の列（道路のすぐ脇）にも木がある
       const far = road.spec.scenery === 'circuit' ? wallGap(road) + 4 : 0;
-      const rows = old ? [2.6, 5.5, 10, 16] : [7 + far, 13 + far, 20 + far];
+      const rows = old ? [2.6, 5.5, 10, 16] : widened ? [13, 19, 26] : [7 + far, 13 + far, 20 + far];
       rows.forEach((base, r) => {
         const salt = r * 7 + (side > 0 ? 3 : 0);
         if (tileHash(i, salt, 11) > (old ? 0.85 : far ? 0.3 : 0.6)) return;

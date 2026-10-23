@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { HAPPOGAHARA_MAP, SHUTOKO_MAP } from './maps';
+import { guardrailAt, walledAt } from './roadObstacles';
 import {
   FLAG_BRIDGE,
   FLAG_TUNNEL,
@@ -152,7 +153,16 @@ describe('the four-section mountain pass', () => {
     expect(road.hasFlag(road.pieceStart[bridge] + 100, FLAG_BRIDGE)).toBe(true);
   });
 
-  it('goes downhill after the high point and steeply uphill after the bridge', () => {
+  it('has guardrails only along the widened second section', () => {
+    const bumpy = pieces.findIndex((p) => p.bumpy);
+    const at = (s: number) => Math.round(s / road.step);
+    expect(guardrailAt(road, at(road.pieceStart[bumpy] + 100))).toBe(true);
+    expect(walledAt(road, at(road.pieceStart[bumpy] + 100))).toBe(true);
+    expect(guardrailAt(road, at(300))).toBe(false);
+    expect(walledAt(road, at(300))).toBe(false);
+  });
+
+    it('goes downhill after the high point and steeply uphill after the bridge', () => {
     const high = road.pieceStart[pieces.findIndex((p) => p.h === 70) + 1];
     const bridge = pieces.findIndex((p) => p.valley);
     expect(road.heightAt(road.pieceStart[bridge]) - road.heightAt(high)).toBeLessThan(-50);
