@@ -32,7 +32,7 @@
       <div><kbd>B</kbd> ライバルとバトル（相手は <kbd>Esc</kbd> メニューで選ぶ）</div>
       <div><kbd>N</kbd> マップ切替　<kbd>P</kbd> 車の切替　<kbd>R</kbd> リセット</div>
       <div><kbd>O</kbd> みんなで走る（オンライン）</div>
-      <div><kbd>M</kbd> サウンド <span id="sound-state"></span>　<kbd>H</kbd> ヘルプ表示</div>
+      <div><kbd>M</kbd> 効果音 <span id="sound-state"></span>　<kbd>H</kbd> ヘルプ表示</div>
       <div id="gamepad-state" class="hidden">🎮 ゲームパッド: 左スティック / RT / LT・Y カメラ・START リセット・BACK マップ</div>
     </div>
     <div id="online" class="hidden" role="dialog" aria-label="みんなで走る">
@@ -135,6 +135,19 @@
     <div id="net-status" class="hidden"></div>
     <div id="toast"></div>
     <div id="loading">Loading...</div>
+    <!-- バトルのセリフ: 走っている間の字幕と、スタート前・勝負のあとの場面 -->
+    <div id="subtitle" aria-live="polite"></div>
+    <div id="scene" class="hidden" role="dialog" aria-label="セリフ">
+      <div class="scene-box">
+        <div class="scene-face"></div>
+        <div class="scene-main">
+          <div class="scene-name"></div>
+          <p class="scene-text"></p>
+          <div class="scene-hint"><span class="more">タップ / Enter で次へ ▼</span><span class="end">タップ / Enter で閉じる</span></div>
+        </div>
+        <button class="scene-skip" type="button">スキップ ▶▶</button>
+      </div>
+    </div>
     <script type="module" src="/src/main.ts"></script>
   </body>
 </html>

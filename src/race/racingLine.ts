@@ -1,4 +1,4 @@
-import type { VehicleParams } from '../sim/vehicle';
+import { type VehicleParams, lateralAccelAt } from '../sim/vehicle';
 import type { Course } from './course';
 
 /** レーシングラインの点の間隔 [m] */
@@ -125,10 +125,16 @@ export function buildSpeedProfile(line: RacingLine, p: VehicleParams, opts: Spee
   const { count, step, curvature } = line;
   const closed = line.course.closed;
   const v = new Float64Array(count);
-  const aLat = p.maxLateralAccel * opts.grip;
   for (let i = 0; i < count; i++) {
     const k = Math.abs(curvature[i]);
-    v[i] = Math.min(p.maxForwardSpeed, k > 1e-6 ? Math.sqrt(aLat / k) : Infinity);
+    if (k <= 1e-6) {
+      v[i] = p.maxForwardSpeed;
+      continue;
+    }
+    // 横加速度の上限は速さで変わる（ダウンフォース）ので、何回か繰り返して釣り合う速さを求める
+    let speed = Math.sqrt((p.maxLateralAccel * opts.grip) / k);
+    for (let n = 0; n < 4; n++) speed = Math.sqrt((lateralAccelAt(speed, p) * opts.grip) / k);
+    v[i] = Math.min(p.maxForwardSpeed, speed);
   }
   // 一本道はゴールの先で止まる
   if (!closed) v[count - 1] = 0;

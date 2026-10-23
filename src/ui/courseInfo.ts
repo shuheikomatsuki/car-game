@@ -103,7 +103,7 @@ export const COURSE_NOTES: Record<string, CourseNote> = {
   town: { text: '最初の練習用の小さな街。交差点と標識のある道を、のんびり走れる', cars: ['standard', 'kei'] },
   school: { text: '教習所のような練習コース。S字・クランク風の連続カーブと交差点', cars: ['kei', 'standard'] },
   'circuit-gp': { text: '1kmのメインストレートの先の低速ヘアピン、高速のS字、複合コーナー。退避帯と壁がある', cars: ['r34', 'gtr'] },
-  'shutoko-loop': { text: '高架の3車線。1.3kmの湾岸線、540°の二重ループ、海を渡る吊り橋。両側は壁', cars: ['r34', 'fd3s'] },
+  'shutoko-loop-2': { text: '高架の3車線。1.3kmの湾岸線、540°の二重ループ、海を渡る吊り橋。両側は壁', cars: ['r34', 'fd3s'] },
   'technical-circuit': { text: 'クランク、ヘアピン、2つのシケイン。低速コーナーが続く', cars: ['cappuccino', 'ek9'] },
   'pass-up': { text: '頂上まで150m上る。高速コーナー、S字、3つのヘアピン', cars: ['fd3s', 'evo'] },
   'pass-down': { text: '同じ峠を頂上から下る。スピードが乗るので早めのブレーキが大事', cars: ['ae86', 'eg6'] },

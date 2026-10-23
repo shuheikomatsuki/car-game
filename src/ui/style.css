@@ -2298,3 +2298,208 @@ body.menu-open #countdown,
 body.menu-open #race-warning {
   visibility: hidden;
 }
+
+/* ---- バトルのセリフ ---- */
+
+/* 走っている間の字幕: 画面の下の真ん中。触っても下の操作（ハンドル）に届く */
+#subtitle {
+  position: fixed;
+  left: 50%;
+  bottom: calc(env(safe-area-inset-bottom) + 92px);
+  transform: translateX(-50%);
+  width: max-content;
+  max-width: min(640px, calc(100vw - 32px));
+  padding: 7px 14px 8px;
+  border-radius: 6px;
+  background: rgba(8, 9, 11, 0.72);
+  color: #fff;
+  font-size: 16px;
+  line-height: 1.45;
+  text-align: center;
+  text-shadow: 0 1px 2px #000;
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity 0.2s;
+  z-index: 4;
+}
+
+#subtitle.visible {
+  opacity: 1;
+}
+
+#subtitle .who {
+  display: inline-block;
+  margin-right: 0.6em;
+  color: var(--accent-2);
+  font-weight: 800;
+}
+
+#subtitle .who.me,
+#scene .scene-name.me {
+  color: #6fd3ff;
+}
+
+/* スマホ: ペダルにかからないよう左に寄せ、速度計の上に少し小さく */
+#touch:not(.hidden) ~ #subtitle {
+  left: calc(env(safe-area-inset-left) + 16px);
+  right: calc(env(safe-area-inset-right) + 220px);
+  bottom: calc(env(safe-area-inset-bottom) + 58px);
+  transform: none;
+  width: fit-content;
+  max-width: none;
+  margin: 0 auto;
+  font-size: 14px;
+}
+
+/* スタート前・勝負のあとの場面: 画面全体で受けて、どこをタップしても次へ進む */
+#scene {
+  position: fixed;
+  inset: 0;
+  z-index: 8;
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+  padding: 0 calc(env(safe-area-inset-right) + 16px) calc(env(safe-area-inset-bottom) + 16px) calc(env(safe-area-inset-left) + 16px);
+  background: linear-gradient(to top, rgba(0, 0, 0, 0.55), transparent 55%);
+  cursor: pointer;
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+#scene.hidden {
+  display: none;
+}
+
+#scene .scene-box {
+  position: relative;
+  display: flex;
+  gap: 16px;
+  width: min(820px, 100%);
+  padding: 16px 18px;
+  border: 1px solid var(--line-strong);
+  border-left: 4px solid var(--accent);
+  border-radius: 8px;
+  background: rgba(14, 15, 18, 0.92);
+  animation: scene-in 0.25s ease-out;
+}
+
+@keyframes scene-in {
+  from {
+    opacity: 0;
+    transform: translateY(12px);
+  }
+}
+
+#scene .scene-face {
+  flex: 0 0 auto;
+  width: 96px;
+  height: 128px;
+  border-radius: 6px;
+  overflow: hidden;
+  display: grid;
+  place-items: center;
+  background: linear-gradient(160deg, #2b2f37, #111317);
+}
+
+#scene .scene-face img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+#scene .scene-face span {
+  font-size: 48px;
+  font-weight: 900;
+  color: rgba(255, 255, 255, 0.2);
+}
+
+#scene .scene-main {
+  flex: 1 1 auto;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+#scene .scene-name {
+  color: var(--accent-2);
+  font-weight: 800;
+  font-size: 15px;
+  letter-spacing: 0.04em;
+}
+
+#scene .scene-text {
+  flex: 1 1 auto;
+  margin: 6px 0 8px;
+  color: #fff;
+  font-size: 19px;
+  line-height: 1.6;
+  overflow-wrap: anywhere;
+}
+
+#scene .scene-hint {
+  align-self: flex-end;
+  color: rgba(255, 255, 255, 0.5);
+  font-size: 12px;
+}
+
+#scene .scene-hint .end,
+#scene.last .scene-hint .more {
+  display: none;
+}
+
+#scene.last .scene-hint .end {
+  display: inline;
+}
+
+#scene .scene-skip {
+  position: absolute;
+  top: -40px;
+  right: 0;
+  padding: 6px 12px;
+  border: 1px solid var(--line-strong);
+  border-radius: 999px;
+  background: rgba(14, 15, 18, 0.8);
+  color: #fff;
+  font-size: 12px;
+}
+
+/* 場面の間は、運転の操作とスタートの案内を隠す */
+body.in-scene .touch-drive,
+body.in-scene #countdown {
+  visibility: hidden;
+}
+
+@media (max-height: 540px) and (orientation: landscape) {
+  #scene .scene-box {
+    gap: 12px;
+    padding: 10px 14px;
+  }
+  #scene .scene-face {
+    width: 66px;
+    height: 88px;
+  }
+  #scene .scene-face span {
+    font-size: 34px;
+  }
+  #scene .scene-text {
+    margin: 2px 0 4px;
+    font-size: 15px;
+    line-height: 1.5;
+  }
+  #scene .scene-skip {
+    top: -34px;
+  }
+}
+
+/* ?debug: いまの場所（セリフの at を決めるため） */
+#debug-where {
+  position: fixed;
+  left: calc(env(safe-area-inset-left) + 8px);
+  bottom: calc(env(safe-area-inset-bottom) + 8px);
+  padding: 2px 6px;
+  background: rgba(0, 0, 0, 0.6);
+  color: #9f9;
+  font: 12px ui-monospace, monospace;
+  pointer-events: none;
+  z-index: 4;
+}
