@@ -1,5 +1,5 @@
 import { DurableObject } from 'cloudflare:workers';
-import type { PlayerInfo, ServerMessage } from '../../src/net/protocol';
+import type { PlayerInfo, RaceState, ServerMessage } from '../../src/net/protocol';
 import { isRoomCode } from '../../src/net/protocol';
 import { type DenyReason, checkAccess } from './access';
 import { isBoardKey } from '../../src/net/leaderboard';
@@ -31,6 +31,8 @@ export class Room extends DurableObject<Env> {
   private readonly store: RoomStore = {
     getMap: () => this.ctx.storage.kv.get<number>('map') ?? 0,
     setMap: (map) => this.ctx.storage.kv.put('map', map),
+    getRace: () => this.ctx.storage.kv.get<RaceState>('race') ?? null,
+    setRace: (race) => (race ? this.ctx.storage.kv.put('race', race) : this.ctx.storage.kv.delete('race')),
   };
 
   async fetch(request: Request): Promise<Response> {
@@ -52,7 +54,7 @@ export class Room extends DurableObject<Env> {
   }
 
   async webSocketClose(ws: WebSocket, code: number, reason: string): Promise<void> {
-    handleClose(this.connection(ws), this.connections());
+    handleClose(this.connection(ws), this.connections(), this.store);
     try {
       ws.close(code, reason);
     } catch {
@@ -62,13 +64,13 @@ export class Room extends DurableObject<Env> {
   }
 
   async webSocketError(ws: WebSocket): Promise<void> {
-    handleClose(this.connection(ws), this.connections());
+    handleClose(this.connection(ws), this.connections(), this.store);
     await this.cleanUpIfEmpty(ws);
   }
 
   /** 定期的に放置された接続を切る。誰もいなくなったら止める */
   async alarm(): Promise<void> {
-    const remaining = closeIdle(this.connections(), Date.now());
+    const remaining = closeIdle(this.connections(), Date.now(), this.store);
     if (remaining > 0) await this.ctx.storage.setAlarm(Date.now() + IDLE_CHECK_INTERVAL_MS);
     else await this.cleanUp();
   }

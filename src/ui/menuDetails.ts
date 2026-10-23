@@ -1,3 +1,4 @@
+import { SHOW_PORTRAITS } from './portraits';
 import type { MapDefinition } from '../map/tilemap';
 import type { NpcLevel } from '../race/npcDriver';
 import type { Rival } from '../race/rivals';
@@ -254,13 +255,13 @@ function portrait(name: string, photo: string | undefined): string {
   return `<div class="photo none" aria-hidden="true"><span>${escapeHtml([...name][0] ?? '?')}</span></div>`;
 }
 
-/** ライバルの説明: 写真・チーム・車・得意なコース・強さ */
+/** ライバルの説明: 写真（SHOW_PORTRAITS のときだけ）・チーム・車・得意なコース・強さ */
 export function rivalDetail(rival: Rival, level: NpcLevel, info: { car: string; course: string; beaten: boolean }, preview: CarPreview): DetailView {
   return {
-    html: `<div class="d-rival">
-      <div class="d-portrait">${portrait(rival.name, rival.photo)}${info.beaten ? '<span class="d-tag hot">WIN</span>' : ''}</div>
+    html: `<div class="d-rival${SHOW_PORTRAITS ? '' : ' no-portrait'}">
+      ${SHOW_PORTRAITS ? `<div class="d-portrait">${portrait(rival.name, rival.photo)}${info.beaten ? '<span class="d-tag hot">WIN</span>' : ''}</div>` : ''}
       <div class="d-body">
-        <p class="d-team">${escapeHtml(rival.team)}</p>
+        <p class="d-team">${escapeHtml(rival.team)}${!SHOW_PORTRAITS && info.beaten ? '<span class="d-win">WIN</span>' : ''}</p>
         <h2 class="d-name">${escapeHtml(rival.name)}</h2>
         <p class="d-level">${stars(level)}<span>${escapeHtml(level.label)}</span></p>
         ${specs([

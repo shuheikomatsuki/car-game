@@ -22,11 +22,16 @@ import { CHARACTERS, RIVAL_DIALOGUES } from './race/dialogueScript';
 import { CHASE_START_GAP, type Runner, SAFE_SECONDS, SuddenDeath } from './race/suddenDeath';
 import { type RaceRecord, loadRecord, mergeRecord, saveRecord } from './race/records';
 import { TimeAttack, formatTime } from './race/timeAttack';
-import { isRoomCode, normalizeRoomCode } from './net/protocol';
+import { type RaceSettings, type RaceState, isRoomCode, normalizeRoomCode } from './net/protocol';
+import { EMOTES } from './game/emotes';
+import { attachBubble } from './render/bubble';
+import { lapsDone, rankOnline, standingsWindow } from './race/onlineRace';
+import { OnlineRacePanel } from './ui/onlineRacePanel';
 import { CameraRig } from './render/camera';
 import { CarMesh, carStyle } from './render/carMesh';
 import { createGhostMesh } from './render/raceMesh';
 import { GameScene } from './render/scene';
+import { MIRROR_MODES, Mirrors, loadMirrorMode, saveMirrorMode } from './render/mirrors';
 import type { CarSnapshot, Spawn } from './sim/car';
 import { loadRapier } from './sim/physics';
 import { NEUTRAL_INPUT, VEHICLE_PRESETS, topSpeedOf } from './sim/vehicle';
@@ -68,8 +73,8 @@ function lerpSnapshot(a: CarSnapshot, b: CarSnapshot, t: number): CarSnapshot {
   };
 }
 
-/** レースの種類（タイムアタック・NPC 対戦・ライバルとのバトル） */
-type RaceMode = 'timeAttack' | 'npc' | 'battle';
+/** レースの種類（タイムアタック・NPC 対戦・ライバルとのバトル・部屋のみんなとのオンライン対戦） */
+type RaceMode = 'timeAttack' | 'npc' | 'battle' | 'online';
 /** ライバルとのバトルのルール: 横に並んでスタート・先行後追い（自分が先行から／後追いから） */
 type BattleRule = 'side' | 'leadFirst' | 'chaseFirst';
 
@@ -81,6 +86,12 @@ const BATTLE_RULES: readonly { id: BattleRule; label: string; note: string }[] =
 
 /** 引き分けのあと、次の1本を始めるまでの時間 [ms] */
 const NEXT_ROUND_DELAY = 3500;
+/** クラクションの音が届く距離 [m]（遠い車ほど小さく聞こえる） */
+const HORN_RANGE = 160;
+/** 他の人のクラクションの「止める」が届かなかったときに止めるまでの時間 [ms] */
+const HORN_MAX_MS = 4000;
+/** エモートを続けて送れる間隔 [ms] */
+const EMOTE_COOLDOWN_MS = 1500;
 
 async function main() {
   const rapier = await loadRapier();
@@ -94,7 +105,37 @@ async function main() {
   const sound = new SoundSystem();
   const bgm = new BgmPlayer(BGM_TRACKS);
   window.addEventListener('resize', () => view.resize(cameraRig.camera));
-
+  /** バックミラー・サイドミラー */
+  const mirrors = new Mirrors(document.body, loadMirrorMode());
+  /** ミラーを置ける範囲（上の左右のボタン・地図を避ける。毎フレーム測ると重いので時々） */
+  let mirrorRegion = { left: 0, right: window.innerWidth, top: 10 };
+  let mirrorRegionAge = 0;
+  const measureMirrorRegion = () => {
+    const box = (id: string) => {
+      const e = document.getElementById(id);
+      const r = e?.getBoundingClientRect();
+      return r && r.width > 0 && r.height > 0 ? r : null;
+    };
+    const w = window.innerWidth;
+    if (window.innerHeight > w) {
+      // 縦向き: 上の表示（周回・地図・ボタン）の下に、横いっぱいに
+      const top = Math.max(10, ...['race', 'minimap', 'touch-top'].map((id) => (box(id)?.bottom ?? 0) + 8));
+      return { left: 8, right: w - 8, top: Math.round(top) };
+    }
+    // 横向き: 左上のボタン・操作説明と右上の地図の間に。真ん中の上にある表示（スマホの速度など）はその下に
+    let left = 8;
+    let right = w - 8;
+    let top = 10;
+    for (const id of ['touch-top', 'help', 'minimap', 'hud', 'race']) {
+      const r = box(id);
+      if (!r || r.top > 80) continue;
+      const cx = (r.left + r.right) / 2;
+      if (cx < w / 3) left = Math.max(left, r.right + 10);
+      else if (cx > (w * 2) / 3) right = Math.min(right, r.left - 10);
+      else if (id !== 'race') top = Math.max(top, r.bottom + 6);
+    }
+    return { left: Math.round(left), right: Math.round(right), top: Math.round(top) };
+  };
   // ?map=1 のように開始マップを指定できる
   const requested = Number(params.get('map'));
   let mapIndex = Number.isInteger(requested) && requested >= 0 && requested < MAPS.length ? requested : 0;
@@ -119,9 +160,17 @@ async function main() {
   const rebuildCarMesh = () => {
     carMesh.dispose();
     carMesh = new CarMesh(assignedColor ?? undefined, carStyle(vehicle().id));
+    carMesh.setLights(lightsOn);
     view.scene.add(carMesh.root);
     cameraRig.setCarScale(carStyle(vehicle().id).scale ?? 1);
   };
+  /** ヘッドライト（暗い時間帯・天気では最初からつける。F キー・ボタンで切り替え） */
+  let lightsOn = GameScene.needsHeadlights(env);
+  const applyLights = () => {
+    carMesh.setLights(lightsOn);
+    view.setHeadlights(lightsOn);
+  };
+  applyLights();
   let level = new Level(rapier, MAPS[mapIndex]);
   level.car.params = carParams();
   view.scene.add(level.group);
@@ -222,13 +271,28 @@ async function main() {
     remoteCars.ghost(performance.now());
   };
   const resetCar = () => {
+    // オンライン対戦では、いまいる所のコースの真ん中に戻す（みんなと走っているのでやり直せない）
+    if (race && raceMode === 'online') recoverOnCourse();
     // レース中のリセットは、スタートからやり直し
-    if (race) startRace(raceMode);
+    else if (race) startRace(raceMode);
     else placeCar(level.spawn);
   };
+  function recoverOnCourse() {
+    const course = level.course;
+    if (!course || !race) return;
+    if (race.phase === 'ready' || race.phase === 'countdown') {
+      placeCar(onlineGridSpot());
+      return;
+    }
+    const s = course.project(curr.x, curr.z).s;
+    const p = course.pointAt(Math.max(0, s));
+    placeCar({ x: p.x, z: p.z, yaw: p.yaw, s: Math.max(0, s) });
+  }
 
   const raceLabel = () =>
-    raceMode === 'npc'
+    raceMode === 'online'
+      ? 'オンライン対戦'
+      : raceMode === 'npc'
       ? `NPC対戦（${NPC_LEVELS[npcLevelIndex].label}）`
       : raceMode === 'battle'
         ? `バトル（${battleRival().name}${battleRule === 'side' ? '' : '・先行後追い'}）`
@@ -240,12 +304,16 @@ async function main() {
    * ライバルとのバトルは、ライバルと横に並ぶ。toHome ならライバルの得意なコースへ移動する（他のコースでもバトルできる）
    */
   function startRace(mode: RaceMode, toHome = false, nextRound = false) {
+    if (mode === 'online') return;
+    if (race && raceMode === 'online') leaveOnlineRace();
     raceMode = mode;
     window.clearTimeout(nextRoundTimer);
     // 先行後追いは、引き分けで次の1本へ進むときだけ続きから。それ以外は1本目から
     suddenDeath = mode === 'battle' && battleRule !== 'side' ? (nextRound && suddenDeath ? suddenDeath : new SuddenDeath(battleRule === 'leadFirst')) : null;
     if (mode !== 'timeAttack') setRival(null);
-    const target = mode === 'battle' && toHome ? MAPS.findIndex((m) => m.id === battleRival().course) : level.course ? mapIndex : raceMapIndex;
+    let target = mode === 'battle' && toHome ? MAPS.findIndex((m) => m.id === battleRival().course) : level.course ? mapIndex : raceMapIndex;
+    // オンライン対戦のエントリー中は、部屋のコースのまま
+    if (target !== mapIndex && roomRace && level.course) target = mapIndex;
     if (target !== mapIndex) {
       // 前のレースを片付けてから移動する（移動先でこの後並び直す）
       race = null;
@@ -385,6 +453,7 @@ async function main() {
 
   function stopRace() {
     if (!race) return;
+    if (raceMode === 'online') leaveOnlineRace();
     clearRace();
     setRival(null);
     hud.setMode('自分で運転');
@@ -429,6 +498,13 @@ async function main() {
         case 'finish': {
           // 先行後追いの勝ち負けは judgeSuddenDeath で決める
           if (suddenDeath) break;
+          if (raceMode === 'online') {
+            if (onlineSeq !== null) net.send({ t: 'raceFinish', seq: onlineSeq, time: e.total });
+            raceHud.setWarning({ wrongWay: false, offCourse: false });
+            raceHud.showRankingButton(false);
+            sound.beep(true);
+            break;
+          }
           if (raceMode !== 'timeAttack') {
             const list = standings();
             const won = list[0]?.isPlayer ?? false;
@@ -553,7 +629,14 @@ async function main() {
     menu.refresh();
     net.updateJoin({ map: mapIndex });
   };
+  /** オンライン対戦の間は、部屋のみんなと同じコースのまま（変えられない） */
+  const mapLocked = () => {
+    if (!roomRace) return false;
+    hud.toast('オンライン対戦の間はコースを変えられません');
+    return true;
+  };
   const nextMap = () => {
+    if (mapLocked()) return;
     // タイムアタック中は、レース用のコースだけを順に替える
     let next = (mapIndex + 1) % MAPS.length;
     while (race && !MAPS[next].race) next = (next + 1) % MAPS.length;
@@ -571,13 +654,220 @@ async function main() {
     net.send({ t: 'profile', car: vehicle().id });
     net.updateJoin({ car: vehicle().id });
   };
+  function setLights(on: boolean, announce = false) {
+    lightsOn = on;
+    applyLights();
+    net.send({ t: 'profile', lights: on });
+    net.updateJoin({ lights: on });
+    if (announce) hud.toast(on ? 'ヘッドライト ON' : 'ヘッドライト OFF');
+    touch.refresh();
+  }
+  const toggleLights = () => setLights(!lightsOn, true);
+
+  // --- クラクション: 押している間だけ鳴らす（部屋の人にも聞こえる） ---
+  const hornInput = { key: false, touch: false };
+  let hornOn = false;
+  const remoteHornTimers = new Map<number, number>();
+  const updateHorn = () => {
+    const on = hornInput.key || hornInput.touch;
+    if (on === hornOn) return;
+    hornOn = on;
+    sound.horn('me', on);
+    net.send({ t: 'horn', on });
+  };
+  const remoteHorn = (id: number, on: boolean) => {
+    window.clearTimeout(remoteHornTimers.get(id));
+    if (!on) {
+      sound.horn(id, false);
+      return;
+    }
+    const p = remoteCars.positionOf(id, performance.now());
+    const d = p ? Math.hypot(p.x - curr.x, p.z - curr.z) : HORN_RANGE;
+    sound.horn(id, true, Math.max(0, 1 - d / HORN_RANGE));
+    remoteHornTimers.set(id, window.setTimeout(() => sound.horn(id, false), HORN_MAX_MS));
+  };
+
+  // --- エモート（短いセリフ）: 自分と部屋のみんなの車の上に吹き出しを出す ---
+  const emotePanel = document.getElementById('emotes')!;
+  const emoteFeed = document.getElementById('emote-feed')!;
+  emotePanel.innerHTML = EMOTES.map((text, i) => `<button type="button" data-emote="${i}"><kbd>${i + 1}</kbd>${escapeHtml(text)}</button>`).join('');
+  let lastEmoteAt = -Infinity;
+  const toggleEmotes = (open = emotePanel.classList.contains('hidden')) => emotePanel.classList.toggle('hidden', !open);
+  const showEmote = (id: number | null, e: number) => {
+    const text = EMOTES[e];
+    if (text === undefined) return;
+    const self = id === null || id === net.id;
+    if (self) attachBubble(carMesh.root, text);
+    else remoteCars.showBubble(id, text);
+    const info = self ? null : remoteCars.list.find((p) => p.id === id);
+    const name = self ? loadPlayerName().trim() || 'あなた' : (info?.name ?? '誰か');
+    const color = self ? carMesh.color : PLAYER_COLORS[(info?.color ?? 0) % PLAYER_COLORS.length];
+    const li = document.createElement('li');
+    li.innerHTML = `<span class="dot" style="background:#${color.toString(16).padStart(6, '0')}"></span><b>${escapeHtml(name)}</b>${escapeHtml(text)}`;
+    emoteFeed.appendChild(li);
+    while (emoteFeed.children.length > 4) emoteFeed.firstElementChild?.remove();
+    window.setTimeout(() => li.classList.add('fade'), 5000);
+    window.setTimeout(() => li.remove(), 5500);
+  };
+  const sendEmote = (e: number) => {
+    toggleEmotes(false);
+    const now = performance.now();
+    if (now - lastEmoteAt < EMOTE_COOLDOWN_MS) return;
+    lastEmoteAt = now;
+    // 部屋にいるときはサーバーから返ってきたときに出す（みんなと同時に）
+    if (net.isOnline) net.send({ t: 'emote', e });
+    else showEmote(null, e);
+  };
+  emotePanel.addEventListener('click', (ev) => {
+    const b = (ev.target as HTMLElement).closest<HTMLButtonElement>('button[data-emote]');
+    if (b) sendEmote(Number(b.dataset.emote));
+  });
+
+  // --- オンライン対戦: 言い出した人がコース・時間帯・天気を決め、各自が車を選んで一斉にスタート ---
+  /** 部屋の対戦の様子（サーバーから届いたもの） */
+  let roomRace: RaceState | null = null;
+  /** 自分が走っているオンライン対戦の番号と、その最後の様子（全員ゴールして終わった後も結果に使う） */
+  let onlineSeq: number | null = null;
+  let onlineResult: RaceState | null = null;
+  /** 対戦の条件に合わせる（コース・時間帯・天気） */
+  const applyRaceSettings = (st: RaceSettings) => {
+    if (st.map !== mapIndex && st.map >= 0 && st.map < MAPS.length) loadMap(st.map, `対戦のコース「${MAPS[st.map].name}」に移動しました`);
+    const time = TIMES_OF_DAY.find((t) => t.id === st.time)?.id ?? env.time;
+    const weather = WEATHERS.find((w) => w.id === st.weather)?.id ?? env.weather;
+    if (time !== env.time || weather !== env.weather) setEnvironment(time, weather, false);
+  };
+  /** スタートの並び（準備 OK にした順に、2列に互い違い） */
+  function onlineGridSpot(): Spawn {
+    const course = level.course!;
+    const i = Math.max(0, onlineResult?.entrants.indexOf(net.id ?? -1) ?? 0);
+    const side = Math.min(3, course.widthAt(0) / 4);
+    return course.gridSpot(6 + 6 * Math.floor(i / 2) + (i % 2) * 3, i % 2 === 0 ? side : -side);
+  }
+  function startOnlineRace(r: RaceState) {
+    if (race) clearRace();
+    applyRaceSettings(r.settings);
+    if (!level.course) return;
+    const car = VEHICLE_PRESETS.findIndex((v) => v.id === onlineRacePanel.selectedCar);
+    if (car >= 0 && car !== carIndex) selectCar(car);
+    raceMode = 'online';
+    onlineSeq = r.seq;
+    onlineResult = r;
+    setRival(null);
+    const course = level.course;
+    race = new TimeAttack(course, level.def.race!.laps, true);
+    ghostRecorder = new GhostRecorder();
+    best = null;
+    placeCar(onlineGridSpot());
+    // カウントダウンの間は並んだ車どうしがぶつからないように
+    remoteCars.ghost(performance.now(), 6000);
+    race.begin();
+    raceHud.show(true);
+    raceHud.hideResult();
+    raceHud.setWarning({ wrongWay: false, offCourse: false });
+    minimap.setCourse(course);
+    hud.setMode(raceLabel());
+    document.body.classList.add('online-race');
+    touch.refresh();
+    menu.refresh();
+  }
+  /** 自分だけオンライン対戦から抜ける（まだゴールしていなければサーバーに知らせる） */
+  function leaveOnlineRace() {
+    if (onlineSeq !== null && roomRace?.seq === onlineSeq && race?.phase !== 'finished') net.send({ t: 'raceCancel' });
+    onlineSeq = null;
+    onlineResult = null;
+    document.body.classList.remove('online-race');
+  }
+  /** オンライン対戦の順位（自分は自分の計測、他の人は受け取った距離とゴールのタイム） */
+  const onlineStandings = () => {
+    const r = onlineResult;
+    const course = level.course;
+    if (!race || !r || !course) return [];
+    return rankOnline(
+      r.entrants.map((id) => {
+        const fin = r.finished.find((f) => f.id === id);
+        if (id === net.id) {
+          return { name: loadPlayerName().trim() || 'あなた', color: carMesh.color, isPlayer: true, distance: race!.distance(curr.x, curr.z), total: race!.phase === 'finished' ? race!.time : (fin?.time ?? null), laps: race!.laps.length };
+        }
+        const info = remoteCars.list.find((p) => p.id === id);
+        const distance = remoteCars.progressOf(id) ?? -Infinity;
+        return {
+          name: info?.name ?? '誰か',
+          color: PLAYER_COLORS[(info?.color ?? 0) % PLAYER_COLORS.length],
+          isPlayer: false,
+          distance,
+          total: fin?.time ?? null,
+          laps: fin ? race!.totalLaps : lapsDone(distance, course.length, course.closed, race!.totalLaps),
+        };
+      }),
+    );
+  };
+  const onlineRaceView = () =>
+    roomRace && net.id !== null
+      ? {
+          race: roomRace,
+          selfId: net.id,
+          members: [
+            { id: net.id, name: loadPlayerName().trim() || 'あなた', car: vehicle().id, color: carMesh.color },
+            ...remoteCars.list.map((p) => ({ id: p.id, name: p.name, car: p.car, color: PLAYER_COLORS[p.color % PLAYER_COLORS.length] })),
+          ],
+          conditions: `${MAPS[roomRace.settings.map]?.name ?? ''} ／ ${TIMES_OF_DAY.find((t) => t.id === roomRace!.settings.time)?.label ?? ''}・${WEATHERS.find((w) => w.id === roomRace!.settings.weather)?.label ?? ''}`,
+        }
+      : null;
+  /** 部屋の対戦の様子が変わったとき */
+  function onRoomRace(r: RaceState | null, by: number, start = false) {
+    const prev = roomRace;
+    roomRace = r;
+    if (r && r.seq === onlineSeq) onlineResult = r;
+    if (!r) {
+      onlineRacePanel.update(null);
+      // まだ走っている途中で対戦が終わった（言い出した人がやめた・打ち切り）
+      if (race && raceMode === 'online' && race.phase !== 'finished') {
+        hud.toast(by === net.id ? 'オンライン対戦をやめました' : 'オンライン対戦が終わりました');
+        onlineSeq = null;
+        stopRace();
+      }
+    } else if (r.phase === 'entry') {
+      const isNew = !prev || prev.seq !== r.seq;
+      if (isNew && race) {
+        // 自分のレース（タイムアタックなど）はやめて、対戦のコースへ
+        if (raceMode === 'online') leaveOnlineRace();
+        clearRace();
+        hud.setMode('自分で運転');
+      }
+      applyRaceSettings(r.settings);
+      onlineRacePanel.update(onlineRaceView());
+      if (isNew) {
+        if (by !== net.id) hud.toast(`${nameOf(by)} がオンライン対戦を始めました。車を選んで準備OKにしてください`);
+        menu.close();
+        rankingPanel.close();
+        onlinePanel.close();
+        onlineRacePanel.open(vehicle().id);
+      }
+    } else {
+      onlineRacePanel.update(onlineRaceView());
+      if (start) {
+        if (net.id !== null && r.entrants.includes(net.id)) {
+          menu.close();
+          startOnlineRace(r);
+        } else {
+          hud.toast('オンライン対戦が始まりました（今回は見ているだけ）');
+        }
+      }
+    }
+    touch.refresh();
+    menu.refresh();
+    refreshNetStatus();
+  }
   /** 時間帯・天気を変える。天気で車の性能が変わるので、レース中ならやり直す */
   const setEnvironment = (time: TimeOfDay, weather: Weather, restart = true) => {
     const weatherChanged = weather !== env.weather;
+    const changed = weatherChanged || time !== env.time;
     env.time = time;
     env.weather = weather;
     saveEnvironment(env);
     view.setEnvironment(env);
+    // 時間帯・天気が変わったら、ライトもそれに合わせる（後から切り替えられる）
+    if (changed) setLights(GameScene.needsHeadlights(env));
     if (!weatherChanged) return;
     level.car.params = carParams();
     if (race && restart) startRace(raceMode);
@@ -627,7 +917,10 @@ async function main() {
     hud.toast(`${r.name} さんのゴーストと対戦（${formatTime(r.total)}）`);
   }
   const rankingPanel = new RankingPanel(
-    raceMaps.map((m) => ({ id: m.id, label: m.name })),
+    raceMaps.map((m) => {
+      const p = courseProfile(m);
+      return { id: m.id, label: m.name, note: p.kind === 'free' ? undefined : `${(p.length / 1000).toFixed(1)}km・${p.kind === 'loop' ? `${p.laps}周` : p.kind === 'roundtrip' ? '往復' : '一本道'}` };
+    }),
     VEHICLE_PRESETS.map((v) => ({ id: v.id, label: v.label })),
     {
       load: async (course, car) => {
@@ -678,12 +971,22 @@ async function main() {
     if (!online) return;
     const state = net.status === 'online' ? '' : '（接続中…）';
     const names = remoteCars.list.map((p) => p.name).join('、');
+    const raceNote = roomRace ? `<br>${roomRace.phase === 'entry' ? '対戦のエントリー中' : '対戦中'}` : '';
     netStatus.innerHTML = `🌐 部屋 <span class="code">${roomCode}</span>${state}<br>${
       names ? `一緒に走っている人: ${escapeHtml(names)}` : '他の人を待っています'
-    }`;
+    }${raceNote}`;
   };
   const net: NetClient = new NetClient({
     onStatus: (status, detail) => {
+      if (status === 'offline' || status === 'error' || status === 'reconnecting') {
+        if (roomRace || onlineSeq !== null) {
+          if (race && raceMode === 'online') stopRace();
+          onlineSeq = null;
+          roomRace = null;
+          onlineRacePanel.update(null);
+        }
+        for (const id of remoteHornTimers.keys()) remoteHorn(id, false);
+      }
       if (status === 'offline' || status === 'error') {
         remoteCars.clear();
         assignedColor = null;
@@ -713,6 +1016,8 @@ async function main() {
           if (m.map !== mapIndex && m.map >= 0 && m.map < MAPS.length) loadMap(m.map, `部屋のマップ「${MAPS[m.map].name}」に移動しました`);
           hud.toast(`部屋 ${roomCode} に参加しました`);
           onlinePanel.close();
+          if (m.race) onRoomRace(m.race, m.race.host);
+          if (m.race?.phase === 'racing') hud.toast('部屋ではオンライン対戦の最中です（終わったら参加できます）');
           break;
         case 'join':
           remoteCars.add(m.player);
@@ -720,13 +1025,24 @@ async function main() {
           break;
         case 'leave':
           hud.toast(`${nameOf(m.id)} が抜けました`);
+          remoteHorn(m.id, false);
           remoteCars.remove(m.id);
+          break;
+        case 'horn':
+          remoteHorn(m.id, m.on);
+          break;
+        case 'emote':
+          showEmote(m.id, m.e);
+          break;
+        case 'race':
+          onRoomRace(m.race, m.by, m.start);
           break;
         case 'profile':
           remoteCars.update(m.player);
+          if (roomRace?.phase === 'entry') onlineRacePanel.update(onlineRaceView());
           break;
         case 'state':
-          remoteCars.pushState(m.id, m.time, m.s, now);
+          remoteCars.pushState(m.id, m.time, m.s, now, m.p);
           break;
         case 'map':
           if (m.map >= 0 && m.map < MAPS.length && m.map !== mapIndex) {
@@ -741,7 +1057,7 @@ async function main() {
     {
       onJoin: (name, room) => {
         roomCode = room;
-        net.connect(serverUrl, room, { name, car: vehicle().id, map: mapIndex });
+        net.connect(serverUrl, room, { name, car: vehicle().id, map: mapIndex, lights: lightsOn });
       },
       onLeave: () => {
         net.disconnect();
@@ -753,6 +1069,30 @@ async function main() {
       },
     },
     serverUrl !== '',
+  );
+  const onlineRacePanel = new OnlineRacePanel(
+    VEHICLE_PRESETS.map((v) => ({ id: v.id, label: v.label, note: `${driveOf(v) ?? ''}${driveOf(v) ? '・' : ''}最高 ${Math.round(topSpeedOf(v.params) * 3.6)}km/h` })),
+    vehicle().id,
+    (id) => VEHICLE_PRESETS.find((v) => v.id === id)?.label ?? id,
+    {
+      onReady: (ready, car) => {
+        const index = VEHICLE_PRESETS.findIndex((v) => v.id === car);
+        if (index >= 0 && index !== carIndex) {
+          selectCar(index);
+          resetCar();
+        }
+        net.send({ t: 'raceReady', ready, car });
+      },
+      onStart: () => net.send({ t: 'raceStart' }),
+      onLeave: () => {
+        net.send({ t: 'raceCancel' });
+        onlineRacePanel.close();
+      },
+      onOpenChange: (open) => {
+        keyboard.enabled = !open;
+        touch.enabled = !open;
+      },
+    },
   );
   let stepCount = 0;
   /** アクセルを踏みっぱなしか（スタートは踏み直したときだけにする） */
@@ -771,6 +1111,9 @@ async function main() {
   keyboard.onAction('KeyM', toggleMute);
   keyboard.onAction('KeyH', () => hud.toggleHelp());
   keyboard.onAction('KeyK', () => race && raceMode === 'npc' && cycleNpcLevel());
+  keyboard.onAction('KeyF', toggleLights);
+  keyboard.onAction('KeyE', () => toggleEmotes());
+  EMOTES.forEach((_, i) => keyboard.onAction(`Digit${i + 1}`, () => sendEmote(i)));
 
   const gamepad = new GamepadInput();
   gamepad.onButton(PAD_BUTTON.north, cycleCamera);
@@ -789,7 +1132,11 @@ async function main() {
           hud.toast(`カメラ: ${cameraRig.modeName}`);
         },
       },
-      { label: () => (race ? 'やり直す' : 'リセット'), run: resetCar },
+      { label: () => (race && raceMode !== 'online' ? 'やり直す' : 'リセット'), run: resetCar },
+      { label: () => (lightsOn ? 'ライト ON' : 'ライト OFF'), run: toggleLights, place: 'side' },
+      { label: () => 'ホーン', run: () => {}, hold: (down) => (hornInput.touch = down), place: 'side' },
+      { label: () => 'セリフ', run: () => toggleEmotes(), place: 'side' },
+      { label: () => 'エントリー', run: () => onlineRacePanel.open(), visible: () => roomRace?.phase === 'entry' && !onlineRacePanel.isOpen },
     ],
     () => menu.openPause(),
   );
@@ -847,7 +1194,7 @@ async function main() {
     battleRule = draft.rule;
     if (mode === 'free') stopRace();
     const map = MAPS.findIndex((m) => m.id === draft.map);
-    if (map >= 0 && map !== mapIndex) {
+    if (map >= 0 && map !== mapIndex && !mapLocked()) {
       loadMap(map);
       // 同じ部屋の全員のマップも切り替える
       net.send({ t: 'map', map: mapIndex });
@@ -1068,6 +1415,16 @@ async function main() {
   let clearArmedUntil = 0;
   const settingItems: MenuItem[] = [
     { label: () => 'カメラ', value: () => cameraRig.modeName, run: () => cycleCamera(), detail: settingDetail('カメラ', ['走っているときの視点。走行中は C キーでも切り替えられます。']) },
+    {
+      label: () => 'ミラー',
+      value: () => MIRROR_MODES.find((m) => m.id === mirrors.mode)!.label,
+      run: () => {
+        const i = MIRROR_MODES.findIndex((m) => m.id === mirrors.mode);
+        mirrors.mode = MIRROR_MODES[(i + 1) % MIRROR_MODES.length].id;
+        saveMirrorMode(mirrors.mode);
+      },
+      detail: settingDetail('ミラー', ['走っているときに出すミラー。押すたびに「なし → バックミラー → バック＋サイド」と切り替わります。', '古いスマホで重いときは「なし」にしてください。']),
+    },
     { label: () => '効果音', value: () => (sound.isMuted ? 'OFF' : 'ON'), run: toggleMute, detail: settingDetail('効果音', ['エンジン音・タイヤの音・ぶつかった音。M キーでも切り替えられます。']) },
     {
       label: () => 'BGM',
@@ -1144,6 +1501,38 @@ async function main() {
     },
     detail: settingDetail('みんなで走る（オンライン）', ['同じ部屋コードを入れた人と、同じマップを一緒に走れます（最大8人）。']),
   };
+  /** オンライン対戦を言い出す: コースと時間帯・天気を決める（車は各自がエントリー画面で選ぶ） */
+  const onlineRaceMode: MenuMode = {
+    id: 'onlineRace',
+    label: 'オンライン対戦',
+    en: 'ONLINE RACE',
+    note: '部屋のみんなとレース',
+    detail: modeDetail('オンライン対戦', 'ONLINE RACE', ['コースと時間帯・天気を決めると、部屋の全員にエントリー画面が開きます。', '各自が車を選んで準備OKにしたら、スタートで一斉にカウントダウン。']),
+    begin: () => beginDraft(true),
+    screens: () => [courseScreen(true), envScreen],
+    summary: () => `${draftMap().name} ／ ${envSummary()}`,
+    finish: () => {
+      const map = MAPS.findIndex((m) => m.id === draft.map);
+      net.send({ t: 'raceOpen', settings: { map, time: draft.time, weather: draft.weather } });
+    },
+    finishLabel: 'エントリー開始',
+  };
+  const onlineRaceItem: MenuItem = {
+    label: () => (roomRace ? 'エントリー画面' : 'オンライン対戦'),
+    en: 'ONLINE RACE',
+    run: () => {
+      if (roomRace?.phase === 'entry') {
+        menu.close();
+        onlineRacePanel.open();
+      } else if (!roomRace) {
+        menu.openFlow(onlineRaceMode);
+      } else {
+        hud.toast('いまは対戦の最中です。終わったら始められます');
+      }
+    },
+    visible: () => net.isOnline && !(race && raceMode === 'online'),
+    detail: settingDetail('オンライン対戦', ['部屋のみんなと同じコース・同じ条件でレースする。', 'コースと時間帯・天気を決めた人が主催になり、各自が車を選んでからスタートします。']),
+  };
   const rankingItem: MenuItem = {
     label: () => 'ランキング',
     en: 'RANKING',
@@ -1161,19 +1550,25 @@ async function main() {
   const menu = new GameMenu(
     menuModes,
     {
-      home: [rankingItem, onlineItem, openSettings],
+      home: [onlineRaceItem, rankingItem, onlineItem, openSettings],
       pause: [
         { label: () => '走りに戻る', en: 'RESUME', run: () => menu.close(), detail: pauseDetail },
-        { label: () => 'やり直す', en: 'RETRY', run: () => (menu.close(), race ? startRace(raceMode) : resetCar()), detail: pauseDetail },
+        {
+          label: () => (race && raceMode === 'online' ? 'コースに戻る' : 'やり直す'),
+          en: 'RETRY',
+          run: () => (menu.close(), race && raceMode !== 'online' ? startRace(raceMode) : resetCar()),
+          detail: pauseDetail,
+        },
         {
           label: () => 'コース・車を変える',
           en: 'CHANGE',
           run: () => openChangeFlow(),
-          visible: () => race !== null,
+          visible: () => race !== null && raceMode !== 'online',
           detail: settingDetail('コース・車を変える', ['同じモードのまま、コースと車を選び直してスタートからやり直す。']),
         },
-        { label: () => 'レースをやめる', en: 'QUIT RACE', run: () => (menu.close(), stopRace()), visible: () => race !== null, detail: pauseDetail },
+        { label: () => (raceMode === 'online' ? '対戦から抜ける' : 'レースをやめる'), en: 'QUIT RACE', run: () => (menu.close(), stopRace()), visible: () => race !== null, detail: pauseDetail },
         { label: () => 'トップメニュー', en: 'MAIN MENU', run: () => menu.openHome(), detail: settingDetail('トップメニュー', ['プレイモード・コース・車を選び直す。']) },
+        onlineRaceItem,
         rankingItem,
         onlineItem,
         openSettings,
@@ -1188,7 +1583,7 @@ async function main() {
         document.body.classList.toggle('menu-open', open);
         if (!open) cameraRig.snap();
       },
-      canOpen: () => !onlinePanel.isOpen && !rankingPanel.isOpen,
+      canOpen: () => !onlinePanel.isOpen && !rankingPanel.isOpen && !onlineRacePanel.isOpen,
     },
   );
   touch.refresh();
@@ -1230,6 +1625,8 @@ async function main() {
       const pad = gamepad.read();
       hud.setGamepadConnected(gamepad.isConnected);
       input = mergeInputs(mergeInputs(keyboard.read(), pad), touch.read());
+      hornInput.key = keyboard.isDown('KeyG');
+      updateHorn();
       // スタートの位置で待っている間は、アクセルを踏み直したらカウントダウンを始める
       if (race?.phase === 'ready' && input.throttle > 0 && !throttleHeld) beginRace();
       throttleHeld = input.throttle > 0;
@@ -1293,7 +1690,8 @@ async function main() {
       }
       // タブが裏に回っている間は送らない（他の人からは止まって見え、やがて放置として部屋から外れる）
       if (net.isOnline && !document.hidden && ++stepCount % SEND_EVERY_STEPS === 0) {
-        net.send({ t: 'state', time: performance.now(), s: carStateOf(curr) });
+        const progress = race && raceMode === 'online' && onlineSeq !== null ? race.distance(curr.x, curr.z) : undefined;
+        net.send({ t: 'state', time: performance.now(), s: carStateOf(curr), ...(progress !== undefined ? { p: Math.round(progress * 10) / 10 } : {}) });
       }
 
     },
@@ -1307,8 +1705,8 @@ async function main() {
       npcField?.render(alpha);
       if (race) {
         const pose = best ? ghostPoseAt(best.ghost, Math.max(0, race.time)) : null;
-        const list = npcField ? standings() : null;
-        const rank = list ? { list, index: list.findIndex((e) => e.isPlayer) } : null;
+        const list = npcField ? standings() : raceMode === 'online' ? onlineStandings() : null;
+        const rank = list && list.length > 0 ? { list, index: list.findIndex((e) => e.isPlayer) } : null;
         ghostMesh.root.visible = pose !== null;
         if (pose) ghostMesh.update(ghostSnapshot(pose, 'best'));
         const rivalPose = rival && raceMode === 'timeAttack' ? ghostPoseAt(rival.ghost, Math.max(0, race.time)) : null;
@@ -1324,7 +1722,8 @@ async function main() {
           refLaps: best?.laps,
           finished: race.phase === 'finished',
           position: rank ? { rank: rank.index + 1, total: rank.list.length } : undefined,
-          field: rank?.list,
+          // オンライン対戦は最大8人なので、上位3人と自分だけ
+          field: rank && raceMode === 'online' ? standingsWindow(rank.list).map(({ rank: n, entry }) => ({ ...entry, rank: n })) : rank?.list,
           rival: rival && raceMode === 'timeAttack' ? { name: rival.name, total: rival.total } : undefined,
           battle: battleInfo(),
         });
@@ -1335,6 +1734,13 @@ async function main() {
           ...(pose ? [{ x: pose.x, z: pose.z, color: '#7fd4ff' }] : []),
           ...(rivalPose ? [{ x: rivalPose.x, z: rivalPose.z, color: '#ffa040' }] : []),
           ...(npcField?.npcs.map((n) => ({ x: n.curr.x, z: n.curr.z, color: hex(n.color) })) ?? []),
+          ...(raceMode === 'online'
+            ? (onlineResult?.entrants ?? []).flatMap((id) => {
+                const p = id === net.id ? null : remoteCars.positionOf(id, performance.now());
+                const info = remoteCars.list.find((x) => x.id === id);
+                return p && info ? [{ x: p.x, z: p.z, color: hex(PLAYER_COLORS[info.color % PLAYER_COLORS.length]) }] : [];
+              })
+            : []),
           { x: s.x, z: s.z, yaw: s.yaw, color: '#ff5a4f', size: 5 },
         ]);
       }
@@ -1347,6 +1753,15 @@ async function main() {
       hud.update(s);
       sound.update(s.forwardSpeed, input.throttle, s.lateralSpeed, input.brake > 0 && s.forwardSpeed > 0);
       view.render(cameraRig.camera);
+      const showMirrors = mirrors.mode !== 'off' && !menu.showcase && !document.body.classList.contains('menu-open');
+      if (showMirrors && mirrorRegionAge-- <= 0) {
+        mirrorRegion = measureMirrorRegion();
+        mirrorRegionAge = 10;
+        // 横向きでは、周回・タイムの表示をミラーの下へずらす
+        document.body.style.setProperty('--mirror-bottom', `${mirrors.bottom(mirrorRegion) + 8}px`);
+      }
+      document.body.classList.toggle('mirrors-on', showMirrors);
+      mirrors.render(view.renderer, view.scene, carMesh.root, showMirrors, mirrorRegion);
     },
   );
 

@@ -34,6 +34,11 @@ export class KeyboardInput {
     this.actions.set(code, handler);
   }
 
+  /** そのキーを押しているか（クラクションのように押している間だけ効く操作） */
+  isDown(code: string): boolean {
+    return this.pressed.has(code);
+  }
+
   read(): DriverInput {
     const any = (keys: string[]) => keys.some((k) => this.pressed.has(k));
     return {

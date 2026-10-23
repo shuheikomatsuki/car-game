@@ -11,6 +11,7 @@ export interface JoinOptions {
   name: string;
   car: string;
   map: number;
+  lights?: boolean;
 }
 
 /** 切れたときに再接続を試す回数と間隔 [ms] */

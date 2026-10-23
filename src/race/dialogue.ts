@@ -217,6 +217,35 @@ export class OvertakeWatcher {
 }
 
 /** 字幕を出しておく時間 [s]（文字数に合わせる） */
+/** 走っている間の字幕の1回分の長さの目安 [文字] */
+export const MAX_LINE_CHARS = 24;
+
+/**
+ * 長いセリフを、走りながら読める長さに区切る（改行・文の終わり（。！？）・空白で区切り、短い文はまとめる）。
+ * それでも長い文は読点（、）で区切る。
+ */
+export function splitLine(text: string, max = MAX_LINE_CHARS): string[] {
+  const len = (s: string) => [...s].length;
+  const pieces: string[] = [];
+  for (const raw of text.split('\n')) {
+    // 文の終わりの記号（続く ！！ や 」 も含む）か、全角・半角の空白の後ろで区切る
+    for (const sentence of raw.match(/[^。！？!?…\s　]*(?:[。！？!?…]+[」』）)]*|[\s　]+|$)/g) ?? []) {
+      const t = sentence.trim();
+      if (!t) continue;
+      if (len(t) <= max) pieces.push(t);
+      else pieces.push(...(t.match(/[^、，,]+[、，,]?/g) ?? [t]).map((p) => p.trim()).filter(Boolean));
+    }
+  }
+  // 続けても max に収まる短い文はまとめる
+  const out: string[] = [];
+  for (const p of pieces) {
+    const last = out[out.length - 1];
+    if (last !== undefined && len(last) + 1 + len(p) <= max) out[out.length - 1] = `${last}${/[、，,]$/.test(last) ? '' : ' '}${p}`;
+    else out.push(p);
+  }
+  return out.length ? out : [text];
+}
+
 export function lineDuration(text: string): number {
   return Math.min(10, Math.max(2.5, 1.4 + [...text].length * 0.12));
 }

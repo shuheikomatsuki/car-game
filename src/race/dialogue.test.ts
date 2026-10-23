@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { type BattleContext, BattleDialogue, type BattleSnapshot, OvertakeWatcher, dialogueApplies, lineDuration, sceneLines } from './dialogue';
+import { type BattleContext, BattleDialogue, type BattleSnapshot, OvertakeWatcher, dialogueApplies, MAX_LINE_CHARS, lineDuration, sceneLines, splitLine } from './dialogue';
 import { CHARACTERS, RIVAL_DIALOGUES } from './dialogueScript';
 import { RIVALS } from './rivals';
 import { VEHICLE_PRESETS } from '../sim/vehicle';
@@ -158,5 +158,28 @@ describe('dialogueScript', () => {
       for (const s of scenes) for (const l of s.say) expect(l.text.trim(), `${id}: ${l.who}`).not.toBe('');
     }
     for (const c of Object.values(CHARACTERS)) expect(c.name).not.toBe('');
+  });
+});
+
+describe('splitLine', () => {
+  it('keeps short lines as they are', () => {
+    expect(splitLine('峠の王者はランエボだ！！')).toEqual(['峠の王者はランエボだ！！']);
+  });
+
+  it('splits long lines at sentence ends and spaces, and merges short sentences', () => {
+    const parts = splitLine('見通しが悪く狭かった道路がここから急に変わる。拡幅工事が終わった新設の第2セクション。見た目は綺麗だが路面はひどいもんだな。アスファルトの継ぎ目がバンピーで跳ねまくる。');
+    expect(parts.length).toBeGreaterThan(2);
+    for (const p of parts) expect([...p].length).toBeLessThanOrEqual(MAX_LINE_CHARS);
+    expect(parts.join('')).toBe('見通しが悪く狭かった道路がここから急に変わる。拡幅工事が終わった新設の第2セクション。見た目は綺麗だが路面はひどいもんだな。アスファルトの継ぎ目がバンピーで跳ねまくる。');
+    expect(splitLine('リアサイドについているRのバッジは不敗神話のRだ！！ オレのRについて来れるか！？')).toEqual([
+      'リアサイドについているRのバッジは不敗神話のRだ！！',
+      'オレのRについて来れるか！？',
+    ]);
+  });
+
+  it('splits at line breaks and at commas when a sentence is too long', () => {
+    expect(splitLine('どうしたんだ\nクソッタレが')).toEqual(['どうしたんだ クソッタレが']);
+    const parts = splitLine('プロとアマの間にどれくらいの差があるのか、お前らもよくみておけよ。', 20);
+    expect(parts).toEqual(['プロとアマの間にどれくらいの差があるのか、', 'お前らもよくみておけよ。']);
   });
 });

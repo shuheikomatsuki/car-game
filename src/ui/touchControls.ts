@@ -12,6 +12,10 @@ function el<T extends HTMLElement = HTMLElement>(id: string): T {
 export interface TouchAction {
   label: () => string;
   run: () => void;
+  /** 押している間だけ効くボタン（クラクション）。あれば run の代わりに、押したとき true・離したとき false で呼ぶ */
+  hold?: (down: boolean) => void;
+  /** 'side' なら上の列ではなく、ペダルの上の列に置く（走りながら親指で押すもの） */
+  place?: 'side';
   /** false を返す間は出さない */
   visible?: () => boolean;
 }
@@ -100,14 +104,25 @@ export class TouchControls {
 
   constructor(actions: TouchAction[], onMenu: () => void) {
     const quickBar = el('touch-quick');
+    const sideBar = el('touch-side');
     for (const action of actions) {
       const button = document.createElement('button');
       button.type = 'button';
-      button.addEventListener('click', () => {
-        action.run();
-        this.refresh();
-      });
-      quickBar.appendChild(button);
+      if (action.hold) {
+        const hold = action.hold;
+        button.addEventListener('pointerdown', (e) => {
+          e.preventDefault();
+          button.setPointerCapture?.(e.pointerId);
+          hold(true);
+        });
+        for (const type of ['pointerup', 'pointercancel', 'lostpointercapture'] as const) button.addEventListener(type, () => hold(false));
+      } else {
+        button.addEventListener('click', () => {
+          action.run();
+          this.refresh();
+        });
+      }
+      (action.place === 'side' ? sideBar : quickBar).appendChild(button);
       this.quickButtons.push({ action, button });
     }
     el('touch-menu-button').addEventListener('click', () => {

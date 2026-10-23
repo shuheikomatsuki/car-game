@@ -1557,22 +1557,6 @@ body.touch .menu-keys {
   #online .dialog-panel > .field:nth-of-type(3) {
     grid-column: 1 / -1;
   }
-  #ranking .dialog-panel {
-    overflow: hidden;
-  }
-  #ranking .field {
-    display: flex;
-    align-items: center;
-    gap: 10px;
-    white-space: nowrap;
-  }
-  #ranking .field input {
-    margin-top: 0;
-  }
-  #ranking .note {
-    margin: 4px 0;
-    font-size: 11px;
-  }
 }
 
 /* 縦長の画面（縦向きのスマホ）: 説明を上、一覧を下に重ねる */
@@ -2099,18 +2083,6 @@ body.racing #toast {
 }
 
 /* ランキング */
-#ranking .row select {
-  flex: 1;
-  min-width: 0;
-  font: inherit;
-  font-size: 13px;
-  color: #fff;
-  padding: 6px;
-  border: 1px solid rgba(255, 255, 255, 0.25);
-  border-radius: 8px;
-  background: rgba(40, 46, 58, 0.9);
-}
-
 /* 表だけを中でスクロールして、見出しと閉じるボタンはいつも見えるようにする */
 #ranking .dialog-panel {
   display: flex;
@@ -2229,8 +2201,7 @@ body.racing #toast {
 }
 
 .dialog-panel input[type='text'],
-.dialog-panel .row button,
-#ranking .row select {
+.dialog-panel .row button {
   border-radius: 0;
   border-color: var(--line-strong);
 }
@@ -2567,4 +2538,625 @@ body.in-scene #countdown {
   font: 12px ui-monospace, monospace;
   pointer-events: none;
   z-index: 4;
+}
+
+/* キャラクターの画像を出さないとき（SHOW_PORTRAITS = false）は、その場所をとらない */
+.d-rival.no-portrait {
+  grid-template-columns: minmax(0, 1fr);
+}
+
+.d-team .d-win {
+  margin-left: 10px;
+  padding: 1px 8px;
+  border-radius: 3px;
+  background: var(--accent);
+  color: #fff;
+  font-size: 11px;
+  font-weight: 900;
+  letter-spacing: 0.08em;
+}
+
+#scene .scene-face[hidden] {
+  display: none;
+}
+
+/* --- ランキング: 左にコースの一覧、右に車の札と記録の表（メニューと同じ斜めの帯と橙の差し色） --- */
+#ranking .dialog-panel {
+  width: min(980px, calc(100vw - 32px));
+  height: min(640px, calc(100dvh - 16px));
+  padding: 16px 20px 14px;
+}
+
+.rk-head {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  margin-bottom: 10px;
+}
+
+.rk-head h2 {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  margin: 0;
+  flex: 1;
+}
+
+.rk-head h2 .en,
+.rk-board .en {
+  font-family: var(--display);
+  font-style: italic;
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.2em;
+  color: var(--muted);
+}
+
+#ranking .rk-head .field {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0;
+  width: min(280px, 45%);
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+#ranking .rk-head .field input {
+  margin: 0;
+}
+
+.rk-body {
+  flex: 1 1 auto;
+  min-height: 0;
+  display: grid;
+  grid-template-columns: minmax(180px, 30%) minmax(0, 1fr);
+  gap: 16px;
+}
+
+.rk-courses {
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  padding-right: 10px;
+  scrollbar-width: thin;
+  scrollbar-color: rgba(255, 255, 255, 0.2) transparent;
+}
+
+.rk-course,
+.rk-car {
+  font: inherit;
+  color: var(--text);
+  border: 0;
+  cursor: pointer;
+}
+
+.rk-course {
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+  margin: 0 0 4px;
+  padding: 8px 28px 8px 14px;
+  border-left: 3px solid transparent;
+  background: linear-gradient(90deg, rgba(255, 255, 255, 0.06), rgba(255, 255, 255, 0.015));
+  clip-path: polygon(0 0, 100% 0, calc(100% - 14px) 100%, 0 100%);
+  text-align: left;
+  transition:
+    background 0.15s,
+    transform 0.15s;
+}
+
+.rk-course span {
+  font-size: 14px;
+  font-weight: 700;
+}
+
+.rk-course small {
+  margin-top: 1px;
+  font-size: 11px;
+  opacity: 0.7;
+}
+
+.rk-course:hover {
+  background: linear-gradient(90deg, rgba(255, 255, 255, 0.12), rgba(255, 255, 255, 0.03));
+}
+
+.rk-course.selected {
+  border-left-color: #fff;
+  background: linear-gradient(90deg, var(--accent) 0%, rgba(255, 74, 28, 0.78) 60%, rgba(255, 74, 28, 0.35) 100%);
+  transform: translateX(6px);
+}
+
+.rk-board {
+  min-height: 0;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.rk-cars {
+  display: flex;
+  gap: 6px;
+  overflow-x: auto;
+  overscroll-behavior: contain;
+  padding-bottom: 6px;
+  scrollbar-width: thin;
+  scrollbar-color: rgba(255, 255, 255, 0.2) transparent;
+}
+
+.rk-car {
+  flex: 0 0 auto;
+  padding: 6px 16px;
+  background: rgba(255, 255, 255, 0.08);
+  clip-path: polygon(8px 0, 100% 0, calc(100% - 8px) 100%, 0 100%);
+  font-size: 12px;
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+.rk-car:hover {
+  background: rgba(255, 255, 255, 0.16);
+}
+
+.rk-car.selected {
+  background: var(--accent);
+  color: #fff;
+}
+
+.rk-board #ranking-status {
+  margin: 4px 0;
+}
+
+#ranking-status:empty {
+  display: none;
+}
+
+#ranking-table td {
+  padding: 6px 6px;
+}
+
+#ranking-table td:first-child {
+  width: 2.2em;
+  font-family: var(--display);
+  font-style: italic;
+  font-weight: 900;
+  font-size: 15px;
+  color: var(--muted);
+  text-align: center;
+}
+
+#ranking-table tr:nth-child(-n + 3) td:first-child {
+  color: var(--accent-2);
+}
+
+#ranking-table td.name {
+  max-width: 160px;
+  font-weight: 700;
+}
+
+#ranking-table td.car {
+  max-width: 150px;
+}
+
+#ranking .dialog-buttons {
+  align-items: center;
+  flex-wrap: nowrap;
+  margin-top: 10px;
+}
+
+#ranking .dialog-buttons .note {
+  flex: 1;
+  margin: 0;
+  font-size: 11px;
+  color: var(--muted);
+}
+
+/* 横向きのスマホ: 高さいっぱいに広げて、見出しと説明を詰める */
+@media (max-height: 540px) and (orientation: landscape) {
+  #ranking .dialog-panel {
+    width: calc(100vw - 16px);
+    height: calc(100dvh - 16px);
+    padding: 10px 14px 8px;
+  }
+  .rk-head {
+    margin-bottom: 6px;
+  }
+  .rk-head h2 {
+    font-size: 16px;
+  }
+  .rk-body {
+    grid-template-columns: minmax(150px, 28%) minmax(0, 1fr);
+    gap: 10px;
+  }
+  .rk-course {
+    padding: 5px 24px 5px 10px;
+    margin-bottom: 3px;
+  }
+  .rk-course span {
+    font-size: 12px;
+  }
+  .rk-course small {
+    font-size: 10px;
+  }
+  #ranking-table td {
+    padding: 4px 4px;
+  }
+  #ranking .dialog-buttons {
+    margin-top: 6px;
+  }
+  #ranking .dialog-buttons button {
+    min-height: 32px;
+  }
+  #ranking .dialog-buttons .note {
+    font-size: 10px;
+    line-height: 1.4;
+  }
+}
+
+/* 縦向きのスマホ: コースも横に並べた札にして、表を広くとる */
+@media (max-width: 760px) and (orientation: portrait) {
+  #ranking .dialog-panel {
+    width: calc(100vw - 16px);
+    height: calc(100dvh - 16px);
+    padding: 12px 12px 10px;
+  }
+  .rk-head {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 6px;
+  }
+  #ranking .rk-head .field {
+    width: 100%;
+  }
+  .rk-body {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+  }
+  .rk-courses {
+    flex: 0 0 auto;
+    display: flex;
+    gap: 6px;
+    overflow-x: auto;
+    overflow-y: hidden;
+    padding: 0 0 6px;
+  }
+  .rk-course {
+    flex: 0 0 auto;
+    width: auto;
+    margin: 0;
+    padding: 6px 22px 6px 10px;
+  }
+  .rk-course.selected {
+    transform: none;
+  }
+  .rk-course span {
+    font-size: 12px;
+    white-space: nowrap;
+  }
+  .rk-board {
+    flex: 1 1 auto;
+  }
+  #ranking-table td.car {
+    max-width: 90px;
+  }
+  #ranking-table td.name {
+    max-width: 96px;
+  }
+  #ranking-table td.date {
+    display: none;
+  }
+  #ranking .dialog-buttons {
+    flex-wrap: wrap;
+  }
+}
+
+/* --- オンライン対戦のエントリー画面（ランキングと同じ枠: 左に車、右にエントリーした人） --- */
+#online-race {
+  position: fixed;
+  inset: 0;
+  display: flex;
+  overflow-y: auto;
+  padding: max(8px, env(safe-area-inset-top)) max(8px, env(safe-area-inset-right)) max(8px, env(safe-area-inset-bottom)) max(8px, env(safe-area-inset-left));
+  background: rgba(0, 0, 0, 0.35);
+  z-index: 10;
+}
+
+#online-race.hidden {
+  display: none;
+}
+
+#online-race .dialog-panel {
+  display: flex;
+  flex-direction: column;
+  width: min(820px, calc(100vw - 32px));
+  height: min(560px, calc(100dvh - 16px));
+}
+
+.or-cond {
+  color: var(--accent-2);
+  font-weight: 800;
+  font-size: 14px;
+}
+
+#or-status {
+  margin: 0 0 8px;
+}
+
+.or-col {
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.or-label {
+  margin-bottom: 6px;
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: 0.1em;
+}
+
+.or-entrants {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  overflow-y: auto;
+}
+
+.or-entrants li {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto auto;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 10px;
+  border-top: 1px solid var(--line);
+  font-size: 13px;
+}
+
+.or-entrants li.me {
+  background: rgba(255, 74, 28, 0.12);
+}
+
+.or-entrants .dot,
+#emote-feed .dot {
+  display: inline-block;
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+}
+
+.or-entrants .name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-weight: 700;
+}
+
+.or-entrants .name i {
+  margin-left: 6px;
+  padding: 0 5px;
+  border: 1px solid var(--accent-2);
+  color: var(--accent-2);
+  font-size: 10px;
+  font-style: normal;
+}
+
+.or-entrants .car {
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.or-entrants .mark {
+  min-width: 4.5em;
+  text-align: right;
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 800;
+}
+
+.or-entrants li.ready .mark {
+  color: #6ee08a;
+}
+
+@media (max-height: 540px) and (orientation: landscape) {
+  #online-race .dialog-panel {
+    width: calc(100vw - 16px);
+    height: calc(100dvh - 16px);
+    padding: 10px 14px 8px;
+  }
+  #or-status {
+    margin-bottom: 4px;
+    font-size: 11px;
+  }
+  .or-entrants li {
+    padding: 5px 8px;
+    font-size: 12px;
+  }
+}
+
+@media (max-width: 760px) and (orientation: portrait) {
+  #online-race .dialog-panel {
+    width: calc(100vw - 16px);
+    height: auto;
+    max-height: calc(100dvh - 16px);
+    padding: 12px;
+  }
+  #online-race .or-col:first-child {
+    flex: 0 0 auto;
+  }
+}
+
+/* --- エモート: 選ぶ札（上の真ん中）と、言ったことの流れ（左） --- */
+#emotes {
+  position: fixed;
+  bottom: calc(env(safe-area-inset-bottom) + 110px);
+  left: 50%;
+  z-index: 7;
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 4px;
+  width: min(460px, calc(100vw - 24px));
+  padding: 8px;
+  transform: translateX(-50%);
+  background: var(--panel);
+  border-top: 3px solid var(--accent);
+}
+
+#emotes.hidden {
+  display: none;
+}
+
+#emotes button {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 36px;
+  padding: 6px 10px;
+  font: inherit;
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--text);
+  text-align: left;
+  border: 0;
+  background: rgba(255, 255, 255, 0.07);
+  cursor: pointer;
+}
+
+#emotes button:hover {
+  background: var(--accent);
+}
+
+#emotes kbd {
+  flex: 0 0 auto;
+}
+
+#emote-feed {
+  position: fixed;
+  left: calc(env(safe-area-inset-left) + 16px);
+  bottom: calc(env(safe-area-inset-bottom) + 200px);
+  z-index: 4;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  pointer-events: none;
+}
+
+#emote-feed li {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 4px;
+  padding: 4px 10px;
+  background: rgba(10, 11, 14, 0.72);
+  border-left: 3px solid var(--accent);
+  font-size: 13px;
+  animation: scene-in 0.2s ease-out;
+  transition: opacity 0.4s;
+}
+
+#emote-feed li.fade {
+  opacity: 0;
+}
+
+#emote-feed b {
+  color: var(--accent-2);
+}
+
+body.touch #emote-feed {
+  left: calc(env(safe-area-inset-left) + 10px);
+  bottom: calc(env(safe-area-inset-bottom) + 64px);
+}
+
+@media (max-height: 540px) and (orientation: landscape) {
+  #emotes {
+    bottom: calc(env(safe-area-inset-bottom) + 64px);
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    width: min(560px, calc(100vw - 240px));
+  }
+  #emotes button {
+    min-height: 32px;
+    font-size: 11px;
+  }
+  #emotes kbd {
+    display: none;
+  }
+  #emote-feed li {
+    font-size: 11px;
+  }
+}
+
+/* オンライン対戦のゴール画面: やり直し・コースを変えるはできない（みんなと走っているため） */
+body.online-race #race-retry,
+body.online-race #race-change {
+  display: none;
+}
+
+/* ペダルの上の列: ライト・ホーン・セリフ（走りながら右の親指で押す） */
+#touch-side {
+  position: fixed;
+  right: calc(env(safe-area-inset-right) + 16px);
+  bottom: calc(env(safe-area-inset-bottom) + 158px);
+  display: flex;
+  gap: 6px;
+}
+
+#touch-side button {
+  min-width: 56px;
+  height: 36px;
+  padding: 0 8px;
+  border-radius: 10px;
+  font-size: 12px;
+  font-weight: 700;
+  touch-action: none;
+}
+
+#touch-side .hidden {
+  display: none;
+}
+
+#touch-side button:active {
+  background: rgba(80, 140, 255, 0.6);
+}
+
+@media (max-height: 420px) and (orientation: landscape) {
+  #touch-side {
+    bottom: calc(env(safe-area-inset-bottom) + 154px);
+  }
+  #touch-side button {
+    height: 32px;
+    min-width: 50px;
+  }
+}
+
+/* ミラーの枠（中身は 3D の描画で同じ場所に貼る） */
+.mirror-frame {
+  position: fixed;
+  z-index: 2;
+  border: 3px solid #15171b;
+  /* 中身の画像は四角いので、角は丸めすぎない */
+  border-radius: 3px;
+  box-shadow:
+    0 0 0 1px rgba(255, 255, 255, 0.25),
+    0 6px 18px rgba(0, 0, 0, 0.45);
+  pointer-events: none;
+}
+
+.mirror-frame.hidden {
+  display: none;
+}
+
+/* 横向きの画面: ミラーを出している間は、周回・タイムの表示をミラーの下へ */
+@media (orientation: landscape) {
+  body.mirrors-on:not(.touch) #race {
+    top: calc(env(safe-area-inset-top) + var(--mirror-bottom, 10px));
+  }
+  /* スマホの横向きは、上の真ん中をミラーにゆずり、周回・タイムは左上のボタンの下に */
+  body.touch #race {
+    left: calc(env(safe-area-inset-left) + 10px);
+    top: calc(env(safe-area-inset-top) + 62px);
+    transform: none;
+  }
 }

@@ -2,6 +2,7 @@ import type RAPIER from '@dimforge/rapier3d-compat';
 import * as THREE from 'three';
 import { RemoteTrack } from '../net/interpolation';
 import type { CarState, PlayerInfo } from '../net/protocol';
+import { attachBubble } from '../render/bubble';
 import { CarMesh, carStyle } from '../render/carMesh';
 import { CAR_DIMENSIONS, type CarSnapshot } from '../sim/car';
 import { carGroups } from '../sim/physics';
@@ -22,6 +23,8 @@ interface RemotePlayer {
   courseS: number | null;
   /** 車体がぶつかる層（立体交差） */
   layer: number;
+  /** 対戦中に受け取った、コースを進んだ距離 [m]（対戦していなければ null） */
+  progress: number | null;
 }
 
 /** 車の上に出す名札 */
@@ -89,8 +92,9 @@ export class RemoteCars {
     const label = createLabel(info.name);
     mesh.root.add(label);
     mesh.root.visible = false;
+    mesh.setLights(info.lights);
     this.scene.add(mesh.root);
-    this.players.set(info.id, { info, track: new RemoteTrack(), mesh, label, body: this.createBody(), courseS: null, layer: -1 });
+    this.players.set(info.id, { info, track: new RemoteTrack(), mesh, label, body: this.createBody(), courseS: null, layer: -1, progress: null });
   }
 
   update(info: PlayerInfo): void {
@@ -101,10 +105,12 @@ export class RemoteCars {
       const mesh = new CarMesh(PLAYER_COLORS[info.color % PLAYER_COLORS.length], carStyle(info.car));
       mesh.root.add(p.label);
       mesh.root.visible = p.mesh.root.visible;
+      mesh.setLights(info.lights);
       p.mesh.dispose();
       this.scene.add(mesh.root);
       p.mesh = mesh;
     }
+    p.mesh.setLights(info.lights);
     p.info = info;
   }
 
@@ -122,8 +128,28 @@ export class RemoteCars {
     for (const id of [...this.players.keys()]) this.remove(id);
   }
 
-  pushState(id: number, time: number, s: CarState, localNow: number): void {
-    this.players.get(id)?.track.push(time, s, localNow);
+  pushState(id: number, time: number, s: CarState, localNow: number, progress?: number): void {
+    const p = this.players.get(id);
+    if (!p) return;
+    p.track.push(time, s, localNow);
+    p.progress = progress ?? null;
+  }
+
+  /** 対戦中にその人がコースを進んだ距離 [m]（まだ受け取っていなければ null） */
+  progressOf(id: number): number | null {
+    return this.players.get(id)?.progress ?? null;
+  }
+
+  /** その人の車のいまの位置（見えていなければ null） */
+  positionOf(id: number, localNow: number): { x: number; z: number } | null {
+    const s = this.players.get(id)?.track.sample(localNow);
+    return s ? { x: s[0], z: s[1] } : null;
+  }
+
+  /** その人の車の上に吹き出しを出す */
+  showBubble(id: number, text: string): void {
+    const p = this.players.get(id);
+    if (p) attachBubble(p.mesh.root, text);
   }
 
   /** しばらくの間、他の車をすり抜けるようにする */

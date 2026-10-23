@@ -1,5 +1,6 @@
-import { type DialogueLine, lineDuration } from '../race/dialogue';
+import { type DialogueLine, lineDuration, splitLine } from '../race/dialogue';
 import { escapeHtml } from './menu';
+import { SHOW_PORTRAITS } from './portraits';
 
 /** 話す人の表示（名前と、あれば画像） */
 export interface Speaker {
@@ -39,6 +40,8 @@ export class Subtitles {
     private readonly resolve: (who: string) => Speaker,
     private readonly playSound: (name: string) => void = () => {},
   ) {
+    // 画像を出さないときは顔の枠をとらない
+    this.sceneFace.hidden = !SHOW_PORTRAITS;
     this.scene.addEventListener('click', (e) => {
       if ((e.target as HTMLElement).closest('.scene-skip')) this.endScene();
       else this.advance();
@@ -57,9 +60,11 @@ export class Subtitles {
     return this.sceneDone !== null;
   }
 
-  /** 走っている間のセリフ（前のセリフが出ている間は順番を待つ） */
+  /** 走っている間のセリフ（前のセリフが出ている間は順番を待つ。長いセリフは区切って順に出す） */
   say(lines: readonly DialogueLine[]): void {
-    for (const l of lines) this.queue.push(this.item(l));
+    for (const l of lines) {
+      splitLine(l.text).forEach((text, i) => this.queue.push({ ...this.item(l), text, sound: i === 0 ? l.sound : undefined }));
+    }
     if (this.lineTimer <= 0) this.next();
   }
 
