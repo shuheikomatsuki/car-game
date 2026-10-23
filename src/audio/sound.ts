@@ -71,6 +71,11 @@ export class SoundSystem {
     return this.muted;
   }
 
+  /** start() の後に使える AudioContext（BGM も同じものに流す） */
+  get context(): AudioContext | null {
+    return this.voices?.ctx ?? null;
+  }
+
   /** ユーザー操作のイベント内で呼ぶ。2回目以降は何もしない */
   start(): void {
     if (this.voices) {

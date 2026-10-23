@@ -1,4 +1,5 @@
 import { SoundSystem } from './audio/sound';
+import { BGM_TRACKS, BgmPlayer } from './audio/bgm';
 import { GamepadInput, KeyboardInput, PAD_BUTTON, mergeInputs } from './core/input';
 import { FixedStepLoop } from './core/loop';
 import { Airborne } from './game/airborne';
@@ -85,6 +86,7 @@ async function main() {
   const cameraRig = new CameraRig(window.innerWidth / window.innerHeight);
   const hud = new Hud();
   const sound = new SoundSystem();
+  const bgm = new BgmPlayer(BGM_TRACKS);
   window.addEventListener('resize', () => view.resize(cameraRig.camera));
 
   // ?map=1 のように開始マップを指定できる
@@ -941,7 +943,25 @@ async function main() {
   const settingDetail = (title: string, lines: string[]) => () => textDetail({ kicker: 'OPTIONS', title, lines });
   const settingItems: MenuItem[] = [
     { label: () => 'カメラ', value: () => cameraRig.modeName, run: () => cycleCamera(), detail: settingDetail('カメラ', ['走っているときの視点。走行中は C キーでも切り替えられます。']) },
-    { label: () => 'サウンド', value: () => (sound.isMuted ? 'OFF' : 'ON'), run: toggleMute, detail: settingDetail('サウンド', ['エンジン音・タイヤの音・ぶつかった音。M キーでも切り替えられます。']) },
+    { label: () => '効果音', value: () => (sound.isMuted ? 'OFF' : 'ON'), run: toggleMute, detail: settingDetail('効果音', ['エンジン音・タイヤの音・ぶつかった音。M キーでも切り替えられます。']) },
+    {
+      label: () => 'BGM',
+      value: () => bgm.choiceLabel,
+      run: () => {
+        sound.start();
+        bgm.start(sound.context);
+        bgm.cycle();
+      },
+      visible: () => bgm.tracks.length > 0,
+      detail: settingDetail('BGM', ['ゲーム中に流す曲。押すたびに「なし → 曲 → シャッフル」と切り替わります。', `曲: ${bgm.tracks.map((t) => t.title).join('／')}`]),
+    },
+    {
+      label: () => 'BGMの音量',
+      value: () => bgm.volumeLabel,
+      run: () => bgm.cycleVolume(),
+      visible: () => bgm.isOn,
+      detail: settingDetail('BGMの音量', ['小・中・大の3段階。']),
+    },
     {
       label: () => 'ハンドル',
       value: () => (touch.steerMode === 'tilt' ? '傾ける' : 'なぞる'),
@@ -1033,7 +1053,10 @@ async function main() {
   });
 
   // ブラウザの制約で、音はユーザー操作の後でないと鳴らせない（タッチは指を離したときが操作とみなされる）
-  const unlockAudio = () => sound.start();
+  const unlockAudio = () => {
+    sound.start();
+    bgm.start(sound.context);
+  };
   window.addEventListener('keydown', unlockAudio);
   window.addEventListener('pointerdown', unlockAudio);
   window.addEventListener('pointerup', unlockAudio);
