@@ -65,6 +65,8 @@ interface Voices {
 
 export class SoundSystem {
   private voices: Voices | null = null;
+  /** 鳴っているクラクション（自分は 'me'、他の人は id） */
+  private readonly horns = new Map<string | number, { gain: GainNode; oscs: OscillatorNode[] }>();
   private readonly effects = new Map<string, Promise<AudioBuffer | null>>();
   private muted = loadMuted();
 
@@ -237,6 +239,43 @@ export class SoundSystem {
     thump.connect(tg).connect(v.master);
     thump.start(t);
     thump.stop(t + 0.12);
+  }
+
+  /**
+   * クラクションを鳴らし始める・止める。key ごとに1つ鳴る（自分は 'me'、他の人は id）。
+   * volume は 0〜1（遠くの車ほど小さく）
+   */
+  horn(key: string | number, on: boolean, volume = 1): void {
+    const v = this.voices;
+    if (!v) return;
+    const t = v.ctx.currentTime;
+    const playing = this.horns.get(key);
+    if (!on) {
+      if (!playing) return;
+      this.horns.delete(key);
+      playing.gain.gain.cancelScheduledValues(t);
+      playing.gain.gain.setTargetAtTime(0, t, 0.03);
+      for (const o of playing.oscs) o.stop(t + 0.2);
+      return;
+    }
+    if (playing || volume <= 0.01) return;
+    // 2つの音程（ミとソくらい）を重ねた、乗用車のホーンらしい音
+    const filter = v.ctx.createBiquadFilter();
+    filter.type = 'lowpass';
+    filter.frequency.value = 2400;
+    const gain = v.ctx.createGain();
+    gain.gain.setValueAtTime(0, t);
+    gain.gain.linearRampToValueAtTime(0.16 * Math.min(1, volume), t + 0.02);
+    filter.connect(gain).connect(v.master);
+    const oscs = [415, 523].map((f) => {
+      const o = v.ctx.createOscillator();
+      o.type = 'square';
+      o.frequency.value = f;
+      o.connect(filter);
+      o.start(t);
+      return o;
+    });
+    this.horns.set(key, { gain, oscs });
   }
 
   /** 合図の電子音（カウントダウン・ラップ）。high は高い音（スタート・ゴール） */

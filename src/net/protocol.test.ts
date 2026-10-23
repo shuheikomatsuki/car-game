@@ -18,4 +18,21 @@ describe('protocol', () => {
     expect(parseClientMessage('null')).toBeNull();
     expect(parseClientMessage('x'.repeat(3000))).toBeNull();
   });
+
+  it('checks horn, emote, lights and race messages', () => {
+    expect(parseClientMessage('{"t":"state","time":1,"s":[1,2,3,4,5,6],"p":120.5}')).toEqual({ t: 'state', time: 1, s: [1, 2, 3, 4, 5, 6], p: 120.5 });
+    expect(parseClientMessage('{"t":"state","time":1,"s":[1,2,3,4,5,6],"p":"x"}')).toBeNull();
+    expect(parseClientMessage('{"t":"profile","lights":true}')).toEqual({ t: 'profile', lights: true });
+    expect(parseClientMessage('{"t":"profile"}')).toBeNull();
+    expect(parseClientMessage('{"t":"horn","on":true}')).toEqual({ t: 'horn', on: true });
+    expect(parseClientMessage('{"t":"emote","e":3}')).toEqual({ t: 'emote', e: 3 });
+    expect(parseClientMessage('{"t":"emote","e":99}')).toBeNull();
+    expect(parseClientMessage('{"t":"raceOpen","settings":{"map":2,"time":"night","weather":"rain"}}')).toEqual({
+      t: 'raceOpen',
+      settings: { map: 2, time: 'night', weather: 'rain' },
+    });
+    expect(parseClientMessage('{"t":"raceOpen","settings":{"map":2,"time":"noon","weather":"rain"}}')).toBeNull();
+    expect(parseClientMessage('{"t":"raceReady","ready":true,"car":"ae86"}')).toEqual({ t: 'raceReady', ready: true, car: 'ae86' });
+    expect(parseClientMessage('{"t":"raceFinish","seq":1,"time":-3}')).toBeNull();
+  });
 });

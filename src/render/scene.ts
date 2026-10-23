@@ -67,8 +67,11 @@ export class GameScene {
   private readonly hemi: THREE.HemisphereLight;
   private sunOffset = LIGHTING.day.sunOffset;
   private readonly fog = new THREE.Fog(LIGHTING.day.sky, LIGHTING.day.fogNear, LIGHTING.day.fogFar);
-  /** 夜に自分の車の前を照らすライト */
+  /** 自分の車の前を照らすライト（ヘッドライトをつけている間） */
   private readonly headlight = new THREE.SpotLight(0xfff0d0, 0, 120, 0.55, 0.5, 1);
+  /** 暗さに合わせたヘッドライトの明るさ（夜 1、朝・雨・霧 0.35、晴れた昼 0.15） */
+  private lightLevel = 0;
+  private headlightsOn = false;
   private readonly rain: THREE.LineSegments;
   private readonly rainPositions: Float32Array;
 
@@ -99,7 +102,6 @@ export class GameScene {
     this.sun.shadow.bias = -0.0005;
     this.scene.add(this.sun, this.sun.target);
 
-    this.headlight.visible = false;
     this.scene.add(this.headlight, this.headlight.target);
 
     // 雨: カメラの周りの箱の中を落ちる細い線。箱から出たら上へ戻す
@@ -148,11 +150,25 @@ export class GameScene {
     // 雨や霧の日は日差しが弱く、影もほとんど出ない
     this.sun.intensity = l.sun * (env.weather === 'clear' ? 1 : 0.35);
     this.sunOffset = l.sunOffset;
-    // 朝や霧の日、雨の日も少し暗いのでライトをつける
-    const lights = env.time === 'night' ? 1 : env.weather === 'clear' ? 0 : 0.35;
-    this.headlight.visible = lights > 0;
-    this.headlight.intensity = 2000 * lights;
+    this.lightLevel = env.time === 'night' ? 1 : env.time === 'morning' || env.weather !== 'clear' ? 0.35 : 0.15;
+    this.applyHeadlight();
     this.rain.visible = env.weather === 'rain';
+  }
+
+  /** 自分の車のヘッドライトをつける・消す */
+  setHeadlights(on: boolean): void {
+    this.headlightsOn = on;
+    this.applyHeadlight();
+  }
+
+  private applyHeadlight(): void {
+    // visible を切り替えると、ライトの数が変わってシェーダーを作り直す（一瞬止まる）ので、明るさだけを変える
+    this.headlight.intensity = this.headlightsOn ? 2000 * this.lightLevel : 0;
+  }
+
+  /** 暗くてヘッドライトをつけたほうがよい時間帯・天気か（朝・夜・雨・霧） */
+  static needsHeadlights(env: Environment): boolean {
+    return env.time !== 'day' || env.weather !== 'clear';
   }
 
   /** 太陽光（影の範囲）を注目点に追従させる */
@@ -163,7 +179,7 @@ export class GameScene {
 
   /** ヘッドライトを車に合わせる（root は車体） */
   followCar(root: THREE.Object3D): void {
-    if (!this.headlight.visible) return;
+    if (!this.headlightsOn) return;
     root.updateMatrixWorld();
     this.headlight.position.copy(root.localToWorld(new THREE.Vector3(0, 1.1, 2.0)));
     this.headlight.target.position.copy(root.localToWorld(new THREE.Vector3(0, -1.2, 18)));

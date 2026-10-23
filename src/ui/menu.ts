@@ -56,6 +56,8 @@ export interface MenuMode {
   summary: () => string;
   /** 最後の画面で「スタート」を押したとき */
   finish: () => void;
+  /** 最後の画面のボタンの文字（なければ「スタート」） */
+  finishLabel?: string;
 }
 
 /** トップ画面・ポーズ画面・設定画面に並べる項目 */
@@ -440,7 +442,7 @@ export class GameMenu {
     this.titleEl.textContent = screen.title;
     this.summaryEl.textContent = mode.summary();
     this.backButton.textContent = '戻る';
-    this.nextButton.textContent = this.step === screens.length - 1 ? 'スタート' : '次へ';
+    this.nextButton.textContent = this.step === screens.length - 1 ? (mode.finishLabel ?? 'スタート') : '次へ';
     this.nextButton.classList.toggle('start', this.step === screens.length - 1);
     this.stepsEl.innerHTML = screens
       .map((s, i) => `<li class="${i < this.step ? 'done' : i === this.step ? 'current' : ''}"><span>${pad2(i + 1)}</span>${escapeHtml(s.title)}</li>`)

@@ -16,6 +16,8 @@ function escapeHtml(s: string): string {
 export interface BoardChoice {
   id: string;
   label: string;
+  /** 選択肢の下に小さく出す説明（コースの長さなど） */
+  note?: string;
 }
 
 /** 車の選択肢の「すべての車」（車ごとのランキングをまとめて出す） */
@@ -32,8 +34,10 @@ export interface RankingPanelHandlers {
 /** ランキングの画面: コースと車を選んで上位の記録を見て、選んだ人のゴーストと走る */
 export class RankingPanel {
   private readonly root = el('ranking');
-  private readonly course = el<HTMLSelectElement>('ranking-course');
-  private readonly car = el<HTMLSelectElement>('ranking-car');
+  private readonly courseList = el('ranking-course');
+  private readonly carList = el('ranking-car');
+  private course = '';
+  private car = ALL_CARS;
   private readonly name = el<HTMLInputElement>('ranking-name');
   private readonly status = el('ranking-status');
   private readonly table = el<HTMLTableElement>('ranking-table');
@@ -48,12 +52,27 @@ export class RankingPanel {
     cars: readonly BoardChoice[],
     private readonly handlers: RankingPanelHandlers,
   ) {
-    const options = (list: readonly BoardChoice[]) => list.map((c) => `<option value="${c.id}">${escapeHtml(c.label)}</option>`).join('');
-    this.course.innerHTML = options(courses);
-    this.car.innerHTML = options([{ id: ALL_CARS, label: 'すべての車' }, ...cars]);
+    // コースは縦の一覧、車は横に並べた札（メニューと同じ見た目。select だとブラウザの部品になってしまう）
+    const buttons = (list: readonly BoardChoice[], cls: string) =>
+      list
+        .map(
+          (c) =>
+            `<button type="button" class="${cls}" role="option" data-id="${escapeHtml(c.id)}"><span>${escapeHtml(c.label)}</span>${c.note ? `<small>${escapeHtml(c.note)}</small>` : ''}</button>`,
+        )
+        .join('');
+    this.courseList.innerHTML = buttons(courses, 'rk-course');
+    this.carList.innerHTML = buttons([{ id: ALL_CARS, label: 'すべての車' }, ...cars], 'rk-car');
     this.carLabels = new Map(cars.map((c) => [c.id, c.label]));
-    this.course.addEventListener('change', () => void this.reload());
-    this.car.addEventListener('change', () => void this.reload());
+    const pick = (list: HTMLElement, set: (id: string) => void) =>
+      list.addEventListener('click', (e) => {
+        const b = (e.target as HTMLElement).closest<HTMLButtonElement>('button[data-id]');
+        if (!b || b.classList.contains('selected')) return;
+        set(b.dataset.id!);
+        this.refreshChoices();
+        void this.reload();
+      });
+    pick(this.courseList, (id) => (this.course = id));
+    pick(this.carList, (id) => (this.car = id));
     this.name.maxLength = MAX_ENTRY_NAME_LENGTH;
     this.name.addEventListener('change', () => {
       savePlayerName(this.name.value.trim());
@@ -67,7 +86,7 @@ export class RankingPanel {
       if (!entry) return;
       button.disabled = true;
       this.status.textContent = `${entry.name} さんのゴーストを読み込んでいます…`;
-      this.handlers.onRace(this.course.value, entry).then(
+      this.handlers.onRace(this.course, entry).then(
         () => this.close(),
         (err: unknown) => {
           button.disabled = false;
@@ -91,10 +110,11 @@ export class RankingPanel {
 
   open(course: string, car: string): void {
     this.openValue = true;
-    this.course.value = course;
-    this.car.value = car;
+    this.course = course;
+    this.car = car;
     this.name.value = loadPlayerName();
     this.root.classList.remove('hidden');
+    this.refreshChoices(true);
     this.handlers.onOpenChange(true);
     void this.reload();
   }
@@ -111,7 +131,7 @@ export class RankingPanel {
     const id = ++this.loadId;
     this.status.textContent = '読み込んでいます…';
     try {
-      const { entries, mine } = await this.handlers.load(this.course.value, this.car.value);
+      const { entries, mine } = await this.handlers.load(this.course, this.car);
       if (id !== this.loadId) return;
       this.entries = entries;
       this.render(mine);
@@ -125,13 +145,28 @@ export class RankingPanel {
     }
   }
 
+  /** 選んでいるコース・車の札を目立たせ、見えるところまでスクロールする */
+  private refreshChoices(scroll = false): void {
+    for (const [list, id] of [
+      [this.courseList, this.course],
+      [this.carList, this.car],
+    ] as const) {
+      for (const b of list.querySelectorAll<HTMLButtonElement>('button[data-id]')) {
+        const on = b.dataset.id === id;
+        b.classList.toggle('selected', on);
+        b.setAttribute('aria-selected', String(on));
+        if (on && scroll) b.scrollIntoView({ block: 'nearest', inline: 'nearest' });
+      }
+    }
+  }
+
   private render(mine: ReadonlySet<string>): void {
     const top = this.entries[0]?.total;
     this.table.innerHTML = this.entries
       .map((e, i) => {
         const gap = i === 0 || top === undefined ? '' : `<span class="note">+${(e.total - top).toFixed(2)}</span>`;
         const date = new Date(e.date).toLocaleDateString('ja-JP', { month: 'numeric', day: 'numeric' });
-        return `<tr class="${mine.has(e.id) ? 'me' : ''}"><td>${i + 1}</td><td class="name">${escapeHtml(e.name)}</td><td class="car">${escapeHtml(this.carLabels.get(e.car) ?? e.car)}</td><td>${formatTime(e.total)} ${gap}</td><td class="note">${date}</td><td><button type="button" data-index="${i}">対戦</button></td></tr>`;
+        return `<tr class="${mine.has(e.id) ? 'me' : ''}"><td>${i + 1}</td><td class="name">${escapeHtml(e.name)}</td><td class="car">${escapeHtml(this.carLabels.get(e.car) ?? e.car)}</td><td>${formatTime(e.total)} ${gap}</td><td class="note date">${date}</td><td><button type="button" data-index="${i}">対戦</button></td></tr>`;
       })
       .join('');
   }
