@@ -188,7 +188,7 @@ export default {
       if (denied) return deny(request, denied);
       return env.ROOM.get(env.ROOM.idFromName(code)).fetch(request);
     }
-    if (url.pathname === '/') return new Response('car-game server', { headers: { 'content-type': 'text/plain' } });
+    if (url.pathname === '/') return new Response('prefix-d server', { headers: { 'content-type': 'text/plain' } });
     return new Response('Not found', { status: 404 });
   },
 } satisfies ExportedHandler<Env>;

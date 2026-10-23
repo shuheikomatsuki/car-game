@@ -1,4 +1,4 @@
-# car-game
+# prefix-d
 
 ブラウザ向け3Dドライビングゲーム（Vite + TypeScript + Three.js + Rapier）。設計方針は `docs/design-proposal.md`。
 

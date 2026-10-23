@@ -1,6 +1,6 @@
 # Prefix D
 
-ブラウザ向け3Dドライビングゲーム「Prefix D」（個人開発。リポジトリ名は car-game）。
+ブラウザ向け3Dドライビングゲーム「Prefix D」（個人開発）。
 自分で運転して街を走るほか、タイムアタック・NPC対戦・オンラインで友だちと走れる。
 
 - 設計提案: [docs/design-proposal.md](docs/design-proposal.md)
