@@ -5,6 +5,7 @@ import {
   DEFAULT_VEHICLE_PARAMS as P,
   NEUTRAL_INPUT,
   VEHICLE_PRESETS,
+  lateralAccelAt,
   steerLimitAt,
   stepVehicle,
   topSpeedOf,
@@ -83,7 +84,17 @@ describe('stepVehicle', () => {
     // 高速旋回時の横加速度が上限以下
     const v = 30;
     const lateral = (v * v * Math.tan(steerLimitAt(v, P))) / P.wheelBase;
-    expect(lateral).toBeLessThanOrEqual(P.maxLateralAccel + 1e-9);
+    expect(lateral).toBeLessThanOrEqual(lateralAccelAt(v, P) + 1e-9);
+  });
+
+  it('grips harder at high speed (downforce) so that fast corners can be taken', () => {
+    expect(lateralAccelAt(10, P)).toBe(P.maxLateralAccel);
+    expect(lateralAccelAt(40, P)).toBeGreaterThan(P.maxLateralAccel * 1.3);
+    expect(lateralAccelAt(60, P)).toBe(lateralAccelAt(40, P));
+    // スポーツカーなら 130km/h で半径 80m のカーブを曲がれる
+    const fd = VEHICLE_PRESETS.find((c) => c.id === 'fd3s')!.params;
+    const v = 130 / 3.6;
+    expect((v * v * Math.tan(steerLimitAt(v, fd))) / fd.wheelBase).toBeGreaterThanOrEqual((v * v) / 80);
   });
 
   it('damps lateral sliding', () => {

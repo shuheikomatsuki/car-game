@@ -309,11 +309,23 @@ export interface VehicleStepResult extends VehicleState {
 /** この速度未満では「止まっている」とみなし、ブレーキ入力を後退として扱う */
 const STOP_THRESHOLD = 0.5;
 
+/** ダウンフォース: この速さ [m/s] から横加速度の上限が増え始め、DOWNFORCE_FULL で最大になる */
+const DOWNFORCE_FROM = 15;
+const DOWNFORCE_FULL = 40;
+/** 高速で増える横加速度の上限の割合（百数十キロでも高速コーナーを曲がれるように） */
+const DOWNFORCE_GAIN = 0.35;
+
+/** 速さ speed [m/s] での横加速度の上限。速いほど車が路面に押し付けられ、少し大きくなる */
+export function lateralAccelAt(speed: number, p: VehicleParams): number {
+  const t = Math.min(1, Math.max(0, (Math.abs(speed) - DOWNFORCE_FROM) / (DOWNFORCE_FULL - DOWNFORCE_FROM)));
+  return p.maxLateralAccel * (1 + DOWNFORCE_GAIN * t);
+}
+
 /** 速度に応じた舵角の上限。低速では最大舵角、高速では横加速度が上限を超えないよう絞る */
 export function steerLimitAt(speed: number, p: VehicleParams): number {
   const v2 = speed * speed;
   if (v2 < 1e-6) return p.maxSteerAngle;
-  return Math.min(p.maxSteerAngle, Math.atan((p.maxLateralAccel * p.wheelBase) / v2));
+  return Math.min(p.maxSteerAngle, Math.atan((lateralAccelAt(speed, p) * p.wheelBase) / v2));
 }
 
 function approach(current: number, target: number, maxDelta: number): number {
@@ -371,7 +383,7 @@ export function stepVehicle(
   const limit = steerLimitAt(v, p);
   const targetSteer = steer * limit;
   // 高速では舵角の上限が小さいので、切る速さも合わせて落とす（キーボードでも急に曲がりすぎない）
-  const rateScale = Math.max(0.35, limit / p.maxSteerAngle);
+  const rateScale = Math.max(0.5, limit / p.maxSteerAngle);
   const rate = (steer === 0 ? p.steerReturnRate : p.steerRate) * rateScale;
   let steerAngle = approach(state.steerAngle, targetSteer, rate * dt);
   steerAngle = clamp(steerAngle, -limit, limit);

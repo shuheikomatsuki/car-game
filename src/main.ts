@@ -16,6 +16,8 @@ import { LeaderboardClient, myEntryId, playerId, uploadedTotal } from './net/lea
 import { type GhostData, type GhostPose, GhostRecorder, ghostPoseAt } from './race/ghost';
 import { NPC_LEVELS } from './race/npcDriver';
 import { RIVALS, loadBeatenRivals, markRivalBeaten, rivalLevel } from './race/rivals';
+import { type BattleContext, BattleDialogue, type BattleEvent, OvertakeWatcher, type RivalDialogue, dialogueApplies, sceneLines } from './race/dialogue';
+import { CHARACTERS, RIVAL_DIALOGUES } from './race/dialogueScript';
 import { CHASE_START_GAP, type Runner, SAFE_SECONDS, SuddenDeath } from './race/suddenDeath';
 import { type RaceRecord, loadRecord, mergeRecord, saveRecord } from './race/records';
 import { TimeAttack, formatTime } from './race/timeAttack';
@@ -39,9 +41,12 @@ import { CarPreview } from './render/carPreview';
 import { RaceHud } from './ui/raceHud';
 import { canRequestFullscreen, enterFullscreen, isFullscreen, isStandalone, needsHomeScreenForFullscreen } from './ui/fullscreen';
 import { TouchControls, prefersTouch } from './ui/touchControls';
+import { type Speaker, Subtitles } from './ui/subtitles';
 
 /** この強さ [m/s] 以上の速度変化を「衝突」として音・揺れを出す */
 const IMPACT_THRESHOLD = 2.5;
+/** セリフの 'crash'（壁に強くぶつかった）とみなす衝突の強さ [m/s] */
+const CRASH_THRESHOLD = 7;
 /** 段差から着地したときに、この下向きの速さ [m/s] 以上なら音・揺れを出す */
 const LANDING_THRESHOLD = 3;
 /** 自分の車の状態を送る間隔（物理ステップ数。60Hz / 3 = 20Hz） */
@@ -136,6 +141,19 @@ async function main() {
   /** ライバルとのバトルの相手（RIVALS の番号） */
   let battleIndex = 0;
   const battleRival = () => RIVALS[battleIndex];
+
+  // --- バトルのセリフ ---
+  const speakerOf = (who: string): Speaker => {
+    if (who === 'player') return { name: loadPlayerName().trim() || 'あなた', isPlayer: true };
+    const r = RIVALS.find((x) => x.id === who);
+    if (r) return { name: r.name, photo: r.photo };
+    return CHARACTERS[who] ?? { name: who };
+  };
+  const subtitles = new Subtitles(speakerOf);
+  /** いまのバトルのセリフ（セリフの無いライバルや、得意なコース以外では null） */
+  let talk: { script: RivalDialogue; ctx: BattleContext; lines: BattleDialogue; overtakes: OvertakeWatcher } | null = null;
+  let lastImpact = 0;
+  const debugWhere = params.has('debug') ? document.body.appendChild(Object.assign(document.createElement('div'), { id: 'debug-where' })) : null;
   /** バトルのルール */
   let battleRule: BattleRule = 'side';
   /** 先行後追いのバトルの進行（それ以外のレースでは null） */
@@ -277,11 +295,67 @@ async function main() {
     hud.setMode(raceLabel());
     touch.refresh();
     menu.refresh();
+    startTalk(mode, nextRound);
+  }
+
+  /** バトルのセリフを用意し、スタート前の場面を出す（先行後追いの2本目からは、round を書いた場面だけ） */
+  function startTalk(mode: RaceMode, nextRound: boolean) {
+    subtitles.clear();
+    talk = null;
+    if (mode !== 'battle') return;
+    const r = battleRival();
+    const script = RIVAL_DIALOGUES[r.id];
+    const ctx: BattleContext = {
+      course: level.def.id,
+      homeCourse: r.course,
+      playerCar: vehicle().id,
+      rule: suddenDeath ? 'suddenDeath' : 'side',
+      playerLeads: suddenDeath?.playerLeads ?? false,
+      round: suddenDeath?.round ?? 1,
+      weather: env.weather,
+      time: env.time,
+    };
+    if (!dialogueApplies(script, ctx)) return;
+    talk = { script, ctx, lines: new BattleDialogue(script.race ?? [], ctx), overtakes: new OvertakeWatcher() };
+    const intro = nextRound ? (script.intro ?? []).filter((sc) => sc.when?.round !== undefined) : script.intro;
+    subtitles.playScene(sceneLines(intro, ctx), () => {});
+  }
+
+  /** 勝負のあとの場面（セリフが無ければすぐ）を出してから then を呼ぶ */
+  function outcomeScene(kind: 'win' | 'lose' | 'draw', then: () => void) {
+    const t = talk;
+    if (!t) return then();
+    subtitles.playScene(sceneLines(t.script[kind], t.ctx), then);
+  }
+
+  /** 走っている間のセリフ（毎ステップ） */
+  function updateTalk() {
+    const t = talk;
+    const npc = npcField?.npcs[0];
+    if (!t || !race || !npc || race.phase !== 'racing') return;
+    const mine = race.distance(curr.x, curr.z);
+    const signedGap = mine - npc.timer.distance(npc.curr.x, npc.curr.z);
+    const events: BattleEvent[] = [];
+    const pass = t.overtakes.update(signedGap);
+    if (pass) events.push(pass);
+    if (lastImpact > CRASH_THRESHOLD) events.push('crash');
+    const lapDistance = level.course?.closed ? mine - (race.lap - 1) * level.course.length : mine;
+    subtitles.say(
+      t.lines.update({
+        elapsed: race.time,
+        lap: race.lap,
+        lapDistance,
+        ahead: signedGap > 0,
+        gap: Math.abs(signedGap),
+        speedKmh: Math.abs(curr.forwardSpeed) * 3.6,
+        events,
+      }),
+    );
   }
 
   /** スタートの合図: カウントダウンを始める */
   function beginRace() {
-    if (!race || race.phase !== 'ready') return;
+    if (!race || race.phase !== 'ready' || subtitles.sceneActive) return;
     race.begin();
     npcField?.begin();
   }
@@ -289,6 +363,8 @@ async function main() {
   /** レースの表示と NPC を片付ける（車の位置はそのまま） */
   function clearRace() {
     race = null;
+    subtitles.clear();
+    talk = null;
     suddenDeath = null;
     window.clearTimeout(nextRoundTimer);
     npcField?.dispose();
@@ -347,11 +423,16 @@ async function main() {
           if (suddenDeath) break;
           if (raceMode !== 'timeAttack') {
             const list = standings();
-            if (raceMode === 'battle' && list[0]?.isPlayer) markRivalBeaten(battleRival().id);
-            raceHud.showStandings(list, r.totalLaps, raceMode === 'battle');
-            raceHud.showRankingButton(false);
+            const won = list[0]?.isPlayer ?? false;
+            if (raceMode === 'battle' && won) markRivalBeaten(battleRival().id);
             raceHud.setWarning({ wrongWay: false, offCourse: false });
             sound.beep(true);
+            const show = () => {
+              raceHud.showStandings(standings(), r.totalLaps, raceMode === 'battle');
+              raceHud.showRankingButton(false);
+            };
+            if (raceMode === 'battle') outcomeScene(won ? 'win' : 'lose', show);
+            else show();
             break;
           }
           const previousBest = best?.total ?? null;
@@ -408,21 +489,27 @@ async function main() {
     raceHud.setWarning({ wrongWay: false, offCourse: false });
     raceHud.showRankingButton(false);
     if (outcome === 'draw') {
-      raceHud.showBattleResult(
-        `${sd.round}本目は引き分け`,
-        `${chase}（後追い）が ${SAFE_SECONDS}秒以内に続いてゴールし、抜くこともできませんでした。先行と後追いを入れ替えて、${sd.round + 1}本目へ…`,
-      );
-      nextRoundTimer = window.setTimeout(() => {
+      outcomeScene('draw', () => {
         if (suddenDeath !== sd) return;
-        sd.nextRound();
-        startRace('battle', false, true);
-      }, NEXT_ROUND_DELAY);
+        raceHud.showBattleResult(
+          `${sd.round}本目は引き分け`,
+          `${chase}（後追い）が ${SAFE_SECONDS}秒以内に続いてゴールし、抜くこともできませんでした。先行と後追いを入れ替えて、${sd.round + 1}本目へ…`,
+        );
+        nextRoundTimer = window.setTimeout(() => {
+          if (suddenDeath !== sd) return;
+          sd.nextRound();
+          startRace('battle', false, true);
+        }, NEXT_ROUND_DELAY);
+      });
       return;
     }
     const why = outcome === 'leadWins' ? `${lead}（先行）が ${SAFE_SECONDS}秒より大きな差をつけてゴールした` : `${chase}（後追い）が抜いて先にゴールした`;
     const won = sd.winner === 'player';
     if (won) markRivalBeaten(battleRival().id);
-    raceHud.showBattleResult(won ? `勝利！ ${name} に勝った` : `敗北… ${name} の勝ち`, `${sd.round}本目で決着：${why}`);
+    outcomeScene(won ? 'win' : 'lose', () => {
+      if (suddenDeath !== sd) return;
+      raceHud.showBattleResult(won ? `勝利！ ${name} に勝った` : `敗北… ${name} の勝ち`, `${sd.round}本目で決着：${why}`);
+    });
   };
 
   /** 先行後追いの走行中の表示（何本目・先行か後追いか・差） */
@@ -681,6 +768,8 @@ async function main() {
   gamepad.onButton(PAD_BUTTON.north, cycleCamera);
   gamepad.onButton(PAD_BUTTON.start, resetCar);
   gamepad.onButton(PAD_BUTTON.select, nextMap);
+  // セリフの場面は A ボタンでも進める
+  gamepad.onButton(PAD_BUTTON.south, () => subtitles.advance());
 
   // --- スマホのタッチ操作 ---
   const touch = new TouchControls(
@@ -1089,6 +1178,7 @@ async function main() {
       npcField?.afterStep(dt);
 
       const impact = level.car.measureImpact();
+      lastImpact = impact;
       if (impact > IMPACT_THRESHOLD) {
         sound.impact(impact);
         cameraRig.addShake(impact);
@@ -1129,6 +1219,11 @@ async function main() {
         if (r.phase === 'racing') ghostRecorder.sample(r.time, curr);
         handleRaceEvents(r);
         judgeSuddenDeath();
+        updateTalk();
+        if (debugWhere) {
+          const d = r.distance(curr.x, curr.z);
+          debugWhere.textContent = `${r.lap}周目 ${Math.round(level.course?.closed ? d - (r.lap - 1) * level.course.length : d)}m`;
+        }
       }
       // タブが裏に回っている間は送らない（他の人からは止まって見え、やがて放置として部屋から外れる）
       if (net.isOnline && !document.hidden && ++stepCount % SEND_EVERY_STEPS === 0) {
@@ -1137,6 +1232,7 @@ async function main() {
 
     },
     (alpha, frameDt) => {
+      subtitles.update(frameDt);
       const s = level.ground(lerpSnapshot(prev, curr, alpha));
       s.y += air.gap - fall.drop;
       carMesh.update(s);
@@ -1191,7 +1287,7 @@ async function main() {
   // ?debug を付けるとブラウザの開発者ツールや自動テストから状態を触れる
   if (params.has('debug')) {
     Object.assign(window, {
-      __game: { getLevel: () => level, getRace: () => race, getNpcs: () => npcField, getSuddenDeath: () => suddenDeath, menu, startTimeAttack: () => startRace('timeAttack'), startNpcRace: () => startRace('npc'), stopRace, openRanking, rankingPanel, net, remoteCars, touch, onlinePanel, cameraRig, sound },
+      __game: { getLevel: () => level, getRace: () => race, getNpcs: () => npcField, getSuddenDeath: () => suddenDeath, menu, startTimeAttack: () => startRace('timeAttack'), startNpcRace: () => startRace('npc'), startBattle: (index = battleIndex) => { battleIndex = index; startRace('battle', true); }, subtitles, stopRace, openRanking, rankingPanel, net, remoteCars, touch, onlinePanel, cameraRig, sound },
     });
   }
 
