@@ -2327,6 +2327,23 @@ body.menu-open #race-warning {
   opacity: 1;
 }
 
+#subtitle .text,
+#scene .scene-text {
+  white-space: pre-line;
+}
+
+/* 効果音の字幕 */
+#subtitle.effect .text,
+#scene.effect .scene-text {
+  color: #ffd27a;
+  font-weight: 800;
+  font-style: italic;
+}
+
+#scene.effect .scene-name {
+  display: none;
+}
+
 #subtitle .who {
   display: inline-block;
   margin-right: 0.6em;

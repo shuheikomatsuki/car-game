@@ -22,6 +22,7 @@ const snap = (s: Partial<BattleSnapshot>): BattleSnapshot => ({
   ahead: false,
   gap: 20,
   speedKmh: 100,
+  progress: 0.5,
   events: [],
   ...s,
 });
@@ -115,6 +116,15 @@ describe('BattleDialogue', () => {
   });
 });
 
+describe('progress', () => {
+  it('終盤（進んだ割合）の条件', () => {
+    const d = new BattleDialogue([{ when: { progress: { min: 0.7 }, position: 'behind', gap: { max: 6 } }, say: line('終盤') }], ctx);
+    expect(d.update(snap({ progress: 0.5, gap: 3 }))).toEqual([]);
+    expect(d.update(snap({ progress: 0.8, gap: 10 }))).toEqual([]);
+    expect(d.update(snap({ progress: 0.85, gap: 4 }))).toHaveLength(1);
+  });
+});
+
 describe('OvertakeWatcher', () => {
   it('前後が入れ替わったら抜いた・抜かれた（並んでいる間は数えない）', () => {
     const w = new OvertakeWatcher(2);
@@ -128,10 +138,10 @@ describe('OvertakeWatcher', () => {
 });
 
 describe('lineDuration', () => {
-  it('長いセリフほど長く出す（2.5〜7秒）', () => {
+  it('長いセリフほど長く出す（2.5〜10秒）', () => {
     expect(lineDuration('あ')).toBe(2.5);
     expect(lineDuration('あ'.repeat(30))).toBeGreaterThan(lineDuration('あ'.repeat(10)));
-    expect(lineDuration('あ'.repeat(200))).toBe(7);
+    expect(lineDuration('あ'.repeat(200))).toBe(10);
   });
 });
 

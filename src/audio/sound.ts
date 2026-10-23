@@ -65,6 +65,7 @@ interface Voices {
 
 export class SoundSystem {
   private voices: Voices | null = null;
+  private readonly effects = new Map<string, Promise<AudioBuffer | null>>();
   private muted = loadMuted();
 
   get isMuted(): boolean {
@@ -182,6 +183,60 @@ export class SoundSystem {
     gain.gain.exponentialRampToValueAtTime(0.001, t + 0.35);
     src.connect(filter).connect(gain).connect(v.master);
     src.start(t, Math.random() * 0.5, 0.4);
+  }
+
+  /**
+   * セリフの効果音。public/sounds/<name>.mp3 があればそれを鳴らし、無ければ合成した音（'slap' のみ）を鳴らす。
+   * 読み込んだ音は覚えておく
+   */
+  effect(name: string): void {
+    const v = this.voices;
+    if (!v) return;
+    let loading = this.effects.get(name);
+    if (!loading) {
+      loading = fetch(`${import.meta.env.BASE_URL}sounds/${encodeURIComponent(name)}.mp3`)
+        .then((res) => (res.ok ? res.arrayBuffer() : Promise.reject(new Error(String(res.status)))))
+        .then((data) => v.ctx.decodeAudioData(data))
+        .catch(() => null);
+      this.effects.set(name, loading);
+    }
+    void loading.then((buffer) => {
+      if (buffer) {
+        const src = v.ctx.createBufferSource();
+        src.buffer = buffer;
+        src.connect(v.master);
+        src.start();
+      } else if (name === 'slap') {
+        this.slap();
+      }
+    });
+  }
+
+  /** 平手打ちの音（短いノイズの破裂音と、低い「パン」） */
+  private slap(): void {
+    const v = this.voices;
+    if (!v) return;
+    const t = v.ctx.currentTime;
+    const src = v.ctx.createBufferSource();
+    src.buffer = v.noise;
+    const filter = v.ctx.createBiquadFilter();
+    filter.type = 'bandpass';
+    filter.frequency.value = 2200;
+    filter.Q.value = 0.8;
+    const gain = v.ctx.createGain();
+    gain.gain.setValueAtTime(0.9, t);
+    gain.gain.exponentialRampToValueAtTime(0.001, t + 0.12);
+    src.connect(filter).connect(gain).connect(v.master);
+    src.start(t, Math.random() * 0.5, 0.15);
+    const thump = v.ctx.createOscillator();
+    thump.frequency.setValueAtTime(220, t);
+    thump.frequency.exponentialRampToValueAtTime(80, t + 0.08);
+    const tg = v.ctx.createGain();
+    tg.gain.setValueAtTime(0.35, t);
+    tg.gain.exponentialRampToValueAtTime(0.001, t + 0.1);
+    thump.connect(tg).connect(v.master);
+    thump.start(t);
+    thump.stop(t + 0.12);
   }
 
   /** 合図の電子音（カウントダウン・ラップ）。high は高い音（スタート・ゴール） */

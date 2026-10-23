@@ -10,10 +10,15 @@
 
 import type { TimeOfDay, Weather } from '../game/environment';
 
-/** 1つのセリフ。who はライバルの id（'takumi' など）、'player'（自分）、CHARACTERS の id、またはそのまま出す名前 */
+/**
+ * 1つのセリフ。who はライバルの id（'takumi' など）、'player'（自分）、'sfx'（効果音の字幕。名前を出さない）、
+ * CHARACTERS の id、またはそのまま出す名前。text の \n で改行する
+ */
 export interface DialogueLine {
   who: string;
   text: string;
+  /** このセリフを出すときに鳴らす効果音（public/sounds/<名前>.mp3。無ければ用意してある音: 'slap'） */
+  sound?: string;
 }
 
 /** 数の範囲（min 以上・max 以下。片方だけでもよい） */
@@ -61,6 +66,8 @@ export interface RaceCondition extends SceneCondition {
   speed?: Range;
   /** スタートしてからの時間 [秒] */
   elapsed?: Range;
+  /** レース全体のうち進んだ割合（0 = スタート、1 = ゴール）。終盤なら { min: 0.7 } */
+  progress?: Range;
 }
 
 export interface Scene {
@@ -113,6 +120,8 @@ export interface BattleSnapshot {
   gap: number;
   /** 自分の速さ [km/h] */
   speedKmh: number;
+  /** レース全体のうち自分が進んだ割合（0..1） */
+  progress: number;
   /** このステップで起きた出来事 */
   events: readonly BattleEvent[];
 }
@@ -187,7 +196,7 @@ export class BattleDialogue {
     if (w.lap !== undefined && w.lap !== s.lap) return false;
     if (w.position === 'ahead' && !s.ahead) return false;
     if (w.position === 'behind' && s.ahead) return false;
-    return inRange(w.gap, s.gap) && inRange(w.speed, s.speedKmh) && inRange(w.elapsed, s.elapsed);
+    return inRange(w.gap, s.gap) && inRange(w.speed, s.speedKmh) && inRange(w.elapsed, s.elapsed) && inRange(w.progress, s.progress);
   }
 }
 
@@ -209,5 +218,5 @@ export class OvertakeWatcher {
 
 /** 字幕を出しておく時間 [s]（文字数に合わせる） */
 export function lineDuration(text: string): number {
-  return Math.min(7, Math.max(2.5, 1.4 + [...text].length * 0.12));
+  return Math.min(10, Math.max(2.5, 1.4 + [...text].length * 0.12));
 }
