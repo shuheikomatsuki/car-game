@@ -210,7 +210,7 @@ async function main() {
   };
   const subtitles = new Subtitles(speakerOf, (name) => sound.effect(name));
   /** いまのバトルのセリフ（セリフの無いライバルや、得意なコース以外では null） */
-  let talk: { script: RivalDialogue; ctx: BattleContext; lines: BattleDialogue; overtakes: OvertakeWatcher; wide: EdgeWatcher; inside: boolean } | null = null;
+  let talk: { script: RivalDialogue; ctx: BattleContext; lines: BattleDialogue; overtakes: OvertakeWatcher; wide: EdgeWatcher; inside: boolean; bumped: boolean } | null = null;
   let lastImpact = 0;
   const debugWhere = params.has('debug') ? document.body.appendChild(Object.assign(document.createElement('div'), { id: 'debug-where' })) : null;
   /** バトルのルール */
@@ -401,7 +401,7 @@ async function main() {
       time: env.time,
     };
     if (!dialogueApplies(script, ctx)) return;
-    talk = { script, ctx, lines: new BattleDialogue(script.race ?? [], ctx), overtakes: new OvertakeWatcher(), wide: new EdgeWatcher(), inside: false };
+    talk = { script, ctx, lines: new BattleDialogue(script.race ?? [], ctx), overtakes: new OvertakeWatcher(), wide: new EdgeWatcher(), inside: false, bumped: false };
     const intro = nextRound ? (script.intro ?? []).filter((sc) => sc.when?.round !== undefined) : script.intro;
     subtitles.playScene(sceneLines(intro, ctx), () => {});
   }
@@ -432,6 +432,8 @@ async function main() {
     // 抜いたと分かるのは少し前に出てからなので、横に並んでいた間にインにいたかを覚えておく
     if (Math.abs(signedGap) < 4) t.inside = insideOf(turn, course.project(curr.x, curr.z, { s: curr.courseS ?? null }).offset, rp.offset);
     if (pass === 'overtake' && t.inside) events.push('overtakeInside');
+    if (t.bumped) events.push('rivalBump');
+    t.bumped = false;
     const lapDistance = course.closed ? mine - (race.lap - 1) * course.length : mine;
     const progress = Math.min(1, Math.max(0, mine / (course.length * (course.closed ? race.totalLaps : 1))));
     subtitles.say(
@@ -1421,7 +1423,7 @@ async function main() {
     title: 'ラフプレー',
     choices: () => [
       { id: 'off', label: 'なし' },
-      { id: 'on', label: 'あり', note: 'ぶつけてくる' },
+      { id: 'on', label: 'あり', note: draftRival().roughNote ?? 'ぶつけてくる' },
     ],
     selected: () => (draft.rough ? 'on' : 'off'),
     select: (id) => (draft.rough = id === 'on'),
@@ -1438,8 +1440,8 @@ async function main() {
       const rough = r.rough
         ? [
             draft.rough
-              ? `ラフプレーあり: ${r.name}はコーナーの手前で並びかけ、ぶつけてコースの外へ押し出そうとしてくる。並ばれたら気をつけて。`
-              : `ラフプレーなし（「あり」にすると、${r.name}がコーナーの手前でぶつけてくる）。`,
+              ? `ラフプレーあり: ${r.name}は${r.roughHow ?? 'コーナーの手前で並びかけ、ぶつけてコースの外へ押し出そうとしてくる。並ばれたら気をつけて'}。`
+              : `ラフプレーなし（「あり」にすると、${r.name}が${r.roughNote ?? 'ぶつけてくる'}）。`,
           ]
         : [];
       return textDetail({
@@ -1890,7 +1892,10 @@ async function main() {
       npcField?.applyInputs(dt, race?.canDrive ?? false, [curr]);
       // ラフプレーのライバルにぶつけられたら、外へ押し出されてスピンしかける
       const hit = npcField?.takeHit();
-      if (hit && !fall.falling) level.car.bump(hit.push, hit.yawRate);
+      if (hit && !fall.falling) {
+        level.car.bump(hit.push, hit.yawRate, hit.time);
+        if (talk) talk.bumped = true;
+      }
       level.physics.world.step();
       npcField?.afterStep(dt);
 

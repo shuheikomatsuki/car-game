@@ -22,6 +22,12 @@ export interface Rival {
   level: string;
   /** ラフプレー（コーナーの手前でぶつけてコースの外へ押し出す）ができるなら、そのやり方。バトルの前に、するかどうかを選べる */
   rough?: RoughStyle;
+  /** ラフプレーの短い説明（選ぶ画面の「あり」に添える。書かなければ「ぶつけてくる」） */
+  roughNote?: string;
+  /** ラフプレーのやり方の説明（「◯◯は」に続く文。書かなければ、コーナーの手前で並びかけて押し出す説明） */
+  roughHow?: string;
+  /** キャラクターの紹介（1〜2文） */
+  bio: string;
   /**
    * メニューに出す写真（public/ からのパス。例: 'rivals/takumi.jpg'）。書かなければ名前の頭文字の絵を出す。
    * 縦長（3:4 くらい）の画像がよい
@@ -31,19 +37,19 @@ export interface Rival {
 
 /** 弱い順 */
 export const RIVALS: readonly Rival[] = [
-  { id: 'itsuki', name: '武内樹', team: '秋名スピードスターズ', car: 'ae85', course: 'pass-down', level: 'easy' },
-  { id: 'iketani', name: '池谷浩一郎', team: '秋名スピードスターズ', car: 's13', course: 'pass-up', level: 'easy' },
-  { id: 'kenta', name: '中村賢太', team: '赤城レッドサンズ', car: 's14', course: 'pass-over-r', conditions: { time: 'night', weather: 'rain' }, level: 'normal' },
-  { id: 'shingo', name: '庄司慎吾', team: '妙義ナイトキッズ', car: 'eg6', course: 'uturn', level: 'normal', rough: { duration: 3, cooldown: 7, push: 6, spin: 2 } },
-  { id: 'nakazato', name: '中里毅', team: '妙義ナイトキッズ', car: 'gtr', course: 'long-r', level: 'hard' },
-  { id: 'iwaki', name: '岩城清次', team: 'チームエンペラー', car: 'evo', course: 'hairpin', level: 'hard' },
-  { id: 'sakamoto', name: '坂本', team: '埼玉北西エリア連合', car: 'cappuccino', course: 'steep-down', conditions: { time: 'night', weather: 'rain' }, level: 'hard' },
-  { id: 'keisuke', name: '高橋啓介', team: '赤城レッドサンズ', car: 'fd3s', course: 'valley-up', level: 'pro' },
-  { id: 'sudo', name: '須藤京一', team: 'チームエンペラー', car: 'evo3', course: 'hairpin-down', level: 'pro' },
-  { id: 'hoshino', name: '星野好造', team: 'パープルシャドウ', car: 'r34', course: 'shutoko-loop-2', level: 'legend' },
-  { id: 'tachi', name: '舘智幸', team: 'プロレーサー', car: 'ek9', course: 'happogahara', level: 'legend' },
-  { id: 'rin', name: '北条凛', team: '死神', car: 'gtr', course: 'marathon', level: 'legend', rough: { duration: 3, cooldown: 9, push: 6, spin: 1.6 } },
-  { id: 'takumi', name: '藤原拓海', team: '藤原とうふ店', car: 'ae86', course: 'valley-down', level: 'legend' },
+  { id: 'itsuki', name: '武内樹', team: '秋名スピードスターズ', car: 'ae85', course: 'pass-down', level: 'easy', bio: '拓海の親友で、秋名スピードスターズの元気担当。ハチロクを買ったつもりがハチゴーだったことで有名。' },
+  { id: 'iketani', name: '池谷浩一郎', team: '秋名スピードスターズ', car: 's13', course: 'pass-up', level: 'easy', bio: '秋名スピードスターズのリーダー。走りより、真子とのデートに大遅刻した切ない恋の話のほうが語り草。' },
+  { id: 'kenta', name: '中村賢太', team: '赤城レッドサンズ', car: 's14', course: 'pass-over-r', conditions: { time: 'night', weather: 'rain' }, level: 'normal', bio: '高橋啓介を「啓介さん」と慕う赤城レッドサンズの若手。S14で雨の夜の峠に挑む。' },
+  { id: 'shingo', name: '庄司慎吾', team: '妙義ナイトキッズ', car: 'eg6', course: 'uturn', level: 'normal', rough: { duration: 3, cooldown: 7, push: 6, spin: 2 }, bio: '勝つためならぶつけることも辞さない妙義ナイトキッズのダーティーな走り屋。右手をハンドルに縛るガムテープデスマッチで知られる。' },
+  { id: 'nakazato', name: '中里毅', team: '妙義ナイトキッズ', car: 'gtr', course: 'long-r', level: 'hard', bio: '「GT-Rこそ最強」と信じる妙義ナイトキッズのリーダー。いいところで負ける役回りが板につき、「しまったァア」の名セリフでも有名。' },
+  { id: 'iwaki', name: '岩城清次', team: 'チームエンペラー', car: 'evo', course: 'hairpin', level: 'hard', bio: 'ランエボIVで4WDのトラクションを武器にするチームエンペラーのナンバー2。負けたあとに京一から受けるビンタまでがお約束。' },
+  { id: 'sakamoto', name: '坂本', team: '埼玉北西エリア連合', car: 'cappuccino', course: 'steep-down', conditions: { time: 'night', weather: 'rain' }, level: 'hard', bio: '埼玉北西エリア連合のカプチーノ使い。軽さを武器にした下りの速さは、軽自動車だと侮ると痛い目を見る。' },
+  { id: 'keisuke', name: '高橋啓介', team: '赤城レッドサンズ', car: 'fd3s', course: 'valley-up', level: 'pro', bio: '黄色いFDを駆る赤城レッドサンズのナンバー2で、のちのプロジェクトDのヒルクライム担当。何かにつけて口にするのは「アニキ」。' },
+  { id: 'sudo', name: '須藤京一', team: 'チームエンペラー', car: 'evo3', course: 'hairpin-down', level: 'pro', bio: '群馬の走り屋を見下すチームエンペラーのリーダー。拓海のハチロクのエンジンをブローさせた男で、負けた部下にはビンタ。' },
+  { id: 'hoshino', name: '星野好造', team: 'パープルシャドウ', car: 'r34', course: 'shutoko-loop-2', level: 'legend', bio: '「ゴッドアーム」の異名を持つパープルシャドウのGT-R使い。豪快なハンドルさばきで、年季の違いを見せつける。' },
+  { id: 'tachi', name: '舘智幸', team: 'プロレーサー', car: 'ek9', course: 'happogahara', level: 'legend', rough: { duration: 2.5, cooldown: 10, push: 2.5, spin: 0.7, upset: 0.4, side: 1.4, reach: 3.6 }, roughNote: '軽く当ててくる', roughHow: '後ろからコーナーの内側へ入り、軽く当てて姿勢を崩してくる。スピンするほどではないが、乱されたら立て直して', bio: '元走り屋のプロレーサーで、EK9シビックを操る。「プロとアマの差」を見せつけるためなら、軽く当てて相手を崩すこともためらわない。' },
+  { id: 'rin', name: '北条凛', team: '死神', car: 'gtr', course: 'marathon', level: 'legend', rough: { duration: 3, cooldown: 9, push: 6, spin: 1.6 }, bio: '最愛の人を失い「死神」と呼ばれるようになった黒いGT-Rの男。相手を道連れにするような危険な走りで迫ってくる。' },
+  { id: 'takumi', name: '藤原拓海', team: '藤原とうふ店', car: 'ae86', course: 'valley-down', level: 'legend', bio: '豆腐の配達で毎朝秋名を下るうちに腕を磨いた、とうふ屋のハチロク。紙コップの水をこぼさない走りと溝落としが代名詞。' },
 ];
 
 export function rivalLevel(rival: Rival): NpcLevel {

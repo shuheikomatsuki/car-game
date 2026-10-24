@@ -1,8 +1,9 @@
 name: CI / Deploy
 
 on:
+  # ブランチの確認は PR で行う（push と pull_request で同じ CI が2回走らないよう、push は main だけ）
   push:
-    branches: ['**']
+    branches: [main]
   pull_request:
   workflow_dispatch:
 
@@ -19,7 +20,10 @@ jobs:
           node-version: 22
           cache: npm
       - run: npm ci
-      - run: npm test
+      # main への push（PR のマージ）では、同じ中身のテストが PR で通っているので飛ばして早く公開する。
+      # main でのテストは下の test ジョブが公開と並行して行う
+      - if: github.ref != 'refs/heads/main' || github.event_name == 'pull_request'
+        run: npm test
       - run: npm run build
         env:
           # マルチプレイ用サーバーの URL（リポジトリの Settings → Secrets and variables → Actions → Variables の SERVER_URL）
@@ -28,6 +32,19 @@ jobs:
         uses: actions/upload-pages-artifact@v3
         with:
           path: dist
+
+  # main への push でも、公開を待たせずにテストする（落ちたら Actions に赤く出る）
+  test:
+    if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npm test
 
   # main ブランチへの push で GitHub Pages に公開する
   # （初回のみ、リポジトリの Settings → Pages → Source を "GitHub Actions" にしておく）
