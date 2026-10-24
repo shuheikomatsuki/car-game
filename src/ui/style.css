@@ -3414,8 +3414,13 @@ body:not(.touch) #race-result {
   width: min(520px, calc(100vw - 32px));
 }
 
-/* 縦向きのスマホ: ゴールの画面のボタンは 2列×2行（同じ大きさのまま） */
-@media (max-width: 480px) {
+/* 枠が狭いとき（縦向きのスマホ・横向きのスマホで右に寄せた枠）: ゴールの画面のボタンは 2列×2行（同じ大きさのまま）。
+   4つ横に並べると「コース・車など」が枠からはみ出す */
+#race-result {
+  container-type: inline-size;
+}
+
+@container (max-width: 470px) {
   #race-result .dialog-buttons {
     grid-auto-flow: row;
     grid-template-columns: 1fr 1fr;
