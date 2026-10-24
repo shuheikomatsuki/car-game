@@ -323,6 +323,12 @@ body {
   user-select: none;
 }
 
+/* 走りながら押すボタン: 別の指で操作中でも押せるよう、ブラウザのジェスチャーに使わせない */
+#touch-quick button,
+#touch-side button {
+  touch-action: none;
+}
+
 #touch-top {
   position: fixed;
   top: calc(env(safe-area-inset-top) + 10px);
@@ -578,6 +584,65 @@ body.touch .title-press .pc {
 
 body.touch .title-press .tap {
   display: inline;
+}
+
+/* 縦向きのスマホで開いたときだけ、横向きをすすめる */
+.title-rotate {
+  display: none;
+  align-items: center;
+  gap: 14px;
+  margin: 28px 0 0;
+  padding: 12px 14px;
+  max-width: 420px;
+  font-size: 14px;
+  font-weight: 700;
+  line-height: 1.5;
+  background: rgba(10, 11, 14, 0.72);
+  border-left: 3px solid var(--accent-2);
+  animation: title-in 0.7s 0.2s cubic-bezier(0.2, 0.8, 0.2, 1) both;
+}
+
+.title-rotate b {
+  color: var(--accent-2);
+}
+
+.title-rotate small {
+  display: block;
+  font-size: 12px;
+  font-weight: 400;
+  color: var(--muted);
+}
+
+.rotate-phone {
+  flex: none;
+  width: 18px;
+  height: 30px;
+  border: 2px solid var(--text);
+  border-radius: 4px;
+  animation: rotate-phone 2.4s ease-in-out infinite;
+}
+
+@keyframes rotate-phone {
+  0%,
+  30% {
+    transform: rotate(0deg);
+  }
+  60%,
+  100% {
+    transform: rotate(-90deg);
+  }
+}
+
+@media (orientation: portrait) and (pointer: coarse) {
+  .title-rotate {
+    display: flex;
+  }
+}
+
+@media (orientation: portrait) {
+  body.touch .title-rotate {
+    display: flex;
+  }
 }
 
 @keyframes blink {
@@ -1625,6 +1690,28 @@ body.touch .menu-keys {
   }
   #menu-detail {
     order: -1;
+  }
+  /* 文だけの説明（プレイモードなど）は中身の高さにして、説明はスクロールさせない（下の一覧のほうを縮める） */
+  .menu-body:has(> #menu-detail .d-plain) {
+    grid-template-rows: auto minmax(0, 1fr);
+  }
+  #menu-detail:has(.d-plain) {
+    overflow: hidden;
+  }
+  .d-plain .d-body {
+    padding: 16px 16px 12px;
+  }
+  .d-plain .d-name {
+    font-size: 20px;
+  }
+  .d-plain .d-text {
+    margin-bottom: 6px;
+    font-size: 13px;
+    line-height: 1.6;
+  }
+  .d-plain .d-big {
+    bottom: -16px;
+    font-size: 96px;
   }
   .d-hero {
     height: 150px;

@@ -35,6 +35,8 @@ export function engineTone(speed: number, throttle: number): EngineTone {
 }
 
 const STORAGE_KEY = 'car-game:muted';
+/** クラクションのいちばん大きな音量 */
+const HORN_GAIN = 0.16;
 
 function loadMuted(): boolean {
   try {
@@ -258,14 +260,15 @@ export class SoundSystem {
       for (const o of playing.oscs) o.stop(t + 0.2);
       return;
     }
-    if (playing || volume <= 0.01) return;
+    // 遠くて聞こえない車も、近づいたら聞こえるように鳴らし始めておく
+    if (playing) return;
     // 2つの音程（ミとソくらい）を重ねた、乗用車のホーンらしい音
     const filter = v.ctx.createBiquadFilter();
     filter.type = 'lowpass';
     filter.frequency.value = 2400;
     const gain = v.ctx.createGain();
     gain.gain.setValueAtTime(0, t);
-    gain.gain.linearRampToValueAtTime(0.16 * Math.min(1, volume), t + 0.02);
+    gain.gain.linearRampToValueAtTime(HORN_GAIN * Math.min(1, volume), t + 0.02);
     filter.connect(gain).connect(v.master);
     const oscs = [415, 523].map((f) => {
       const o = v.ctx.createOscillator();
@@ -276,6 +279,14 @@ export class SoundSystem {
       return o;
     });
     this.horns.set(key, { gain, oscs });
+  }
+
+  /** 鳴っているクラクションの大きさを変える（鳴っていなければ何もしない） */
+  setHornVolume(key: string | number, volume: number): void {
+    const v = this.voices;
+    const playing = this.horns.get(key);
+    if (!v || !playing) return;
+    playing.gain.gain.setTargetAtTime(HORN_GAIN * Math.min(1, Math.max(0, volume)), v.ctx.currentTime, 0.05);
   }
 
   /** 合図の電子音（カウントダウン・ラップ）。high は高い音（スタート・ゴール） */

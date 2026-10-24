@@ -94,6 +94,12 @@ function leaveRace(all: readonly Connection[], store: RoomStore, id: number): vo
   updateRace(all, store, { ...race, entrants: race.entrants.filter((e) => e !== id) }, id);
 }
 
+/** 部屋にいる全員が準備 OK か */
+export function allReady(all: readonly Connection[], race: RaceState): boolean {
+  const ids = all.flatMap((c) => (c.info ? [c.info.id] : []));
+  return ids.length > 0 && ids.every((id) => race.entrants.includes(id));
+}
+
 function handleRace(from: Connection, all: readonly Connection[], message: ClientMessage, store: RoomStore, now: number): void {
   const info = from.info!;
   const race = store.getRace();
@@ -115,7 +121,7 @@ function handleRace(from: Connection, all: readonly Connection[], message: Clien
       break;
     }
     case 'raceStart':
-      if (race?.phase !== 'entry' || race.host !== info.id || race.entrants.length === 0) return;
+      if (race?.phase !== 'entry' || race.host !== info.id || !allReady(all, race)) return;
       updateRace(all, store, { ...race, phase: 'racing', startedAt: now }, info.id, true);
       break;
     case 'raceFinish':

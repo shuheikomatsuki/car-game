@@ -6,6 +6,7 @@ import { attachBubble } from '../render/bubble';
 import { CarMesh, carStyle } from '../render/carMesh';
 import { CAR_DIMENSIONS, type CarSnapshot } from '../sim/car';
 import { carGroups } from '../sim/physics';
+import { REMOTE_HEADLIGHTS, nearestLit } from './headlights';
 import type { Level } from './level';
 
 /** プレイヤーごとの車体の色（サーバーが番号を割り当てる） */
@@ -186,6 +187,14 @@ export class RemoteCars {
       p.mesh.root.visible = visible;
       if (s && visible) p.mesh.update(this.level ? this.level.ground(toSnapshot(s, p.courseS)) : toSnapshot(s, null));
     }
+  }
+
+  /** ライトをつけて見えている車のうち、(x, z) に近い順に max 台の車体（render の後に呼ぶ） */
+  litCars(x: number, z: number, max = REMOTE_HEADLIGHTS): THREE.Object3D[] {
+    const cars = [...this.players.values()]
+      .filter((p) => p.mesh.root.visible)
+      .map((p) => ({ x: p.mesh.root.position.x, z: p.mesh.root.position.z, lit: p.info.lights, root: p.mesh.root }));
+    return nearestLit(cars, x, z, max).map((c) => c.root);
   }
 
   private createBody(): RAPIER.RigidBody | null {

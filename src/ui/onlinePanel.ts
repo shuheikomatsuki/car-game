@@ -42,6 +42,7 @@ export class OnlinePanel {
   private readonly leave = el<HTMLButtonElement>('online-leave');
   private openValue = false;
   private connected = false;
+  private lastHint: string | null = null;
 
   constructor(
     private readonly handlers: OnlinePanelHandlers,
@@ -96,8 +97,15 @@ export class OnlinePanel {
     this.refresh();
   }
 
-  open(): void {
+  /** hint: 開いたときに下に出す案内（無ければ今の状態のまま） */
+  open(hint?: string): void {
     this.openValue = true;
+    if (!this.connected && this.serverConfigured) {
+      if (hint) this.setStatus(hint);
+      // 前に開いたときの案内は消す
+      else if (this.status.textContent === this.lastHint) this.setStatus('');
+      this.lastHint = hint ?? null;
+    }
     // ランキングの画面で名前を変えているかもしれない
     this.name.value = loadPlayerName();
     this.root.classList.remove('hidden');

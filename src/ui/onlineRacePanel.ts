@@ -40,7 +40,7 @@ const hexColor = (c: number) => `#${c.toString(16).padStart(6, '0')}`;
 
 /**
  * オンライン対戦のエントリー画面: 言い出した人がコース・時間帯・天気を決めた後、各自が車を選んで「準備OK」にする。
- * 言い出した人がスタートの合図を出す
+ * 全員が準備 OK になったら、言い出した人がスタートの合図を出す
  */
 export class OnlineRacePanel {
   private readonly root = el('online-race');
@@ -127,14 +127,20 @@ export class OnlineRacePanel {
     const isHost = race.host === selfId;
     const ready = this.isReady;
     const hostName = v.members.find((m) => m.id === race.host)?.name ?? '誰か';
+    const waiting = v.members.filter((m) => !race.entrants.includes(m.id)).length;
+    const everyoneReady = waiting === 0;
     this.cond.textContent = v.conditions;
     this.status.textContent = isHost
-      ? race.entrants.length === 0
-        ? '車を選んで「準備OK」。そろったら「スタート」で全員一斉にカウントダウンが始まります。'
-        : `${race.entrants.length}人が準備OK。全員そろったら「スタート」を押してください。`
-      : ready
-        ? `${hostName} さんのスタートの合図を待っています…`
-        : '車を選んで「準備OK」を押してください。';
+      ? everyoneReady
+        ? '全員が準備OKです。「スタート」で一斉にカウントダウンが始まります。'
+        : ready
+          ? `あと${waiting}人の準備OKを待っています。全員そろうと「スタート」を押せます。`
+          : '車を選んで「準備OK」。全員が準備OKになると「スタート」を押せます。'
+      : ready && everyoneReady
+        ? `全員が準備OKです。${hostName} さんのスタートの合図を待っています…`
+        : ready
+          ? `あと${waiting}人の準備OKを待っています…`
+          : '車を選んで「準備OK」を押してください。';
     for (const b of this.cars.querySelectorAll<HTMLButtonElement>('button[data-id]')) {
       const on = b.dataset.id === this.car;
       b.classList.toggle('selected', on);
@@ -153,7 +159,7 @@ export class OnlineRacePanel {
     this.readyButton.textContent = ready ? '準備OKを取り消す' : '準備OK';
     this.readyButton.classList.toggle('primary', !ready);
     this.startButton.classList.toggle('hidden', !isHost);
-    this.startButton.disabled = race.entrants.length === 0;
+    this.startButton.disabled = !everyoneReady;
     this.leaveButton.textContent = isHost ? '対戦をやめる' : '抜ける';
   }
 }

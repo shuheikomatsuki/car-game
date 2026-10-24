@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import type { Environment, TimeOfDay } from '../game/environment';
+import { REMOTE_HEADLIGHTS } from '../game/headlights';
 
 /** 影を描く範囲（車の周りだけ影を計算して軽くする） */
 const SHADOW_EXTENT = 50;
@@ -60,6 +61,10 @@ const RAIN_BOX = { x: 70, y: 30, z: 70 };
 const RAIN_SPEED = 26;
 const RAIN_STREAK = 0.9;
 
+/** ヘッドライトの光の出る位置と、照らす先（車体から見た位置） */
+const HEADLIGHT_FROM = new THREE.Vector3(0, 1.1, 2.0);
+const HEADLIGHT_TO = new THREE.Vector3(0, -1.2, 18);
+
 export class GameScene {
   readonly renderer: THREE.WebGLRenderer;
   readonly scene = new THREE.Scene();
@@ -72,6 +77,8 @@ export class GameScene {
   /** 暗さに合わせたヘッドライトの明るさ（夜 1、朝・雨・霧 0.35、晴れた昼 0.15） */
   private lightLevel = 0;
   private headlightsOn = false;
+  /** 他の人の車の前を照らすライト（近い車から順に使う。数を変えるとシェーダーを作り直すので、使わない分は暗くしておく） */
+  private readonly remoteHeadlights = Array.from({ length: REMOTE_HEADLIGHTS }, () => new THREE.SpotLight(0xfff0d0, 0, 120, 0.55, 0.5, 1));
   private readonly rain: THREE.LineSegments;
   private readonly rainPositions: Float32Array;
 
@@ -103,6 +110,7 @@ export class GameScene {
     this.scene.add(this.sun, this.sun.target);
 
     this.scene.add(this.headlight, this.headlight.target);
+    for (const l of this.remoteHeadlights) this.scene.add(l, l.target);
 
     // 雨: カメラの周りの箱の中を落ちる細い線。箱から出たら上へ戻す
     this.rainPositions = new Float32Array(RAIN_DROPS * 6);
@@ -181,8 +189,20 @@ export class GameScene {
   followCar(root: THREE.Object3D): void {
     if (!this.headlightsOn) return;
     root.updateMatrixWorld();
-    this.headlight.position.copy(root.localToWorld(new THREE.Vector3(0, 1.1, 2.0)));
-    this.headlight.target.position.copy(root.localToWorld(new THREE.Vector3(0, -1.2, 18)));
+    this.headlight.position.copy(root.localToWorld(HEADLIGHT_FROM.clone()));
+    this.headlight.target.position.copy(root.localToWorld(HEADLIGHT_TO.clone()));
+  }
+
+  /** 他の人の車のヘッドライトで前を照らす（cars はライトをつけている近くの車の車体。REMOTE_HEADLIGHTS 台まで） */
+  setRemoteHeadlights(cars: readonly THREE.Object3D[]): void {
+    this.remoteHeadlights.forEach((light, i) => {
+      const root = cars[i];
+      light.intensity = root ? 2000 * this.lightLevel : 0;
+      if (!root) return;
+      root.updateMatrixWorld();
+      light.position.copy(root.localToWorld(HEADLIGHT_FROM.clone()));
+      light.target.position.copy(root.localToWorld(HEADLIGHT_TO.clone()));
+    });
   }
 
   /** 雨を降らせる（カメラの周りだけ） */
