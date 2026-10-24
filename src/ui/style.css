@@ -3427,3 +3427,107 @@ body.touch.racing #hud {
     transform: none;
   }
 }
+
+/* ---- 同じ列に並ぶボタンは、同じ大きさにして文字を真ん中に置く ---- */
+
+/* ダイアログの下のボタン（ゴールの画面・みんなで走る・オンライン対戦）:
+   1行に同じ幅で並べる（幅はいちばん長い文字に合わせて、どれも同じになる） */
+.dialog-buttons {
+  display: grid;
+  grid-auto-flow: column;
+  grid-auto-columns: 1fr;
+}
+
+.dialog-buttons button {
+  white-space: nowrap;
+}
+
+/* PC のゴールの画面: ボタン4つ（キーの印つき）が1行に入るよう少し広げる */
+body:not(.touch) #race-result {
+  width: min(520px, calc(100vw - 32px));
+}
+
+/* 縦向きのスマホ: ゴールの画面のボタンは 2列×2行（同じ大きさのまま） */
+@media (max-width: 480px) {
+  #race-result .dialog-buttons {
+    grid-auto-flow: row;
+    grid-template-columns: 1fr 1fr;
+  }
+}
+
+.dialog-buttons .spacer {
+  display: none;
+}
+
+.dialog-buttons button,
+#race-result .dialog-buttons button,
+.dialog-panel .row button,
+#touch-quick button,
+#touch-side button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  text-align: center;
+  line-height: 1.2;
+}
+
+#race-result .dialog-buttons button {
+  min-width: 0;
+  padding: 6px 10px;
+}
+
+/* ランキングは説明文の横に「閉じる」が1つだけなので、横に並べたままにする */
+#ranking .dialog-buttons {
+  display: flex;
+}
+
+#ranking .dialog-buttons button {
+  flex: 0 0 auto;
+}
+
+/* 部屋コードの「新しく作る」と招待リンクの「コピー」は上下に並ぶので、幅をそろえる */
+.dialog-panel .row button {
+  min-width: 6.5em;
+}
+
+/* スマホの上の列（カメラ・やり直す）と、ペダルの上の列（ライト・ホーン・セリフ）も同じ幅にする */
+#touch-quick,
+#touch-side {
+  display: grid;
+  grid-auto-flow: column;
+  grid-auto-columns: 1fr;
+}
+
+/* ランキングの車の札: いちばん長い名前（シビック (EG6) など）に合わせて、どれも同じ幅にする */
+.rk-car {
+  min-width: 124px;
+  text-align: center;
+}
+
+/* メニューの下の「戻る」と「次へ」も同じ幅にする */
+#menu .ghost,
+#menu .go {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 180px;
+  min-width: 0;
+  padding: 0 16px;
+  white-space: nowrap;
+}
+
+@media (max-height: 540px) {
+  #menu .ghost,
+  #menu .go {
+    width: 160px;
+  }
+}
+
+@media (max-width: 760px) and (orientation: portrait) {
+  #menu .ghost,
+  #menu .go {
+    width: 160px;
+    letter-spacing: 0.02em;
+  }
+}
