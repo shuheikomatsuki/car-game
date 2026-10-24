@@ -32,6 +32,41 @@ export interface Opponent {
   vz: number;
 }
 
+/** ラフプレー（コーナーの手前でわざとぶつけて、相手をコースの外へ押し出す）の設定 */
+export interface RoughStyle {
+  /** 1回に狙い続ける最長の時間 [s] */
+  duration: number;
+  /** 1回狙ったあと、次に狙うまでの間 [s]（毎回当てると避けようがないので） */
+  cooldown: number;
+  /** 当てたときに相手を外へ押し出す速さ [m/s] */
+  push: number;
+  /** 当てたときに相手の向きを回す速さ [rad/s]（スピンしかける） */
+  spin: number;
+}
+
+/** ラフプレーで当てたとき、相手に与える力（Car.bump に渡す） */
+export interface RoughHit {
+  push: { x: number; z: number };
+  yawRate: number;
+}
+
+/** 狙い始めるのは、この先 [m] にこれ以上 [rad] 曲がるコーナーがあるとき */
+const ATTACK_LOOK = 40;
+const ATTACK_TURN = 0.35;
+/** 当たったとみなす、車どうしの前後・左右の距離 [m]（車の長さ・幅より少し大きめ） */
+const CONTACT_LENGTH = 4.6;
+const CONTACT_WIDTH = 2.0;
+
+/** 車どうしが触れているか（a の向きで見た前後・左右の距離が、車の長さ・幅くらいより近い） */
+export function carsTouching(a: { x: number; z: number; yaw: number } | null, b: { x: number; z: number }): boolean {
+  if (!a) return false;
+  const dx = b.x - a.x;
+  const dz = b.z - a.z;
+  const forward = dx * Math.sin(a.yaw) + dz * Math.cos(a.yaw);
+  const left = dx * Math.cos(a.yaw) - dz * Math.sin(a.yaw);
+  return Math.abs(forward) < CONTACT_LENGTH && Math.abs(left) < CONTACT_WIDTH;
+}
+
 /** 止まって動けなくなったとみなす時間 [s] */
 const STUCK_SECONDS = 1.5;
 /** 下がって抜け出す時間 [s] */
@@ -54,6 +89,16 @@ export class NpcDriver {
   pace = 1;
   /** 直前にいたコース上の距離（立体交差や往復のコースで取り違えないため） */
   private hint: number | null = null;
+  /** ラフプレーをするなら、その設定（update の target を狙う） */
+  rough: RoughStyle | null = null;
+  /** いま狙っている残りの時間 [s]（0 なら狙っていない） */
+  private attackTime = 0;
+  /** 次に狙えるまでの時間 [s] */
+  private attackCooldown = 0;
+  /** 当たってから、押し切るまでの残りの時間 [s] */
+  private pushTime = 0;
+  /** 当てたばかりで、まだ相手に伝えていない力 */
+  private hit: RoughHit | null = null;
 
   constructor(
     private readonly line: RacingLine,
@@ -91,7 +136,88 @@ export class NpcDriver {
     return v;
   }
 
-  update(dt: number, car: CarSnapshot, opponents: readonly Opponent[]): DriverInput {
+  /** ラフプレーで当てたときの、相手に与える力（1回だけ返す） */
+  takeHit(): RoughHit | null {
+    const h = this.hit;
+    this.hit = null;
+    return h;
+  }
+
+  /** いまラフプレーで狙っているか */
+  get attacking(): boolean {
+    return this.attackTime > 0;
+  }
+
+  /** s から ahead [m] 先までに向きが変わる量 [rad]（正は左へ曲がる） */
+  private turnAhead(s: number, ahead: number): number {
+    const course = this.line.course;
+    const d = course.pointAt(this.clampS(s + ahead)).yaw - course.pointAt(this.clampS(s)).yaw;
+    return Math.atan2(Math.sin(d), Math.cos(d));
+  }
+
+  private clampS(s: number): number {
+    const course = this.line.course;
+    return course.closed ? ((s % course.length) + course.length) % course.length : Math.min(course.length, Math.max(0, s));
+  }
+
+  /**
+   * ラフプレー: コーナーの手前で相手に並びかけ、内側から当てて外へ押し出す。
+   * 狙うなら、向かう点（コース上の距離 s と道の中央からの横のずれ offset）と目標の速さを返す
+   */
+  private attack(dt: number, here: { s: number; offset: number }, v: number, target: Opponent): { s: number; offset: number; speed: number } | null {
+    const style = this.rough!;
+    const course = this.line.course;
+    this.attackCooldown = Math.max(0, this.attackCooldown - dt);
+    const tv = Math.hypot(target.vx, target.vz);
+    const tp = course.project(target.x, target.z, { s: here.s, dir: tv > 1 ? { x: target.vx / tv, z: target.vz / tv } : null });
+    let gap = tp.s - here.s;
+    if (course.closed) gap = ((gap % course.length) + course.length * 1.5) % course.length - course.length / 2;
+    const lateral = tp.offset - here.offset;
+    const turn = this.turnAhead(here.s, ATTACK_LOOK);
+    const stop = () => {
+      this.attackTime = 0;
+      this.pushTime = 0;
+      this.hit = null;
+      this.attackCooldown = style.cooldown;
+      return null;
+    };
+    if (this.attackTime <= 0) {
+      // 相手が少し前か横にいて、この先にコーナーがあるときに狙い始める
+      if (this.attackCooldown > 0 || v < 8 || gap < -1.5 || gap > 10 || Math.abs(lateral) > 5 || Math.abs(turn) < ATTACK_TURN) return null;
+      this.attackTime = style.duration;
+    }
+    this.attackTime -= dt;
+    // 抜かれた・離された・時間切れなら、やめて間を空ける
+    if (this.attackTime <= 0 || gap < -4 || gap > 18) return stop();
+    // コーナーの内側（左へ曲がるなら左 = 正）
+    const inside = Math.sign(turn) || 1;
+    if (this.pushTime > 0) {
+      this.pushTime -= dt;
+      if (this.pushTime <= 0) return stop();
+    } else if (carsTouching(this.last, target)) {
+      // 当たったら、相手をコーナーの外へ押し出して向きを回す（自分が落ちないよう、すぐにラインへ戻る）
+      this.pushTime = 0.2;
+      const yaw = course.pointAt(this.clampS(tp.s)).yaw;
+      const out = -inside;
+      this.hit = { push: { x: Math.cos(yaw) * out * style.push, z: -Math.sin(yaw) * out * style.push }, yawRate: inside * style.spin };
+    }
+    const limit = course.widthAt(here.s) / 2 - 1.6;
+    const clamp = (o: number) => Math.max(-limit, Math.min(limit, o));
+    const planned = this.targetSpeed(here.s, Math.max(4, v * 0.25));
+    // 横に並ぶまでは相手より速く（ただしコーナーを曲がりきれる速さの少し上まで）
+    if (gap > 2.5) {
+      const ahead = here.s + Math.max(6, v * 0.4);
+      return { s: ahead, offset: clamp(tp.offset + inside * 2.2), speed: planned };
+    }
+    // 並んだら、相手のいる所より外へ寄せてぶつける（近い点を狙って鋭く寄せる）
+    const ahead = here.s + Math.max(4, v * 0.2);
+    const toward = (here.offset - tp.offset) * inside > 0 ? -inside : Math.sign(tp.offset - here.offset) || -inside;
+    return { s: ahead, offset: clamp(tp.offset + toward * 1.5), speed: Math.min(planned, tv + 1) };
+  }
+
+  private last: CarSnapshot | null = null;
+
+  update(dt: number, car: CarSnapshot, opponents: readonly Opponent[], mark?: Opponent): DriverInput {
     const course = this.line.course;
     const p = this.params;
     const v = car.forwardSpeed;
@@ -113,12 +239,14 @@ export class NpcDriver {
     const cos = Math.cos(car.yaw);
     const here = course.project(car.x, car.z, { s: this.hint, dir: { x: sin, z: cos } });
     this.hint = here.s;
+    this.last = car;
+    const aim = this.rough && mark ? this.attack(dt, here, v, mark) : null;
 
     // --- 前の車 ---
     let follow = Infinity;
     let wantShift = 0;
     const limit = course.widthAt(here.s) / 2 - 1.4;
-    for (const o of opponents) {
+    for (const o of aim ? [] : opponents) {
       const ov2 = Math.hypot(o.vx, o.vz);
       const op = course.project(o.x, o.z, { s: here.s, dir: ov2 > 1 ? { x: o.vx / ov2, z: o.vz / ov2 } : null });
       let gap = op.s - here.s;
@@ -154,6 +282,11 @@ export class NpcDriver {
       tx -= Math.cos(tyaw) * fix;
       tz += Math.sin(tyaw) * fix;
     }
+    if (aim) {
+      const a = course.pointAt(this.clampS(aim.s));
+      tx = a.x + Math.cos(a.yaw) * aim.offset;
+      tz = a.z - Math.sin(a.yaw) * aim.offset;
+    }
     const dx = tx - car.x;
     const dz = tz - car.z;
     const forward = dx * sin + dz * cos;
@@ -165,7 +298,7 @@ export class NpcDriver {
 
     // --- アクセル・ブレーキ ---
     let target = this.targetSpeed(here.s, Math.max(4, v * 0.25)) * this.pace;
-    target = Math.min(target, follow);
+    target = aim ? aim.speed : Math.min(target, follow);
     // 大きく向きがずれているとき（スピン後など）はゆっくり戻る
     if (Math.abs(alpha) > 1.2) target = Math.min(target, 8);
     const err = target - v;

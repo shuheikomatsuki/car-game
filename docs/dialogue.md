@@ -77,7 +77,7 @@ race: [
 | --- | --- | --- |
 | `at` | スタートラインからこの距離 [m] の場所を通ったとき（周回コースは周ごと） | `1200` |
 | `lap` | 何周目か | `2` |
-| `event` | 出来事: `'overtake'`（自分が抜いた）、`'overtaken'`（抜かれた）、`'crash'`（自分が壁に強くぶつかった） | `'overtaken'` |
+| `event` | 出来事: `'overtake'`（自分が抜いた）、`'overtakeInside'`（コーナーでインから抜いた）、`'overtaken'`（抜かれた）、`'crash'`（自分が壁に強くぶつかった）、`'rivalWide'`（ライバルがコーナーで外へはみ出した）。配列ならどれかが起きたとき | `'overtaken'`、`['rivalWide', 'overtakeInside']` |
 | `position` | 自分がライバルの前（`'ahead'`）か後ろ（`'behind'`）か | `'behind'` |
 | `gap` | 自分とライバルの差 [m] | `{ max: 10 }`、`{ min: 50 }` |
 | `speed` | 自分の速さ [km/h] | `{ min: 150 }` |

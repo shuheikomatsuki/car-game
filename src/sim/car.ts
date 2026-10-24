@@ -55,6 +55,8 @@ export interface Spawn {
 const GRAVITY = 9.81;
 /** この速度未満でアクセルを踏んでいなければ、坂道でも止まっていられる（坂道発進の補助） */
 const HILL_HOLD_SPEED = 0.5;
+/** ぶつけられた直後に落ちるグリップの割合 */
+const UPSET_GRIP_LOSS = 0.7;
 /** 草地では、グリップがこの割合まで落ちる */
 const GRASS_GRIP = 0.55;
 /** 草地の転がり抵抗: 減速度 = GRASS_DRAG_BASE + GRASS_DRAG_PER_SPEED * v [m/s^2]（普通車は 40km/h くらいまでしか出ない） */
@@ -82,6 +84,8 @@ export class Car {
   airborne = false;
   /** 直前のステップで剛体に指示した水平速度（衝突の強さを測るため） */
   private commanded = { x: 0, z: 0 };
+  /** ぶつけられて体勢を崩している残りの時間 [s]、その長さ、その間に足す向きの変わる速さ [rad/s] */
+  private upset = { time: 0, length: 1, yawRate: 0 };
   /** コース上の距離（立体交差・往復のコースで、どちらの道にいるか）。分からなければ null */
   courseS: number | null = null;
   /**
@@ -129,6 +133,17 @@ export class Car {
     this.steerAngle = 0;
     this.airborne = false;
     this.commanded = { x: 0, z: 0 };
+    this.upset.time = 0;
+  }
+
+  /**
+   * 横からぶつけられたとき: 速度 push [m/s] を足し、time [s] の間はタイヤのグリップを落として向きを yawRate [rad/s] で回す
+   * （外へ押し出され、スピンしかける）
+   */
+  bump(push: { x: number; z: number }, yawRate: number, time = 0.8): void {
+    const v = this.body.linvel();
+    this.body.setLinvel({ x: v.x + push.x, y: v.y, z: v.z + push.z }, true);
+    this.upset = { time, length: time, yawRate };
   }
 
   /** 物理ステップの前に呼ぶ */
@@ -157,7 +172,7 @@ export class Car {
 
     const t = this.body.translation();
     const grass = this.offRoad ? this.offRoad(t.x, t.z) : 0;
-    const params =
+    let params =
       grass > 0
         ? {
             ...this.params,
@@ -165,7 +180,15 @@ export class Car {
             lateralGrip: this.params.lateralGrip * (1 - (1 - GRASS_GRIP) * grass),
           }
         : this.params;
+    // ぶつけられた直後は、タイヤが滑って押された勢いのまま流れる（だんだん戻る）
+    const upset = this.upset.time > 0 ? this.upset.time / this.upset.length : 0;
+    if (upset > 0) {
+      this.upset.time -= dt;
+      const grip = 1 - UPSET_GRIP_LOSS * upset;
+      params = { ...params, maxLateralAccel: params.maxLateralAccel * grip, lateralGrip: params.lateralGrip * grip };
+    }
     const next = stepVehicle({ forwardSpeed, lateralSpeed, steerAngle: this.steerAngle }, input, params, dt);
+    if (upset > 0) next.yawRate += this.upset.yawRate * upset;
     if (grass > 0) {
       const v = next.forwardSpeed;
       const drag = grass * (GRASS_DRAG_BASE + GRASS_DRAG_PER_SPEED * Math.abs(v)) * dt;

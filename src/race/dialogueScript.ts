@@ -26,6 +26,11 @@ export const RIVAL_DIALOGUES: Readonly<Record<string, RivalDialogue>> = {
         when: { progress: { min: 0.7 }, position: 'behind', gap: { max: 6 } },
         say: [{ who: 'nakazato', text: 'なめてんじゃねーぞっ！！ 外から行かすかよ！！' }],
       },
+      // 中里がコーナーで外へはみ出したか、インから抜かれたとき
+      {
+        when: { event: ['rivalWide', 'overtakeInside'] },
+        say: [{ who: 'nakazato', text: 'しまったァア 肝心なところでアンダーを出しちまったぜっ！！' }],
+      },
     ],
   },
 

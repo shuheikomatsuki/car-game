@@ -47,13 +47,14 @@ export interface SceneCondition {
 
 /**
  * 走っている途中の出来事:
- * 'overtake'（自分がライバルを抜いた）、'overtaken'（ライバルに抜かれた）、'crash'（自分が壁に強くぶつかった）
+ * 'overtake'（自分がライバルを抜いた）、'overtakeInside'（コーナーでライバルをインから抜いた。'overtake' も同時に起きる）、
+ * 'overtaken'（ライバルに抜かれた）、'crash'（自分が壁に強くぶつかった）、'rivalWide'（ライバルがコーナーで外へはみ出した）
  */
-export type BattleEvent = 'overtake' | 'overtaken' | 'crash';
+export type BattleEvent = 'overtake' | 'overtakeInside' | 'overtaken' | 'crash' | 'rivalWide';
 
 export interface RaceCondition extends SceneCondition {
-  /** この出来事が起きたとき */
-  event?: BattleEvent;
+  /** この出来事が起きたとき（配列なら、どれかが起きたとき） */
+  event?: OneOrMany<BattleEvent>;
   /** スタートラインからこの距離 [m] の場所を通ったとき（周回コースは周ごとの距離） */
   at?: number;
   /** 何周目か（1 から） */
@@ -191,7 +192,7 @@ export class BattleDialogue {
 
   private matches(w: RaceCondition, s: BattleSnapshot, prevDistance: number | null): boolean {
     if (!matchesScene(w, this.ctx)) return false;
-    if (w.event !== undefined && !s.events.includes(w.event)) return false;
+    if (w.event !== undefined && !s.events.some((e) => includes(w.event, e))) return false;
     if (w.at !== undefined && !(prevDistance !== null && prevDistance < w.at && s.lapDistance >= w.at)) return false;
     if (w.lap !== undefined && w.lap !== s.lap) return false;
     if (w.position === 'ahead' && !s.ahead) return false;
@@ -216,7 +217,40 @@ export class OvertakeWatcher {
   }
 }
 
-/** 字幕を出しておく時間 [s]（文字数に合わせる） */
+/** コーナーとみなす、前後 CORNER_SPAN [m] で向きが変わる量 [rad] */
+export const CORNER_TURN = 0.3;
+export const CORNER_SPAN = 20;
+
+/** s の前後 span [m] で向きが変わる量 [rad]（正は左へ曲がる） */
+export function turnAround(course: { pointAt(s: number): { yaw: number } }, s: number, span = CORNER_SPAN): number {
+  const d = course.pointAt(s + span).yaw - course.pointAt(s - span).yaw;
+  return Math.atan2(Math.sin(d), Math.cos(d));
+}
+
+/**
+ * コーナーで外側へはみ出したか。turn は曲がる量（正は左）、offset は道の中央からの横のずれ（正は左）、
+ * offRoad は道の端からはみ出した距離 [m]（道の上なら 0 以下）
+ */
+export function wentWide(turn: number, offset: number, offRoad: number): boolean {
+  return Math.abs(turn) >= CORNER_TURN && offRoad > 0.3 && Math.sign(offset) === -Math.sign(turn);
+}
+
+/** コーナーで、自分がライバルより内側にいるか（インから抜いたかを見る） */
+export function insideOf(turn: number, playerOffset: number, rivalOffset: number): boolean {
+  return Math.abs(turn) >= CORNER_TURN && (playerOffset - rivalOffset) * Math.sign(turn) > 0.5;
+}
+
+/** はみ出した瞬間だけ true を返す（道に戻るまでは何度も出さない） */
+export class EdgeWatcher {
+  private was = false;
+
+  update(now: boolean): boolean {
+    const rising = now && !this.was;
+    this.was = now;
+    return rising;
+  }
+}
+
 /** 走っている間の字幕の1回分の長さの目安 [文字] */
 export const MAX_LINE_CHARS = 24;
 

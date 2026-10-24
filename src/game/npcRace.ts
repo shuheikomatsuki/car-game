@@ -1,5 +1,5 @@
 import type * as THREE from 'three';
-import { type NpcLevel, NpcDriver, type Opponent } from '../race/npcDriver';
+import { type NpcLevel, NpcDriver, type Opponent, type RoughHit, type RoughStyle } from '../race/npcDriver';
 import { buildRacingLine } from '../race/racingLine';
 import { TimeAttack } from '../race/timeAttack';
 import { CarMesh, type CarStyle } from '../render/carMesh';
@@ -52,6 +52,8 @@ export interface NpcEntry {
   style?: CarStyle;
   /** 同じ強さの NPC どうしでも差がつくよう、グリップにかける係数 */
   variation: number;
+  /** ラフプレーでプレイヤーにぶつけてくるなら、そのやり方 */
+  rough?: RoughStyle | null;
 }
 
 /**
@@ -99,12 +101,14 @@ export class NpcField {
       mesh.root.add(createLabel(name));
       scene.add(mesh.root);
       const snap = car.snapshot();
+      const driver = new NpcDriver(line, params, entry.level, entry.variation, gradient);
+      driver.rough = entry.rough ?? null;
       this.npcs.push({
         name,
         color,
         car,
         mesh,
-        driver: new NpcDriver(line, params, entry.level, entry.variation, gradient),
+        driver,
         timer: new TimeAttack(course, totalLaps, true),
         prev: snap,
         curr: snap,
@@ -118,7 +122,7 @@ export class NpcField {
     for (const n of this.npcs) n.timer.begin();
   }
 
-  /** 物理ステップの前に呼ぶ。others はプレイヤーなど NPC 以外の車 */
+  /** 物理ステップの前に呼ぶ。others はプレイヤーなど NPC 以外の車（ラフプレーの NPC は others[0] を狙う） */
   applyInputs(dt: number, canDrive: boolean, others: readonly CarSnapshot[]): void {
     const all = [...this.npcs.map((n) => n.curr), ...others];
     this.npcs.forEach((n, i) => {
@@ -128,8 +132,18 @@ export class NpcField {
       }
       const opponents: Opponent[] = all.filter((_, j) => j !== i).map((s) => ({ x: s.x, z: s.z, ...velocityOf(s) }));
       n.driver.pace = n.timer.phase === 'finished' ? COOL_DOWN_PACE : 1;
-      n.car.applyInput(n.driver.update(dt, n.curr, opponents), dt);
+      const mark = n.driver.rough && others[0] ? { x: others[0].x, z: others[0].z, ...velocityOf(others[0]) } : undefined;
+      n.car.applyInput(n.driver.update(dt, n.curr, opponents, mark), dt);
     });
+  }
+
+  /** ラフプレーで当てられたときの力（others[0] の車に Car.bump で与える）。無ければ null */
+  takeHit(): RoughHit | null {
+    for (const n of this.npcs) {
+      const hit = n.driver.takeHit();
+      if (hit) return hit;
+    }
+    return null;
   }
 
   /** 物理ステップの後に呼ぶ */

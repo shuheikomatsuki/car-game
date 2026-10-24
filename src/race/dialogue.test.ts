@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { type BattleContext, BattleDialogue, type BattleSnapshot, OvertakeWatcher, dialogueApplies, MAX_LINE_CHARS, lineDuration, sceneLines, splitLine } from './dialogue';
+import { type BattleContext, BattleDialogue, type BattleSnapshot, EdgeWatcher, OvertakeWatcher, dialogueApplies, insideOf, MAX_LINE_CHARS, lineDuration, sceneLines, splitLine, turnAround, wentWide } from './dialogue';
 import { CHARACTERS, RIVAL_DIALOGUES } from './dialogueScript';
 import { RIVALS } from './rivals';
 import { VEHICLE_PRESETS } from '../sim/vehicle';
@@ -134,6 +134,44 @@ describe('OvertakeWatcher', () => {
     expect(w.update(-1)).toBeNull();
     expect(w.update(5)).toBeNull();
     expect(w.update(-3)).toBe('overtaken');
+  });
+});
+
+describe('コーナーでの出来事', () => {
+  it('出来事を配列で書くと、どれかが起きたときに出す（1回だけ）', () => {
+    const d = new BattleDialogue([{ when: { event: ['rivalWide', 'overtakeInside'] }, say: line('しまった') }], ctx);
+    expect(d.update(snap({ events: ['overtake'] }))).toEqual([]);
+    expect(d.update(snap({ events: ['overtake', 'overtakeInside'] }))).toHaveLength(1);
+    expect(d.update(snap({ events: ['rivalWide'] }))).toEqual([]);
+  });
+
+  it('曲がる向きを、前後の道の向きの差から出す（正は左）', () => {
+    // s が大きいほど左へ向きが変わる道
+    const left = { pointAt: (s: number) => ({ x: 0, z: 0, yaw: s * 0.01 }) };
+    expect(turnAround(left, 100, 20)).toBeCloseTo(0.4);
+    const straight = { pointAt: () => ({ x: 0, z: 0, yaw: 3 }) };
+    expect(turnAround(straight, 100)).toBe(0);
+  });
+
+  it('コーナーの外側へはみ出したときだけ、外へはみ出したとみなす', () => {
+    // 左コーナー（turn > 0）の外側は右（offset < 0）
+    expect(wentWide(0.5, -4, 1)).toBe(true);
+    expect(wentWide(0.5, 4, 1)).toBe(false);
+    expect(wentWide(0.5, -4, 0)).toBe(false);
+    expect(wentWide(0.05, -4, 1)).toBe(false);
+    expect(wentWide(-0.5, 4, 1)).toBe(true);
+  });
+
+  it('コーナーで内側にいるか', () => {
+    expect(insideOf(0.5, 2, 0)).toBe(true);
+    expect(insideOf(0.5, -2, 0)).toBe(false);
+    expect(insideOf(-0.5, -2, 0)).toBe(true);
+    expect(insideOf(0.05, 2, 0)).toBe(false);
+  });
+
+  it('はみ出した瞬間だけ知らせる', () => {
+    const w = new EdgeWatcher();
+    expect([false, true, true, false, true].map((v) => w.update(v))).toEqual([false, true, false, false, true]);
   });
 });
 

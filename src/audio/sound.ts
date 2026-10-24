@@ -228,7 +228,7 @@ export class SoundSystem {
     filter.frequency.value = 2200;
     filter.Q.value = 0.8;
     const gain = v.ctx.createGain();
-    gain.gain.setValueAtTime(0.9, t);
+    gain.gain.setValueAtTime(1.8, t);
     gain.gain.exponentialRampToValueAtTime(0.001, t + 0.12);
     src.connect(filter).connect(gain).connect(v.master);
     src.start(t, Math.random() * 0.5, 0.15);
@@ -236,7 +236,7 @@ export class SoundSystem {
     thump.frequency.setValueAtTime(220, t);
     thump.frequency.exponentialRampToValueAtTime(80, t + 0.08);
     const tg = v.ctx.createGain();
-    tg.gain.setValueAtTime(0.35, t);
+    tg.gain.setValueAtTime(0.7, t);
     tg.gain.exponentialRampToValueAtTime(0.001, t + 0.1);
     thump.connect(tg).connect(v.master);
     thump.start(t);

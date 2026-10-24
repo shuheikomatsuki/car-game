@@ -267,6 +267,7 @@ export function rivalDetail(rival: Rival, level: NpcLevel, info: { car: string; 
         ${specs([
           ['マシン', info.car],
           ['得意コース', info.course],
+          ...(rival.rough ? ([['ラフプレー', '選べる（ぶつけてくる）']] as [string, string][]) : []),
         ])}
         ${levelRows(level)}
         <div class="d-garage"><div class="preview-slot"></div></div>
