@@ -302,6 +302,9 @@ kbd {
 html,
 body {
   overscroll-behavior: none;
+  /* iPhone が画面を回したときに文字を勝手に大きくしないように */
+  -webkit-text-size-adjust: 100%;
+  text-size-adjust: 100%;
   -webkit-touch-callout: none;
   -webkit-user-select: none;
   -webkit-tap-highlight-color: transparent;
@@ -351,8 +354,28 @@ body {
   font-size: 14px;
 }
 
+/* ☰ は文字だと端末のフォントで上下にずれるので、3本の線を枠の真ん中に描く */
 #touch-menu-button {
-  font-size: 20px !important;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 44px;
+  padding: 0 !important;
+}
+
+#touch-menu-button .bars {
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  width: 20px;
+  height: 15px;
+  pointer-events: none;
+}
+
+#touch-menu-button .bars i {
+  display: block;
+  height: 3px;
+  background: currentColor;
 }
 
 #touch-steer {
@@ -1692,10 +1715,12 @@ body.touch .menu-keys {
     order: -1;
   }
   /* 文だけの説明（プレイモードなど）は中身の高さにして、説明はスクロールさせない（下の一覧のほうを縮める） */
-  .menu-body:has(> #menu-detail .d-plain) {
+  #menu.detail-plain .menu-body {
     grid-template-rows: auto minmax(0, 1fr);
   }
-  #menu-detail:has(.d-plain) {
+  /* 画面が低くても説明は縮めない（縮めるのは下の一覧） */
+  #menu.detail-plain #menu-detail {
+    min-height: min-content;
     overflow: hidden;
   }
   .d-plain .d-body {
@@ -3299,5 +3324,106 @@ body.online-race #race-change {
     margin: 0 auto;
     max-height: calc(100dvh - env(safe-area-inset-top) - env(safe-area-inset-bottom) - 20px);
     z-index: 6;
+  }
+}
+
+/* ---- スマホのポーズ: ☰ をもう一度押すと走りに戻る ---- */
+
+/* ポーズ中も ☰ だけは同じ場所に出したまま、メニューの上に重ねる */
+body.touch.menu-driving #touch-top {
+  z-index: 11;
+}
+
+body.touch.menu-driving #touch-menu-button {
+  visibility: visible;
+  color: #111;
+  background: var(--accent);
+  border-color: var(--accent);
+}
+
+body.touch.menu-driving #touch-quick {
+  visibility: hidden;
+}
+
+/* 見出しは ☰ の右に */
+body.touch.menu-driving .menu-head {
+  padding-left: 58px;
+  min-height: calc(var(--top-shift, 0px) + 46px);
+}
+
+/* 「走りに戻る」は ☰ で戻れるので出さない（ポーズの画面には他に下のボタンがない） */
+body.touch #menu[data-stage='pause'] .menu-foot {
+  display: none;
+}
+
+/* ---- 画面のいちばん上の真ん中はミラー。ほかの表示はそれを避けて並べる ---- */
+
+/* 右上の地図の下に、部屋の人の一覧（地図の高さは --minimap-h） */
+#net-status,
+body.racing #net-status {
+  top: calc(16px + var(--minimap-h, 0px) + 10px);
+}
+
+/* パソコン: 操作説明はミラーの下から */
+body.mirrors-on:not(.touch) #help {
+  top: calc(env(safe-area-inset-top) + var(--mirror-bottom, 16px));
+}
+
+body.mirrors-on #toast {
+  top: calc(env(safe-area-inset-top) + var(--mirror-bottom, 24px));
+}
+
+body.mirrors-on:not(.touch).racing #toast {
+  top: calc(env(safe-area-inset-top) + var(--mirror-bottom, 24px) + 96px);
+}
+
+/* スマホ: 上の左のボタン・右の地図は縦向きならミラーの下へ（--top-shift。横向きでは 0） */
+#touch-top {
+  top: calc(env(safe-area-inset-top) + 10px + var(--top-shift, 0px));
+}
+
+body.touch #minimap {
+  top: calc(env(safe-area-inset-top) + 10px);
+}
+
+body.touch #net-status,
+body.touch.racing #net-status {
+  left: auto;
+  right: calc(env(safe-area-inset-right) + 10px);
+  top: calc(env(safe-area-inset-top) + 10px + var(--minimap-h, 0px) + 8px);
+}
+
+/* 速度は、上の真ん中をミラーにゆずって下の真ん中に（ハンドルとペダルの間） */
+body.touch #hud,
+body.touch.racing #hud {
+  left: 50%;
+  right: auto;
+  top: auto;
+  bottom: calc(env(safe-area-inset-bottom) + 10px);
+  transform: translateX(-50%);
+}
+
+@media (orientation: portrait) {
+  body.touch #minimap {
+    top: calc(env(safe-area-inset-top) + 64px + var(--top-shift, 0px));
+  }
+  body.touch #net-status,
+  body.touch.racing #net-status {
+    top: calc(env(safe-area-inset-top) + 64px + var(--top-shift, 0px) + var(--minimap-h, 0px) + 8px);
+  }
+  body.touch #race {
+    top: calc(env(safe-area-inset-top) + 64px + var(--top-shift, 0px));
+  }
+  body.touch #toast,
+  body.touch.racing #toast,
+  body.touch.mirrors-on #toast {
+    top: calc(env(safe-area-inset-top) + 120px + var(--top-shift, 0px));
+  }
+  /* 縦向きの下の真ん中はペダルなので、速度はハンドルの説明の上（左下）に */
+  body.touch #hud,
+  body.touch.racing #hud {
+    left: calc(env(safe-area-inset-left) + 16px);
+    bottom: calc(env(safe-area-inset-bottom) + 48px);
+    transform: none;
   }
 }

@@ -31,14 +31,14 @@ import { CameraRig } from './render/camera';
 import { CarMesh, carStyle } from './render/carMesh';
 import { createGhostMesh } from './render/raceMesh';
 import { GameScene } from './render/scene';
-import { MIRROR_MODES, Mirrors, loadMirrorMode, saveMirrorMode } from './render/mirrors';
+import { MIRROR_MODES, Mirrors, centeredRegion, loadMirrorMode, saveMirrorMode } from './render/mirrors';
 import type { CarSnapshot, Spawn } from './sim/car';
 import { loadRapier } from './sim/physics';
 import { NEUTRAL_INPUT, VEHICLE_PRESETS, topSpeedOf } from './sim/vehicle';
 import { Hud, hideLoading, showError } from './ui/hud';
 import { OnlinePanel, loadPlayerName } from './ui/onlinePanel';
 import { ALL_CARS, RankingPanel } from './ui/rankingPanel';
-import { Minimap } from './ui/minimap';
+import { Minimap, type MinimapMarker } from './ui/minimap';
 import { GameMenu, type MenuItem, type MenuMode, type MenuScreen } from './ui/menu';
 import { carDetail, conditionsDetail, courseDetail, npcDetail, rivalDetail, textDetail } from './ui/menuDetails';
 import { courseProfile } from './ui/courseInfo';
@@ -88,6 +88,8 @@ const BATTLE_RULES: readonly { id: BattleRule; label: string; note: string }[] =
 const NEXT_ROUND_DELAY = 3500;
 /** クラクションの音が届く距離 [m]（遠い車ほど小さく聞こえる） */
 const HORN_RANGE = 160;
+
+const hex = (c: number) => `#${c.toString(16).padStart(6, '0')}`;
 /** 他の人のクラクションの「止める」が届かなかったときに止めるまでの時間 [ms] */
 const HORN_MAX_MS = 4000;
 /** エモートを続けて送れる間隔 [ms] */
@@ -107,34 +109,23 @@ async function main() {
   window.addEventListener('resize', () => view.resize(cameraRig.camera));
   /** バックミラー・サイドミラー */
   const mirrors = new Mirrors(document.body, loadMirrorMode());
-  /** ミラーを置ける範囲（上の左右のボタン・地図を避ける。毎フレーム測ると重いので時々） */
-  let mirrorRegion = { left: 0, right: window.innerWidth, top: 10 };
+  /** ミラーを置ける範囲（画面のいちばん上の真ん中。毎フレーム測ると重いので時々） */
+  let mirrorRegion = { left: 0, right: window.innerWidth, top: 8 };
   let mirrorRegionAge = 0;
   const measureMirrorRegion = () => {
-    const box = (id: string) => {
-      const e = document.getElementById(id);
-      const r = e?.getBoundingClientRect();
-      return r && r.width > 0 && r.height > 0 ? r : null;
-    };
     const w = window.innerWidth;
-    if (window.innerHeight > w) {
-      // 縦向き: 上の表示（周回・地図・ボタン）の下に、横いっぱいに
-      const top = Math.max(10, ...['race', 'minimap', 'touch-top'].map((id) => (box(id)?.bottom ?? 0) + 8));
-      return { left: 8, right: w - 8, top: Math.round(top) };
-    }
-    // 横向き: 左上のボタン・操作説明と右上の地図の間に。真ん中の上にある表示（スマホの速度など）はその下に
+    // 縦向き: 横いっぱいに。上のボタン・周回・地図などはミラーの下へずらす（--top-shift）
+    if (window.innerHeight > w) return { left: 8, right: w - 8, top: 8 };
+    // 横向き: 左上のボタンと右上の地図を避けて、真ん中に左右対称に（操作説明・周回・速度はミラーの下や別の場所へずらす）
     let left = 8;
     let right = w - 8;
-    let top = 10;
-    for (const id of ['touch-top', 'help', 'minimap', 'hud', 'race']) {
-      const r = box(id);
-      if (!r || r.top > 80) continue;
-      const cx = (r.left + r.right) / 2;
-      if (cx < w / 3) left = Math.max(left, r.right + 10);
-      else if (cx > (w * 2) / 3) right = Math.min(right, r.left - 10);
-      else if (id !== 'race') top = Math.max(top, r.bottom + 6);
+    for (const id of ['touch-top', 'minimap']) {
+      const r = document.getElementById(id)?.getBoundingClientRect();
+      if (!r || r.width === 0 || r.height === 0 || r.top > 80) continue;
+      if ((r.left + r.right) / 2 < w / 2) left = Math.max(left, r.right + 10);
+      else right = Math.min(right, r.left - 10);
     }
-    return { left: Math.round(left), right: Math.round(right), top: Math.round(top) };
+    return centeredRegion(w, left, right, 8);
   };
   // ?map=1 のように開始マップを指定できる
   const requested = Number(params.get('map'));
@@ -253,7 +244,9 @@ async function main() {
     return level.ground({ x: p.x, y: 0.05, z: p.z, yaw: p.yaw, forwardSpeed: 0, lateralSpeed: 0, steerAngle: 0, wheelSpin: 0, ...(courseS !== null ? { courseS } : {}) });
   };
   const raceMapIndex = MAPS.findIndex((m) => m.race);
-  const minimap = new Minimap(document.getElementById('minimap')!);
+  const minimap = new Minimap(document.getElementById('minimap')!, (h) => document.body.style.setProperty('--minimap-h', `${h}px`));
+  /** 俯瞰の地図はどのモードでも出す（レースでなくても、いまのマップの道を描く） */
+  const showMinimap = () => minimap.setMap(level.def, level.course);
   const raceHud = new RaceHud({
     onRetry: () => race && startRace(raceMode),
     onQuit: () => stopRace(),
@@ -362,7 +355,7 @@ async function main() {
     raceHud.show(true);
     const go = touch.isShown ? 'アクセルを押すとスタート' : 'アクセル（W / ↑）でスタート';
     raceHud.showReady(suddenDeath ? `${suddenDeath.round}本目・あなたが${suddenDeath.playerLeads ? '先行' : '後追い'}　${go}` : go);
-    minimap.setCourse(course);
+    showMinimap();
     raceHud.hideResult();
     raceHud.setWarning({ wrongWay: false, offCourse: false });
     hud.setMode(raceLabel());
@@ -446,7 +439,7 @@ async function main() {
     npcField?.dispose();
     npcField = null;
     raceHud.show(false);
-    minimap.setCourse(null);
+    showMinimap();
     ghostMesh.root.visible = false;
     rivalMesh.root.visible = false;
   }
@@ -624,6 +617,7 @@ async function main() {
       touch.refresh();
     }
     resetCar();
+    showMinimap();
     hud.setMapName(level.def.name);
     hud.toast(message);
     menu.refresh();
@@ -772,7 +766,7 @@ async function main() {
     raceHud.show(true);
     raceHud.hideResult();
     raceHud.setWarning({ wrongWay: false, offCourse: false });
-    minimap.setCourse(course);
+    showMinimap();
     hud.setMode(raceLabel());
     document.body.classList.add('online-race');
     touch.refresh();
@@ -990,8 +984,8 @@ async function main() {
       names ? `一緒に走っている人: ${escapeHtml(names)}` : '他の人を待っています'
     }${raceNote}`;
   };
-  /** トップメニューの「オンライン対戦」から部屋に入ろうとしている（入ったらコース選びへ進む） */
-  let raceAfterJoin = false;
+  /** トップメニューの「みんなで走る」「オンライン対戦」から部屋に入ろうとしている（入ったらそのコース選びへ進む） */
+  let afterJoin: 'free' | 'race' | null = null;
   const net: NetClient = new NetClient({
     onStatus: (status, detail) => {
       if (status === 'offline' || status === 'error' || status === 'reconnecting') {
@@ -1032,12 +1026,13 @@ async function main() {
           if (m.map !== mapIndex && m.map >= 0 && m.map < MAPS.length) loadMap(m.map, `部屋のマップ「${MAPS[m.map].name}」に移動しました`);
           hud.toast(`部屋 ${roomCode} に参加しました`);
           {
-            const wantsRace = raceAfterJoin;
-            raceAfterJoin = false;
+            const next = afterJoin;
+            afterJoin = null;
             onlinePanel.close();
             if (m.race) onRoomRace(m.race, m.race.host);
-            // トップメニューの「オンライン対戦」から参加した: 部屋で対戦していなければ、コース選びへ
-            else if (wantsRace) menu.openFlow(onlineRaceMode);
+            // トップメニューから参加した: 部屋で対戦していなければ、コース選びへ（いまの部屋のコースを選んだ状態で）
+            else if (next === 'race') menu.openFlow(onlineRaceMode);
+            else if (next === 'free') menu.openFlow(onlineFreeMode);
           }
           if (m.race?.phase === 'racing') hud.toast('部屋ではオンライン対戦の最中です（終わったら参加できます）');
           break;
@@ -1088,8 +1083,8 @@ async function main() {
       onOpenChange: (open) => {
         keyboard.enabled = !open;
         touch.enabled = !open;
-        // 参加せずに閉じたら、対戦に進むのはやめる
-        if (!open && (net.status === 'offline' || net.status === 'error')) raceAfterJoin = false;
+        // 参加せずに閉じたら、コース選びに進むのはやめる
+        if (!open && (net.status === 'offline' || net.status === 'error')) afterJoin = null;
       },
     },
     serverUrl !== '',
@@ -1162,7 +1157,8 @@ async function main() {
       { label: () => 'セリフ', run: () => toggleEmotes(), place: 'side' },
       { label: () => 'エントリー', run: () => onlineRacePanel.open(), visible: () => roomRace?.phase === 'entry' && !onlineRacePanel.isOpen },
     ],
-    () => menu.openPause(),
+    // ☰ は押すたびにポーズ画面を開く・閉じる
+    () => (menu.isOpen ? menu.close() : menu.openPause()),
   );
 
   // --- メニュー: タイトル → トップ画面でプレイモードを選び、コース・対戦相手・車などを順に選ぶ（走っている間は Esc / ☰ でポーズ） ---
@@ -1227,7 +1223,8 @@ async function main() {
     else resetCar();
   };
 
-  const courseScreen = (raceOnly: boolean, home?: string): MenuScreen => ({
+  /** note: 説明の下に添える一言（部屋の全員が移動する、など） */
+  const courseScreen = (raceOnly: boolean, home?: string, note?: string): MenuScreen => ({
     title: 'コース',
     en: 'COURSE',
     groups: [
@@ -1251,7 +1248,7 @@ async function main() {
       },
     ],
     detail: () => {
-      if (!home) return courseDetail(draftMap(), carLabel);
+      if (!home) return courseDetail(draftMap(), carLabel, note ? { note } : undefined);
       const r = draftRival();
       const script = RIVAL_DIALOGUES[r.id];
       // セリフが得意なコースだけのライバルなら、ほかのコースを選んだときに知らせる
@@ -1518,13 +1515,39 @@ async function main() {
     note: () => (net.isOnline ? `部屋 ${roomCode} に参加中` : '部屋のみんなと自由に走る（対戦もできます）'),
     major: true,
     run: () => {
+      // 部屋に入っていればコース・車選びへ。まだなら部屋に入ってから進む
+      if (net.isOnline) return menu.openFlow(onlineFreeMode);
       menu.close();
-      onlinePanel.open();
+      onlinePanel.open('友だちと同じ部屋コードを入れて「参加する」を押すと、コース・車選びに進みます。');
+      afterJoin = 'free';
     },
     detail: settingDetail('みんなで走る（オンライン）', [
-      '同じ部屋コードを入れた人と、同じマップを一緒に自由に走れます（最大8人）。',
+      '同じ部屋コードを入れた人と、同じコースを一緒に自由に走れます（最大8人）。',
+      '部屋に入るとコースを選べます。コースを変えると、部屋の全員が同じコースに移動します。',
       '部屋に入ったまま、トップメニューの「オンライン対戦」で部屋のみんなとレースもできます。',
     ]),
+  };
+  /** 部屋のみんなと自由に走る: コースを選ぶと部屋の全員がそのコースへ（車は各自） */
+  const onlineFreeMode: MenuMode = {
+    id: 'onlineFree',
+    label: 'みんなで走る',
+    en: 'ONLINE',
+    note: '部屋のみんなと自由に走る',
+    detail: onlineItem.detail!,
+    begin: () => beginDraft(false),
+    screens: () => [courseScreen(false, undefined, '選んだコースに、部屋の全員が一緒に移動します。'), carScreen],
+    summary: () => `部屋 ${roomCode} ／ ${draftMap().name} ／ ${draftCar().label}`,
+    finish: () => applyDraft('free'),
+    finishLabel: '走る',
+  };
+  /** 自由に走っている間に、コースと車を選び直す（ポーズ画面から。部屋にいれば全員が移動する） */
+  const freeChangeMode: MenuMode = {
+    ...onlineFreeMode,
+    id: 'freeChange',
+    label: 'コース・車を変える',
+    en: 'CHANGE',
+    screens: () => [courseScreen(false, undefined, net.isOnline ? '選んだコースに、部屋の全員が一緒に移動します。' : undefined), carScreen],
+    summary: () => `${draftMap().name} ／ ${draftCar().label}`,
   };
   /** オンライン対戦を言い出す: コースと時間帯・天気を決める（車は各自がエントリー画面で選ぶ） */
   const onlineRaceMode: MenuMode = {
@@ -1550,7 +1573,7 @@ async function main() {
         // 部屋に入ってから、そのままコース選びへ進む（部屋でエントリー中なら、そのエントリー画面へ）
         menu.close();
         onlinePanel.open('対戦する部屋に参加します。友だちと同じ部屋コードを入れて「参加する」を押すと、コース選びに進みます。');
-        raceAfterJoin = true;
+        afterJoin = 'race';
       } else if (roomRace?.phase === 'entry') {
         menu.close();
         onlineRacePanel.open();
@@ -1597,9 +1620,14 @@ async function main() {
         {
           label: () => 'コース・車を変える',
           en: 'CHANGE',
-          run: () => openChangeFlow(),
-          visible: () => race !== null && raceMode !== 'online',
-          detail: settingDetail('コース・車を変える', ['同じモードのまま、コースと車を選び直してスタートからやり直す。']),
+          run: () => (race ? openChangeFlow() : menu.openFlow(freeChangeMode)),
+          // オンライン対戦（エントリー中を含む）の間は、部屋のコースのまま
+          visible: () => (race ? raceMode !== 'online' : !roomRace),
+          detail: () =>
+            settingDetail('コース・車を変える', [
+              race ? '同じモードのまま、コースと車を選び直してスタートからやり直す。' : 'いまのまま自由に走りながら、コースと車を選び直す。',
+              ...(!race && net.isOnline ? ['部屋に入っているので、コースを変えると部屋の全員が同じコースに移動します。'] : []),
+            ])(),
         },
         { label: () => (raceMode === 'online' ? '対戦から抜ける' : 'レースをやめる'), en: 'QUIT RACE', run: () => (menu.close(), stopRace()), visible: () => race !== null, detail: pauseDetail },
         {
@@ -1642,8 +1670,13 @@ async function main() {
   // スマホ・タブレットなら最初から、そうでなくても画面に触れたら操作画面を出す（?touch で強制表示）
   if (prefersTouch() || params.has('touch')) touch.show();
   window.addEventListener('pointerdown', (e) => {
-    if (e.pointerType === 'touch') touch.show();
+    if (e.pointerType !== 'touch' || touch.isShown) return;
+    touch.show();
+    // スマホの操作画面では地図が小さくなるので描き直す
+    showMinimap();
   });
+  showMinimap();
+  window.addEventListener('resize', showMinimap);
 
   // ブラウザの制約で、音はユーザー操作の後でないと鳴らせない（タッチは指を離したときが操作とみなされる）
   const unlockAudio = () => {
@@ -1749,6 +1782,7 @@ async function main() {
       view.setRemoteHeadlights(remoteCars.litCars(s.x, s.z));
       updateRemoteHornVolumes();
       npcField?.render(alpha);
+      let minimapRace: MinimapMarker[] = [];
       if (race) {
         const pose = best ? ghostPoseAt(best.ghost, Math.max(0, race.time)) : null;
         const list = npcField ? standings() : raceMode === 'online' ? onlineStandings() : null;
@@ -1775,21 +1809,23 @@ async function main() {
         });
         // ゴールした後も、まだ走っている NPC がゴールするたびに順位表を更新する（先行後追いは別の結果）
         if (rank && race.phase === 'finished' && !suddenDeath) raceHud.showStandings(rank.list, race.totalLaps, raceMode === 'battle');
-        const hex = (c: number) => `#${c.toString(16).padStart(6, '0')}`;
-        minimap.draw([
+        minimapRace = [
           ...(pose ? [{ x: pose.x, z: pose.z, color: '#7fd4ff' }] : []),
           ...(rivalPose ? [{ x: rivalPose.x, z: rivalPose.z, color: '#ffa040' }] : []),
           ...(npcField?.npcs.map((n) => ({ x: n.curr.x, z: n.curr.z, color: hex(n.color) })) ?? []),
-          ...(raceMode === 'online'
-            ? (onlineResult?.entrants ?? []).flatMap((id) => {
-                const p = id === net.id ? null : remoteCars.positionOf(id, performance.now());
-                const info = remoteCars.list.find((x) => x.id === id);
-                return p && info ? [{ x: p.x, z: p.z, color: hex(PLAYER_COLORS[info.color % PLAYER_COLORS.length]) }] : [];
-              })
-            : []),
-          { x: s.x, z: s.z, yaw: s.yaw, color: '#ff5a4f', size: 5 },
-        ]);
+        ];
       }
+      // 地図: ゴースト・NPC と、部屋の他の人（オンライン対戦中はエントリーした人だけ）と自分
+      const others = race && raceMode === 'online' ? (onlineResult?.entrants ?? []) : race ? [] : remoteCars.list.map((p) => p.id);
+      minimap.draw([
+        ...minimapRace,
+        ...others.flatMap((id) => {
+          const p = id === net.id ? null : remoteCars.positionOf(id, performance.now());
+          const info = remoteCars.list.find((x) => x.id === id);
+          return p && info ? [{ x: p.x, z: p.z, color: hex(PLAYER_COLORS[info.color % PLAYER_COLORS.length]) }] : [];
+        }),
+        { x: s.x, z: s.z, yaw: s.yaw, color: '#ff5a4f', size: 5 },
+      ]);
       level.syncProps();
       // タイトル・メニューの間は、止まっている車の周りをカメラが回る
       if (menu.showcase) cameraRig.orbit(s, frameDt);
@@ -1803,10 +1839,16 @@ async function main() {
       if (showMirrors && mirrorRegionAge-- <= 0) {
         mirrorRegion = measureMirrorRegion();
         mirrorRegionAge = 10;
-        // 横向きでは、周回・タイムの表示をミラーの下へずらす
+        // ミラーの下に、周回・タイムや操作説明などをずらす
         document.body.style.setProperty('--mirror-bottom', `${mirrors.bottom(mirrorRegion) + 8}px`);
       }
+      // スマホの縦向きでは、上の表示をまとめてミラーの下へ（ポーズ中は ☰ が動かないよう、そのまま）
+      if (!menu.isOpen) {
+        const shift = showMirrors && touch.isShown && window.innerHeight > window.innerWidth ? mirrors.bottom(mirrorRegion) : 0;
+        document.body.style.setProperty('--top-shift', `${shift}px`);
+      }
       document.body.classList.toggle('mirrors-on', showMirrors);
+      document.body.classList.toggle('menu-driving', menu.isOpen && !menu.showcase);
       mirrors.render(view.renderer, view.scene, carMesh.root, showMirrors, mirrorRegion);
     },
   );

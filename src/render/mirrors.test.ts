@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { mirrorLayout } from './mirrors';
+import { centeredRegion, mirrorLayout } from './mirrors';
 
 describe('mirror layout', () => {
   it('centers the rear mirror in the free space between the top buttons and the map', () => {
@@ -33,5 +33,14 @@ describe('mirror layout', () => {
     const land = mirrorLayout(390, { left: 8, right: 382, top: 200 }, 'rear');
     const port = mirrorLayout(390, { left: 8, right: 382, top: 200 }, 'rear', true);
     expect(port.rear.w).toBeGreaterThan(land.rear.w);
+  });
+
+  it('keeps the mirror region centered on the screen, narrowed by the nearer side', () => {
+    // 左のボタンは 230px まで、右の地図は 720px から（画面 844px）
+    expect(centeredRegion(844, 230, 720, 8)).toEqual({ left: 230, right: 614, top: 8 });
+    // 右側が近いとき
+    expect(centeredRegion(1000, 50, 800, 8)).toEqual({ left: 200, right: 800, top: 8 });
+    const { rear } = mirrorLayout(844, centeredRegion(844, 230, 720, 8), 'rear');
+    expect(rear.x + rear.w / 2).toBeCloseTo(422, 0);
   });
 });
