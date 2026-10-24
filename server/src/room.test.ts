@@ -130,7 +130,7 @@ describe('room relay', () => {
     const room = createRoom();
     const a = room.connect();
     room.send(a, { t: 'hello', v: PROTOCOL_VERSION, name: '<b>とてもながいなまえですよほんとうに</b>', car: 'x', map: 0 });
-    expect(a.info?.name).toBe('bとてもながいなまえです');
+    expect(a.info?.name).toBe('bとてもながいなまえ');
     const b = room.connect();
     room.send(b, { t: 'hello', v: PROTOCOL_VERSION, name: '   ', car: 'x', map: 0 });
     expect(b.info?.name).toBe('ゲスト');

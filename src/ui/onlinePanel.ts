@@ -11,7 +11,8 @@ const NAME_KEY = 'car-game:name';
 /** みんなで走るときとランキングで使う名前（このブラウザに保存） */
 export function loadPlayerName(): string {
   try {
-    return localStorage.getItem(NAME_KEY) ?? '';
+    // 上限を決める前に保存した長い名前は、上限までにする
+    return [...(localStorage.getItem(NAME_KEY) ?? '')].slice(0, MAX_NAME_LENGTH).join('');
   } catch {
     return '';
   }

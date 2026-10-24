@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { isRoomCode, normalizeRoomCode, parseClientMessage, randomRoomCode } from './protocol';
+import { isRoomCode, normalizeRoomCode, parseClientMessage, randomRoomCode, sanitizeName } from './protocol';
 
 describe('protocol', () => {
   it('makes and checks room codes', () => {
@@ -34,5 +34,10 @@ describe('protocol', () => {
     expect(parseClientMessage('{"t":"raceOpen","settings":{"map":2,"time":"noon","weather":"rain"}}')).toBeNull();
     expect(parseClientMessage('{"t":"raceReady","ready":true,"car":"ae86"}')).toEqual({ t: 'raceReady', ready: true, car: 'ae86' });
     expect(parseClientMessage('{"t":"raceFinish","seq":1,"time":-3}')).toBeNull();
+  });
+
+  it('cuts names to 10 characters', () => {
+    expect(sanitizeName('あいうえおかきくけこさしすせそ')).toBe('あいうえおかきくけこ');
+    expect(sanitizeName('   ')).toBe('ゲスト');
   });
 });

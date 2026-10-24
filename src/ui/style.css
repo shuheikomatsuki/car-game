@@ -2014,7 +2014,7 @@ body.racing #net-status {
 body.touch #minimap {
   top: calc(env(safe-area-inset-top) + 10px);
   right: calc(env(safe-area-inset-right) + 10px);
-  width: 130px;
+  width: 150px;
 }
 
 body.touch.racing #net-status {
@@ -2203,7 +2203,7 @@ body.racing #toast {
     font-size: 10px;
   }
   body.touch #minimap {
-    width: 110px;
+    width: 130px;
   }
   body.touch.racing #net-status {
     top: calc(env(safe-area-inset-top) + 110px);
@@ -2996,7 +2996,7 @@ body.in-scene #countdown {
   #ranking-table td.name {
     max-width: 96px;
   }
-  #ranking-table td.date {
+  #ranking-table .date {
     display: none;
   }
   #ranking .dialog-buttons {
@@ -3347,7 +3347,7 @@ body.touch.menu-driving #touch-quick {
 
 /* 見出しは ☰ の右に */
 body.touch.menu-driving .menu-head {
-  padding-left: 58px;
+  padding-left: 74px;
   min-height: calc(var(--top-shift, 0px) + 46px);
 }
 
@@ -3491,7 +3491,7 @@ body:not(.touch) #race-result {
   min-width: 6.5em;
 }
 
-/* スマホの上の列（カメラ・やり直す）と、ペダルの上の列（ライト・ホーン・セリフ）も同じ幅にする */
+/* スマホの上の列のボタンと、ペダルの上の列（ライト・ホーン・セリフ）も同じ幅にする */
 #touch-quick,
 #touch-side {
   display: grid;
@@ -3624,4 +3624,85 @@ body:not(.touch) #race-result {
   border-left: 1px solid var(--line-strong);
   border-top: 3px solid var(--accent);
   border-radius: 0;
+}
+
+/* ---- 確認の画面（プレイデータを消す）: ほかのダイアログと同じ角ばった枠。消すほうは赤 ---- */
+
+#confirm {
+  position: fixed;
+  inset: 0;
+  display: flex;
+  padding: 16px;
+  background: rgba(0, 0, 0, 0.6);
+  z-index: 20;
+}
+
+#confirm.hidden {
+  display: none;
+}
+
+#confirm .dialog-panel {
+  width: min(380px, calc(100vw - 32px));
+  border-top-color: #d8261c;
+}
+
+#confirm h2 {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  margin-bottom: 10px;
+}
+
+#confirm h2 .en {
+  font-family: var(--display);
+  font-style: italic;
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.2em;
+  color: #ff8a80;
+}
+
+#confirm-text p {
+  margin: 0 0 4px;
+  font-size: 14px;
+  line-height: 1.6;
+}
+
+#confirm .dialog-buttons {
+  margin-top: 16px;
+  gap: 10px;
+}
+
+#confirm .dialog-buttons .danger {
+  background: #c8201a;
+}
+
+#confirm .dialog-buttons .danger:hover {
+  background: #e02a22;
+}
+
+/* キーボードで選んでいるほうが分かるように */
+#confirm .dialog-buttons button:focus-visible {
+  outline: none;
+  box-shadow: inset 0 0 0 2px #fff;
+}
+
+/* ---- ランキングの列の名前 ---- */
+
+#ranking-table th {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  padding: 4px 6px;
+  background: var(--panel);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  color: var(--muted);
+  text-align: left;
+  white-space: nowrap;
+}
+
+#ranking-table th:first-child {
+  text-align: center;
 }

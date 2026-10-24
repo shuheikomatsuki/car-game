@@ -29,6 +29,8 @@ export class CameraRig {
   private orbitAngle = 0;
   /** 車の見た目の大きさの倍率（小さな車では車内の目の位置も低く・内側にする） */
   private carScale = 1;
+  /** 乗っている車の運転席の目の位置（車の形で変わる） */
+  private driverEye = CABIN.driverEye;
 
   constructor(aspect: number) {
     this.camera = new THREE.PerspectiveCamera(CHASE_FOV, aspect, 0.3, 1500);
@@ -37,6 +39,11 @@ export class CameraRig {
   /** 乗っている車の見た目の大きさの倍率（CarStyle.scale） */
   setCarScale(scale: number): void {
     this.carScale = scale;
+  }
+
+  /** 乗っている車の運転席の目の位置（driverEyeFor） */
+  setDriverEye(eye: THREE.Vector3): void {
+    this.driverEye = eye;
   }
 
   get modeName(): string {
@@ -115,7 +122,8 @@ export class CameraRig {
     } else {
       // 車体ローカル座標の目の位置をワールド座標へ（前方 +Z、左 +X）
       const k = this.carScale;
-      const [ex, ey, ez] = [mode.eye.x * k, mode.eye.y * k, mode.eye.z * k];
+      const eye = mode.id === 'driver' ? this.driverEye : mode.eye;
+      const [ex, ey, ez] = [eye.x * k, eye.y * k, eye.z * k];
       this.position.set(car.x + ex * fz + ez * fx, car.y + ey, car.z - ex * fx + ez * fz);
       const lx = Math.sin(car.yaw + mode.lookYaw);
       const lz = Math.cos(car.yaw + mode.lookYaw);

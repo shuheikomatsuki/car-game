@@ -73,6 +73,15 @@ export function carStyle(carId: string): CarStyle {
   return CAR_STYLES[carId] ?? DEFAULT_STYLE;
 }
 
+/**
+ * その車の運転席の目の位置（車体ローカル、大きさの倍率をかける前）。
+ * 屋根の前の縁が視界の上をふさがないよう、縁より 0.3m 後ろ・0.18m 下に収める（屋根の低い車では目を下げる）
+ */
+export function driverEyeFor(style: CarStyle): THREE.Vector3 {
+  const frontHigh = style.window[2];
+  return new THREE.Vector3(CABIN.driverEye.x, Math.min(CABIN.driverEye.y, style.roof - 0.18), Math.min(0.05, frontHigh - 0.3));
+}
+
 /** 2点を結ぶ細い棒（ピラーなど） */
 function strut(
   mat: THREE.Material,
