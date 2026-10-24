@@ -198,14 +198,14 @@ describe('idle connections', () => {
       { t: 'horn', id: 1, on: true },
       { t: 'horn', id: 1, on: false },
     ]);
-    room.send(a, { t: 'emote', e: 2 });
-    room.send(a, { t: 'emote', e: 3 });
+    room.send(a, { t: 'emote', text: 'よろしく！' });
+    room.send(a, { t: 'emote', text: 'お先に！' });
     // 自分にも返る。続けて送った分は捨てる
-    expect(a.take()).toEqual([{ t: 'emote', id: 1, e: 2 }]);
-    expect(b.take()).toEqual([{ t: 'emote', id: 1, e: 2 }]);
+    expect(a.take()).toEqual([{ t: 'emote', id: 1, text: 'よろしく！' }]);
+    expect(b.take()).toEqual([{ t: 'emote', id: 1, text: 'よろしく！' }]);
     room.clock.now += 2000;
-    room.send(a, { t: 'emote', e: 3 });
-    expect(b.take()).toEqual([{ t: 'emote', id: 1, e: 3 }]);
+    room.send(a, { t: 'emote', text: 'お先に！' });
+    expect(b.take()).toEqual([{ t: 'emote', id: 1, text: 'お先に！' }]);
   });
 });
 

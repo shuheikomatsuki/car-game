@@ -259,12 +259,12 @@ export function buildMapMesh(map: ParsedMap, obstacles: MapObstacles, terrain: T
   group.add(roadMesh);
   if (roads.edgeLines) {
     group.add(
-      new THREE.Mesh(roads.edgeLines, new THREE.MeshBasicMaterial({ color: COLORS.line, ...layer(2) })),
+      new THREE.Mesh(roads.edgeLines, new THREE.MeshLambertMaterial({ color: COLORS.line, ...layer(2) })),
     );
   }
   if (roads.centerLines) {
     group.add(
-      new THREE.Mesh(roads.centerLines, new THREE.MeshBasicMaterial({ color: COLORS.centerLine, ...layer(2) })),
+      new THREE.Mesh(roads.centerLines, new THREE.MeshLambertMaterial({ color: COLORS.centerLine, ...layer(2) })),
     );
   }
 

@@ -61,6 +61,9 @@ const RAIN_BOX = { x: 70, y: 30, z: 70 };
 const RAIN_SPEED = 26;
 const RAIN_STREAK = 0.9;
 
+/** 夜にヘッドライトを消したときの、空の光の明るさの割合 */
+const NIGHT_LIGHTS_OFF = 0.15;
+
 /** ヘッドライトの光の出る位置と、照らす先（車体から見た位置） */
 const HEADLIGHT_FROM = new THREE.Vector3(0, 1.1, 2.0);
 const HEADLIGHT_TO = new THREE.Vector3(0, -1.2, 18);
@@ -77,6 +80,10 @@ export class GameScene {
   /** 暗さに合わせたヘッドライトの明るさ（夜 1、朝・雨・霧 0.35、晴れた昼 0.15） */
   private lightLevel = 0;
   private headlightsOn = false;
+  /** 時間帯と天気で決まる空の光の明るさ（夜にライトを消すと、これより暗くする） */
+  private hemiLevel = LIGHTING.day.hemi;
+  private sunLevel = LIGHTING.day.sun;
+  private night = false;
   /** 他の人の車の前を照らすライト（近い車から順に使う。数を変えるとシェーダーを作り直すので、使わない分は暗くしておく） */
   private readonly remoteHeadlights = Array.from({ length: REMOTE_HEADLIGHTS }, () => new THREE.SpotLight(0xfff0d0, 0, 120, 0.55, 0.5, 1));
   private readonly rain: THREE.LineSegments;
@@ -153,10 +160,11 @@ export class GameScene {
     this.fog.far = far;
     this.hemi.color.setHex(l.hemiSky);
     this.hemi.groundColor.setHex(l.hemiGround);
-    this.hemi.intensity = l.hemi * light;
+    this.hemiLevel = l.hemi * light;
     this.sun.color.setHex(l.sunColor);
     // 雨や霧の日は日差しが弱く、影もほとんど出ない
-    this.sun.intensity = l.sun * (env.weather === 'clear' ? 1 : 0.35);
+    this.sunLevel = l.sun * (env.weather === 'clear' ? 1 : 0.35);
+    this.night = env.time === 'night';
     this.sunOffset = l.sunOffset;
     this.lightLevel = env.time === 'night' ? 1 : env.time === 'morning' || env.weather !== 'clear' ? 0.35 : 0.15;
     this.applyHeadlight();
@@ -172,6 +180,10 @@ export class GameScene {
   private applyHeadlight(): void {
     // visible を切り替えると、ライトの数が変わってシェーダーを作り直す（一瞬止まる）ので、明るさだけを変える
     this.headlight.intensity = this.headlightsOn ? 2000 * this.lightLevel : 0;
+    // 夜にライトを消すと、月明かりだけでほとんど見えない
+    const dark = this.night && !this.headlightsOn ? NIGHT_LIGHTS_OFF : 1;
+    this.hemi.intensity = this.hemiLevel * dark;
+    this.sun.intensity = this.sunLevel * dark;
   }
 
   /** 暗くてヘッドライトをつけたほうがよい時間帯・天気か（朝・夜・雨・霧） */

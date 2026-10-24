@@ -22,8 +22,8 @@ import { CHARACTERS, RIVAL_DIALOGUES } from './race/dialogueScript';
 import { CHASE_START_GAP, type Runner, SAFE_SECONDS, SuddenDeath } from './race/suddenDeath';
 import { type RaceRecord, loadRecord, mergeRecord, saveRecord } from './race/records';
 import { TimeAttack, formatTime } from './race/timeAttack';
-import { type RaceSettings, type RaceState, isRoomCode, normalizeRoomCode } from './net/protocol';
-import { EMOTES } from './game/emotes';
+import { type RaceSettings, type RaceState, MAX_PLAYERS, MAX_EMOTE_LENGTH, isRoomCode, normalizeRoomCode } from './net/protocol';
+import { DEFAULT_EMOTE, loadEmote, saveEmote } from './game/emotes';
 import { attachBubble } from './render/bubble';
 import { lapsDone, rankOnline, standingsWindow } from './race/onlineRace';
 import { OnlineRacePanel } from './ui/onlineRacePanel';
@@ -94,6 +94,8 @@ const HORN_RANGE = 160;
 const hex = (c: number) => `#${c.toString(16).padStart(6, '0')}`;
 /** 他の人のクラクションの「止める」が届かなかったときに止めるまでの時間 [ms] */
 const HORN_MAX_MS = 4000;
+/** 近道をしてから、コースを外れた所へ戻すまでの時間 [s] */
+const REJOIN_DELAY = 1.2;
 /** エモートを続けて送れる間隔 [ms] */
 const EMOTE_COOLDOWN_MS = 1500;
 
@@ -483,7 +485,34 @@ async function main() {
     ]);
   };
 
+  /** ゴールを知らせた NPC（レースが変わったら作り直す） */
+  let finishSeen: { race: TimeAttack; timers: Set<TimeAttack> } | null = null;
+  /** NPC・ライバルがゴールしたら、まだ走っている自分に知らせる */
+  const announceNpcFinishes = (r: TimeAttack) => {
+    if (!npcField) return;
+    if (finishSeen?.race !== r) finishSeen = { race: r, timers: new Set() };
+    const timers = [r, ...npcField.npcs.map((n) => n.timer)];
+    for (const n of npcField.npcs) {
+      if (n.timer.phase !== 'finished' || finishSeen.timers.has(n.timer)) continue;
+      finishSeen.timers.add(n.timer);
+      if (r.phase !== 'racing') continue;
+      const place = 1 + timers.filter((t) => t !== n.timer && t.phase === 'finished' && t.time < n.timer.time).length;
+      raceHud.announceFinish(n.name, n.color, npcField.npcs.length > 1 ? `${place}位　${formatTime(n.timer.time)}` : formatTime(n.timer.time));
+    }
+  };
+  /** 近道をしたとき、コースに戻すレースの時刻（戻すまで少し間をおいて、何が起きたかを見せる） */
+  let rejoinAt: { race: TimeAttack; time: number } | null = null;
   const handleRaceEvents = (r: TimeAttack) => {
+    if (rejoinAt?.race !== r) rejoinAt = null;
+    if (rejoinAt && r.time >= rejoinAt.time) {
+      rejoinAt = null;
+      const s = r.phase === 'racing' ? r.rejoin() : null;
+      const course = level.course;
+      if (s !== null && course) {
+        const p = course.pointAt(s);
+        placeCar({ x: p.x, z: p.z, yaw: p.yaw, s });
+      }
+    }
     for (const e of r.drainEvents()) {
       switch (e.type) {
         case 'count':
@@ -546,6 +575,8 @@ async function main() {
           break;
         case 'offCourse':
           raceHud.setWarning({ offCourse: e.on });
+          // 近道をしたら、コースを外れた所へ戻す（どこまで戻ればよいか迷わないように）
+          rejoinAt = e.on ? { race: r, time: r.time + REJOIN_DELAY } : null;
           break;
       }
     }
@@ -700,15 +731,11 @@ async function main() {
     for (const id of remoteHornTimers.keys()) sound.setHornVolume(id, remoteHornVolume(id));
   };
 
-  // --- エモート（短いセリフ）: 自分と部屋のみんなの車の上に吹き出しを出す ---
-  const emotePanel = document.getElementById('emotes')!;
+  // --- セリフ（エモート）: 設定で決めたセリフを、自分と部屋のみんなの車の上に吹き出しで出す ---
   const emoteFeed = document.getElementById('emote-feed')!;
-  emotePanel.innerHTML = EMOTES.map((text, i) => `<button type="button" data-emote="${i}"><kbd>${i + 1}</kbd>${escapeHtml(text)}</button>`).join('');
+  let emote = loadEmote();
   let lastEmoteAt = -Infinity;
-  const toggleEmotes = (open = emotePanel.classList.contains('hidden')) => emotePanel.classList.toggle('hidden', !open);
-  const showEmote = (id: number | null, e: number) => {
-    const text = EMOTES[e];
-    if (text === undefined) return;
+  const showEmote = (id: number | null, text: string) => {
     const self = id === null || id === net.id;
     if (self) attachBubble(carMesh.root, text);
     else remoteCars.showBubble(id, text);
@@ -722,19 +749,32 @@ async function main() {
     window.setTimeout(() => li.classList.add('fade'), 5000);
     window.setTimeout(() => li.remove(), 5500);
   };
-  const sendEmote = (e: number) => {
-    toggleEmotes(false);
+  const sendEmote = () => {
     const now = performance.now();
     if (now - lastEmoteAt < EMOTE_COOLDOWN_MS) return;
     lastEmoteAt = now;
     // 部屋にいるときはサーバーから返ってきたときに出す（みんなと同時に）
-    if (net.isOnline) net.send({ t: 'emote', e });
-    else showEmote(null, e);
+    if (net.isOnline) net.send({ t: 'emote', text: emote });
+    else showEmote(null, emote);
   };
-  emotePanel.addEventListener('click', (ev) => {
-    const b = (ev.target as HTMLElement).closest<HTMLButtonElement>('button[data-emote]');
-    if (b) sendEmote(Number(b.dataset.emote));
-  });
+  const editEmote = () => {
+    void confirmDialog
+      .askText({
+        title: 'セリフ',
+        en: 'MESSAGE',
+        lines: [`「セリフ」ボタン（キーボードは E）で言うセリフ。${MAX_EMOTE_LENGTH}文字まで。`],
+        ok: '決める',
+        safe: true,
+        value: emote,
+        maxLength: MAX_EMOTE_LENGTH,
+        placeholder: DEFAULT_EMOTE,
+      })
+      .then((text) => {
+        if (text === null) return;
+        emote = saveEmote(text);
+        menu.refresh();
+      });
+  };
 
   // --- オンライン対戦: 言い出した人がコース・時間帯・天気を決め、各自が車を選んで一斉にスタート ---
   /** 部屋の対戦の様子（サーバーから届いたもの） */
@@ -837,6 +877,14 @@ async function main() {
     const prev = roomRace;
     roomRace = r;
     if (r && r.seq === onlineSeq) onlineResult = r;
+    // 他の人がゴールしたら、まだ走っている自分に知らせる
+    if (r && prev?.seq === r.seq && r.seq === onlineSeq && race && raceMode === 'online' && race.phase === 'racing') {
+      r.finished.forEach((f, i) => {
+        if (f.id === net.id || prev.finished.some((p) => p.id === f.id)) return;
+        const info = remoteCars.list.find((p) => p.id === f.id);
+        raceHud.announceFinish(info?.name ?? '誰か', PLAYER_COLORS[(info?.color ?? 0) % PLAYER_COLORS.length], `${i + 1}位　${formatTime(f.time)}`);
+      });
+    }
     if (!r) {
       onlineRacePanel.update(null);
       // まだ走っている途中で対戦が終わった（言い出した人がやめた・打ち切り）
@@ -990,11 +1038,19 @@ async function main() {
     netStatus.classList.toggle('hidden', !online);
     if (!online) return;
     const state = net.status === 'online' ? '' : '（接続中…）';
-    const names = remoteCars.list.map((p) => p.name).join('、');
-    const raceNote = roomRace ? `<br>${roomRace.phase === 'entry' ? '対戦のエントリー中' : '対戦中'}` : '';
-    netStatus.innerHTML = `<span class="ns-label">ROOM</span> <span class="code">${roomCode}</span>${state}<br>${
-      names ? `一緒に走っている人: ${escapeHtml(names)}` : '他の人を待っています'
-    }${raceNote}`;
+    // 人数が増えても大きくならないよう、色の点を一列に並べ、名前は最初の人だけ出す
+    const others = remoteCars.list;
+    const dots = [carMesh.color, ...others.map((p) => PLAYER_COLORS[p.color % PLAYER_COLORS.length])]
+      .map((c) => `<span class="ns-dot" style="background:${hex(c)}"></span>`)
+      .join('');
+    const who = others.length === 0 ? '他の人を待っています' : `${escapeHtml(others[0].name)}${others.length > 1 ? ` ほか${others.length - 1}人` : ''}`;
+    // 対戦の様子は、人数の代わりに右上に出す（2行のまま）
+    const corner = roomRace
+      ? `<span class="ns-race">${roomRace.phase === 'entry' ? 'エントリー中' : '対戦中'}</span>`
+      : `<span class="ns-count">${others.length + 1}/${MAX_PLAYERS}</span>`;
+    netStatus.innerHTML =
+      `<div class="ns-head"><span class="ns-label">ROOM</span> <span class="code">${roomCode}</span>${state}${corner}</div>` +
+      `<div class="ns-who"><span class="ns-dots">${dots}</span><span class="ns-names">${who}</span></div>`;
   };
   /** トップメニューの「みんなで走る」「オンライン対戦」から部屋に入ろうとしている（入ったらそのコース選びへ進む） */
   let afterJoin: 'free' | 'race' | null = null;
@@ -1064,7 +1120,7 @@ async function main() {
           remoteHorn(m.id, m.on);
           break;
         case 'emote':
-          showEmote(m.id, m.e);
+          showEmote(m.id, m.text);
           break;
         case 'race':
           onRoomRace(m.race, m.by, m.start);
@@ -1143,8 +1199,7 @@ async function main() {
   keyboard.onAction('KeyH', () => hud.toggleHelp());
   keyboard.onAction('KeyK', () => race && raceMode === 'npc' && cycleNpcLevel());
   keyboard.onAction('KeyF', toggleLights);
-  keyboard.onAction('KeyE', () => toggleEmotes());
-  EMOTES.forEach((_, i) => keyboard.onAction(`Digit${i + 1}`, () => sendEmote(i)));
+  keyboard.onAction('KeyE', sendEmote);
 
   const gamepad = new GamepadInput();
   gamepad.onButton(PAD_BUTTON.north, cycleCamera);
@@ -1165,7 +1220,7 @@ async function main() {
       },
       { label: () => (lightsOn ? 'ライト ON' : 'ライト OFF'), run: toggleLights, place: 'side' },
       { label: () => 'ホーン', run: () => {}, hold: (down) => (hornInput.touch = down), place: 'side' },
-      { label: () => 'セリフ', run: () => toggleEmotes(), place: 'side' },
+      { label: () => 'セリフ', run: sendEmote, place: 'side' },
       { label: () => 'エントリー', run: () => onlineRacePanel.open(), visible: () => roomRace?.phase === 'entry' && !onlineRacePanel.isOpen },
     ],
     // ☰ は押すたびにポーズ画面を開く・閉じる
@@ -1514,6 +1569,16 @@ async function main() {
       ]),
     },
     {
+      label: () => 'セリフ',
+      // 長いセリフは一覧の幅に収まるよう途中まで（全部は押したときの入力の画面で見える）
+      value: () => ([...emote].length > 8 ? `${[...emote].slice(0, 7).join('')}…` : emote),
+      run: editEmote,
+      detail: settingDetail('セリフ', [
+        '「セリフ」ボタン（キーボードは E）を押したときに言うセリフ。押すと入力の画面が出ます。',
+        `自分の車の上に吹き出しで出て、部屋にいれば全員に見えます。${MAX_EMOTE_LENGTH}文字まで。空にすると最初のセリフに戻ります。`,
+      ]),
+    },
+    {
       label: () => 'プレイデータを消す',
       value: () => '消す',
       // まちがって消さないよう、確認の画面で「消す」を選んだときだけ消す
@@ -1789,6 +1854,7 @@ async function main() {
         r.update(dt, { x: curr.x, z: curr.z, ...velocityOf(curr) });
         if (r.phase === 'racing') ghostRecorder.sample(r.time, curr);
         handleRaceEvents(r);
+        announceNpcFinishes(r);
         judgeSuddenDeath();
         updateTalk();
         if (debugWhere) {

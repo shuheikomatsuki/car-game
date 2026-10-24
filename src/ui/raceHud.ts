@@ -51,6 +51,10 @@ export class RaceHud {
   private currentLapEl: HTMLElement | null = null;
   private readonly countdown = el('countdown');
   private readonly warning = el('race-warning');
+  private readonly notice = el('race-notice');
+  /** まだ出していない「〇〇がゴール」の知らせ（続けてゴールしたら順に出す） */
+  private readonly notices: { name: string; color: number; text: string }[] = [];
+  private noticeTimer: number | undefined;
   private readonly result = el('race-result');
   private readonly resultBody = el('race-result-body');
   private countdownTimer: number | undefined;
@@ -75,6 +79,7 @@ export class RaceHud {
   show(on: boolean): void {
     this.panel.classList.toggle('hidden', !on);
     this.shownLaps = -1;
+    this.clearNotices();
     document.body.classList.toggle('racing', on);
     if (!on) {
       this.hideResult();
@@ -176,10 +181,36 @@ export class RaceHud {
     this.splitTimer = window.setTimeout(() => this.splitEl.classList.remove('visible'), 3000);
   }
 
+  /** 他の車がゴールしたことを、少しの間だけ出す（自分がまだ走っている間） */
+  announceFinish(name: string, color: number, text: string): void {
+    this.notices.push({ name, color, text });
+    if (this.noticeTimer === undefined) this.nextNotice();
+  }
+
+  private nextNotice(): void {
+    const n = this.notices.shift();
+    if (!n) {
+      this.notice.classList.remove('visible');
+      this.noticeTimer = undefined;
+      return;
+    }
+    this.notice.innerHTML = `<span class="flag"></span><span class="dot" style="background:${hexColor(n.color)}"></span><b>${escapeHtml(n.name)}</b> がゴール<span class="detail">${escapeHtml(n.text)}</span>`;
+    this.notice.classList.add('visible');
+    this.noticeTimer = window.setTimeout(() => this.nextNotice(), 2800);
+  }
+
+  /** ゴールの知らせを片付ける（レースをやめたとき） */
+  clearNotices(): void {
+    this.notices.length = 0;
+    window.clearTimeout(this.noticeTimer);
+    this.noticeTimer = undefined;
+    this.notice.classList.remove('visible');
+  }
+
   setWarning(state: { wrongWay?: boolean; offCourse?: boolean }): void {
     this.wrongWay = state.wrongWay ?? this.wrongWay;
     this.offCourse = state.offCourse ?? this.offCourse;
-    const text = this.wrongWay ? '逆走しています' : this.offCourse ? 'コースに戻ってください（近道は周回に数えません）' : '';
+    const text = this.wrongWay ? '逆走しています' : this.offCourse ? '近道はできません　コースに戻します' : '';
     this.warning.textContent = text;
     this.warning.classList.toggle('visible', text !== '');
   }

@@ -193,6 +193,25 @@ describe('TimeAttack', () => {
     expect(events.some((e) => e.type === 'lap')).toBe(false);
   });
 
+  it('remembers where the car left the course so it can be put back after a shortcut', () => {
+    const race = new TimeAttack(course, 3);
+    for (let i = 0; i < COUNTDOWN_SECONDS / 0.05; i++) race.update(0.05, { x: 0, z: 0, vx: 0, vz: 0 });
+    const tiles = course.tiles;
+    const at = (t: { col: number; row: number }) => ({ x: t.col * size, z: t.row * size, vx: 0, vz: 0 });
+    race.update(0.05, at(tiles[tiles.length - 1]));
+    race.update(0.05, at(tiles[0]));
+    race.update(0.05, at(tiles[1]));
+    const left = course.project(tiles[1].col * size, tiles[1].row * size).s;
+    race.update(0.05, at(tiles[Math.floor(tiles.length / 3)]));
+    expect(race.drainEvents().some((e) => e.type === 'offCourse' && e.on)).toBe(true);
+    expect(race.rejoin()).toBeCloseTo(left, 5);
+    // 戻した所からまた走れば、警告が消えて周回も数える
+    race.update(0.05, at(tiles[1]));
+    expect(race.drainEvents()).toContainEqual({ type: 'offCourse', on: false });
+    for (let i = 2; i <= tiles.length; i++) race.update(0.05, at(tiles[i % tiles.length]));
+    expect(race.drainEvents().some((e) => e.type === 'lap')).toBe(true);
+  });
+
   it('warns when driving the wrong way', () => {
     const race = new TimeAttack(course, 3);
     for (let i = 0; i < COUNTDOWN_SECONDS / 0.05; i++) race.update(0.05, { x: 0, z: 0, vx: 0, vz: 0 });

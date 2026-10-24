@@ -199,7 +199,7 @@ export function handleMessage(
       if (a.lastEmote !== undefined && now - a.lastEmote < EMOTE_INTERVAL_MS) return;
       from.activity = { ...a, lastEmote: now, lastActive: now };
       // 自分にも返す（自分の車の上にも出す）
-      broadcast(all, null, { t: 'emote', id: info.id, e: message.e });
+      broadcast(all, null, { t: 'emote', id: info.id, text: message.text });
       break;
     }
     case 'raceOpen':

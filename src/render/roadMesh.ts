@@ -281,8 +281,8 @@ export function buildRoadMesh(road: RoadModel, obstacles: MapObstacles, ground: 
       }
     }
   }
-  if (edgeLines.length) add(geometry(edgeLines), new THREE.MeshBasicMaterial({ color: COLORS.line, ...layer(2) }), false);
-  if (centerLines.length) add(geometry(centerLines), new THREE.MeshBasicMaterial({ color: COLORS.centerLine, ...layer(2) }), false);
+  if (edgeLines.length) add(geometry(edgeLines), new THREE.MeshLambertMaterial({ color: COLORS.line, ...layer(2) }), false);
+  if (centerLines.length) add(geometry(centerLines), new THREE.MeshLambertMaterial({ color: COLORS.centerLine, ...layer(2) }), false);
 
   // --- 橋・高架の床と柱 ---
   const decks: number[] = [];

@@ -1,6 +1,4 @@
 import { describe, expect, it } from 'vitest';
-import { EMOTES } from '../game/emotes';
-import { EMOTE_COUNT } from '../net/protocol';
 import { lapsDone, rankOnline, standingsWindow } from './onlineRace';
 
 const e = (name: string, distance: number, total: number | null = null, isPlayer = false) => ({ name, color: 0, isPlayer, distance, total, laps: 0 });
@@ -22,10 +20,5 @@ describe('online race', () => {
     expect(lapsDone(2500, 1000, true, 3)).toBe(2);
     expect(lapsDone(5000, 1000, true, 3)).toBe(3);
     expect(lapsDone(2500, 1000, false, 1)).toBe(0);
-  });
-
-  it('has as many emotes as the protocol allows', () => {
-    expect(EMOTES).toHaveLength(EMOTE_COUNT);
-    expect(EMOTES).toContain('俺のRについて来れるか！？');
   });
 });
