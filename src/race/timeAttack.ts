@@ -47,6 +47,8 @@ export class TimeAttack {
   private readonly maxSkip: number;
   /** 直前にいたコース上の距離（立体交差や往復のコースで、どちらの道にいるかを取り違えないため）。最初はスタートライン */
   private hint: number | null = 0;
+  /** 最後に正しくコースを走っていた所のコース上の距離（近道をしたとき、ここへ戻す） */
+  private lastGoodS: number | null = null;
 
   constructor(
     readonly course: Course,
@@ -115,47 +117,63 @@ export class TimeAttack {
     const speed = Math.hypot(car.vx, car.vz);
     const p = this.course.project(car.x, car.z, { s: this.hint, dir: speed > 1 ? { x: car.vx / speed, z: car.vz / speed } : null });
     this.hint = p.s;
-    this.trackProgress(p.onCourse ? p.index : -1);
+    if (this.trackProgress(p.onCourse ? p.index : -1)) this.lastGoodS = p.s;
     this.checkDirection(dt, car);
   }
 
-  /** index はいまいる区間の番号（コースの外なら -1） */
-  private trackProgress(index: number): void {
-    if (!this.course.closed) {
-      this.trackOpen(index);
-      return;
-    }
+  /**
+   * 近道をしたとき、車を戻す所（最後に正しくコースを走っていた所）のコース上の距離。
+   * 戻した後に車の位置を取り違えないよう、ここから探し直す
+   */
+  rejoin(): number | null {
+    if (this.lastGoodS === null) return null;
+    this.hint = this.lastGoodS;
+    return this.lastGoodS;
+  }
+
+  /** index はいまいる区間の番号（コースの外なら -1）。正しくコースの上にいれば true */
+  private trackProgress(index: number): boolean {
+    if (!this.course.closed) return this.trackOpen(index);
     const n = this.course.checkpoints;
-    if (index < 0 || index === this.progress) return;
+    if (index < 0) return false;
     const ahead = (index - this.progress + n) % n;
-    // 後ろへ戻ったとき（半周より後ろ）は何もしない
-    if (ahead > n / 2) return;
+    // 同じ所か、後ろへ戻ったとき（半周より後ろ）は、コースに戻っただけ
+    if (ahead === 0 || ahead > n / 2) {
+      this.setOffCourse(false);
+      return true;
+    }
     if (ahead > this.maxSkip) {
       // 大きく先へ飛んだのは、コースを外れて近道をしたとき
       this.setOffCourse(true);
-      return;
+      return false;
     }
     this.setOffCourse(false);
     const crossed = index < this.progress;
     this.progress = index;
-    if (!crossed) return;
+    if (!crossed) return true;
     if (!this.started) {
       this.started = true;
-      return;
+      return true;
     }
     this.completeLap();
+    return true;
   }
 
   /** 一本道のコース: スタートからゴールのタイルまで順にたどったらゴール */
-  private trackOpen(index: number): void {
-    if (index < 0 || index <= this.progress) return;
+  private trackOpen(index: number): boolean {
+    if (index < 0) return false;
+    if (index <= this.progress) {
+      this.setOffCourse(false);
+      return true;
+    }
     if (index - this.progress > this.maxSkip) {
       this.setOffCourse(true);
-      return;
+      return false;
     }
     this.setOffCourse(false);
     this.progress = index;
     if (index >= this.course.finishIndex) this.completeLap();
+    return true;
   }
 
   private completeLap(): void {

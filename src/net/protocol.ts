@@ -4,7 +4,7 @@
  * 対戦の進行（エントリー・スタートの合図・ゴールの順）だけを管理する。
  */
 
-export const PROTOCOL_VERSION = 2;
+export const PROTOCOL_VERSION = 3;
 export const MAX_PLAYERS = 8;
 /** 名前の上限（文字数） */
 export const MAX_NAME_LENGTH = 10;
@@ -50,8 +50,8 @@ export interface RaceState {
   startedAt?: number;
 }
 
-/** 短いセリフ（エモート）の数。中身はクライアントの EMOTES */
-export const EMOTE_COUNT = 8;
+/** セリフ（エモート）の長さの上限（文字数） */
+export const MAX_EMOTE_LENGTH = 20;
 
 const TIMES = ['day', 'morning', 'night'];
 const WEATHER_IDS = ['clear', 'rain', 'fog'];
@@ -70,7 +70,7 @@ export type ClientMessage =
   | { t: 'map'; map: number }
   /** クラクションを鳴らし始める・止める */
   | { t: 'horn'; on: boolean }
-  | { t: 'emote'; e: number }
+  | { t: 'emote'; text: string }
   /** 対戦を言い出す（条件を決める） */
   | { t: 'raceOpen'; settings: RaceSettings }
   /** 対戦の準備 OK（その車で出る）・取り消し */
@@ -91,7 +91,7 @@ export type ServerMessage =
   | { t: 'state'; id: number; time: number; s: CarState; p?: number }
   | { t: 'map'; map: number; by: number }
   | { t: 'horn'; id: number; on: boolean }
-  | { t: 'emote'; id: number; e: number }
+  | { t: 'emote'; id: number; text: string }
   /** 対戦の様子が変わった（null は対戦なし）。start は、スタートの合図を出した直後だけ付く */
   | { t: 'race'; race: RaceState | null; by: number; start?: boolean }
   | { t: 'pong'; time: number }
@@ -114,6 +114,12 @@ export function normalizeRoomCode(input: string): string {
 export function sanitizeName(name: unknown): string {
   const s = typeof name === 'string' ? name.replace(/[\u0000-\u001f<>]/g, '').trim() : '';
   return [...s].slice(0, MAX_NAME_LENGTH).join('') || 'ゲスト';
+}
+
+/** セリフの文字を整える（制御文字と < > を除き、長すぎたら切る）。空なら '' */
+export function sanitizeEmote(text: unknown): string {
+  const s = typeof text === 'string' ? text.replace(/[\u0000-\u001f<>]/g, '').trim() : '';
+  return [...s].slice(0, MAX_EMOTE_LENGTH).join('');
 }
 
 const finite = (v: unknown): v is number => typeof v === 'number' && Number.isFinite(v);
@@ -155,8 +161,10 @@ export function parseClientMessage(raw: string): ClientMessage | null {
     }
     case 'horn':
       return typeof o.on === 'boolean' ? { t: 'horn', on: o.on } : null;
-    case 'emote':
-      return finite(o.e) && o.e >= 0 && o.e < EMOTE_COUNT ? { t: 'emote', e: Math.trunc(o.e) } : null;
+    case 'emote': {
+      const text = sanitizeEmote(o.text);
+      return text ? { t: 'emote', text } : null;
+    }
     case 'raceOpen': {
       const settings = parseSettings(o.settings);
       return settings ? { t: 'raceOpen', settings } : null;

@@ -3141,48 +3141,10 @@ body.in-scene #countdown {
 }
 
 /* --- エモート: 選ぶ札（上の真ん中）と、言ったことの流れ（左） --- */
-#emotes {
-  position: fixed;
-  bottom: calc(env(safe-area-inset-bottom) + 110px);
-  left: 50%;
-  z-index: 7;
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 4px;
-  width: min(460px, calc(100vw - 24px));
-  padding: 8px;
-  transform: translateX(-50%);
-  background: var(--panel);
-  border-top: 3px solid var(--accent);
-}
 
-#emotes.hidden {
-  display: none;
-}
 
-#emotes button {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  min-height: 36px;
-  padding: 6px 10px;
-  font: inherit;
-  font-size: 13px;
-  font-weight: 700;
-  color: var(--text);
-  text-align: left;
-  border: 0;
-  background: rgba(255, 255, 255, 0.07);
-  cursor: pointer;
-}
 
-#emotes button:hover {
-  background: var(--accent);
-}
 
-#emotes kbd {
-  flex: 0 0 auto;
-}
 
 #emote-feed {
   position: fixed;
@@ -3222,18 +3184,6 @@ body.touch #emote-feed {
 }
 
 @media (max-height: 540px) and (orientation: landscape) {
-  #emotes {
-    bottom: calc(env(safe-area-inset-bottom) + 64px);
-    grid-template-columns: repeat(4, minmax(0, 1fr));
-    width: min(560px, calc(100vw - 240px));
-  }
-  #emotes button {
-    min-height: 32px;
-    font-size: 11px;
-  }
-  #emotes kbd {
-    display: none;
-  }
   #emote-feed li {
     font-size: 11px;
   }
@@ -3705,4 +3655,160 @@ body:not(.touch) #race-result {
 
 #ranking-table th:first-child {
   text-align: center;
+}
+
+/* 他の車がゴールした知らせ（真ん中より少し上。周回の表示・逆走の警告と重ならない所）。チェッカーの小旗を付ける */
+#race-notice {
+  position: fixed;
+  top: 40%;
+  left: 50%;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  max-width: calc(100vw - 32px);
+  padding: 7px 20px 7px 14px;
+  background: rgba(14, 16, 22, 0.86);
+  border-top: 2px solid #f2f2f2;
+  clip-path: polygon(10px 0, 100% 0, calc(100% - 10px) 100%, 0 100%);
+  font-size: 16px;
+  white-space: nowrap;
+  opacity: 0;
+  transform: translate(-50%, -6px);
+  transition: opacity 0.2s, transform 0.2s;
+  pointer-events: none;
+  z-index: 6;
+}
+
+#race-notice.visible {
+  opacity: 1;
+  transform: translate(-50%, 0);
+}
+
+#race-notice .flag {
+  width: 18px;
+  height: 12px;
+  flex: none;
+  background: conic-gradient(#111 25%, #f2f2f2 0 50%, #111 0 75%, #f2f2f2 0) 0 0 / 6px 6px;
+}
+
+#race-notice .dot {
+  width: 9px;
+  height: 9px;
+  flex: none;
+  border-radius: 50%;
+}
+
+#race-notice b {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+#race-notice .detail {
+  margin-left: 6px;
+  font-family: var(--display);
+  font-style: italic;
+  font-weight: 700;
+  color: var(--muted);
+}
+
+body.touch #race-notice {
+  font-size: 14px;
+}
+
+/* 部屋の表示: 人数が増えても高さが変わらないよう、色の点を一列に並べ、名前は1人だけ */
+#net-status {
+  width: 196px;
+  line-height: 1.5;
+}
+
+#net-status .ns-head {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+}
+
+#net-status .ns-count {
+  margin-left: auto;
+  font-family: var(--display);
+  font-style: italic;
+  font-weight: 700;
+  font-size: 12px;
+  color: var(--muted);
+}
+
+#net-status .ns-who {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 2px 7px;
+  margin-top: 3px;
+  min-width: 0;
+}
+
+#net-status .ns-dots {
+  display: flex;
+  flex: none;
+  gap: 3px;
+}
+
+#net-status .ns-dot {
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.5);
+}
+
+#net-status .ns-names {
+  min-width: 64px;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 12px;
+}
+
+#net-status .ns-race {
+  margin-left: auto;
+  padding: 0 6px;
+  background: var(--accent);
+  font-size: 11px;
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+body.touch #net-status {
+  width: 150px;
+  padding: 6px 10px;
+  font-size: 12px;
+}
+
+body.touch #net-status .ns-dots {
+  gap: 2px;
+}
+
+body.touch #net-status .ns-dot {
+  width: 7px;
+  height: 7px;
+}
+
+body.touch #net-status .ns-names {
+  min-width: 40px;
+}
+
+/* 文字を入れる確認の画面（セリフなど）: 消すときの赤ではなく、いつもの差し色 */
+#confirm.safe .dialog-panel {
+  border-top-color: var(--accent);
+}
+
+#confirm.safe h2 .en {
+  color: var(--muted);
+}
+
+#confirm-input {
+  margin-top: 10px;
+  font-size: 16px;
+}
+
+#confirm-input.hidden {
+  display: none;
 }

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { isRoomCode, normalizeRoomCode, parseClientMessage, randomRoomCode, sanitizeName } from './protocol';
+import { MAX_EMOTE_LENGTH, isRoomCode, normalizeRoomCode, parseClientMessage, randomRoomCode, sanitizeName } from './protocol';
 
 describe('protocol', () => {
   it('makes and checks room codes', () => {
@@ -25,8 +25,12 @@ describe('protocol', () => {
     expect(parseClientMessage('{"t":"profile","lights":true}')).toEqual({ t: 'profile', lights: true });
     expect(parseClientMessage('{"t":"profile"}')).toBeNull();
     expect(parseClientMessage('{"t":"horn","on":true}')).toEqual({ t: 'horn', on: true });
-    expect(parseClientMessage('{"t":"emote","e":3}')).toEqual({ t: 'emote', e: 3 });
-    expect(parseClientMessage('{"t":"emote","e":99}')).toBeNull();
+    expect(parseClientMessage('{"t":"emote","text":" よろしく！ "}')).toEqual({ t: 'emote', text: 'よろしく！' });
+    // 長すぎるセリフは切る。< > は除き、空なら受け取らない
+    expect(parseClientMessage(JSON.stringify({ t: 'emote', text: 'あ'.repeat(30) }))).toEqual({ t: 'emote', text: 'あ'.repeat(MAX_EMOTE_LENGTH) });
+    expect(parseClientMessage('{"t":"emote","text":"<b>"}')).toEqual({ t: 'emote', text: 'b' });
+    expect(parseClientMessage('{"t":"emote","text":"  "}')).toBeNull();
+    expect(parseClientMessage('{"t":"emote","e":3}')).toBeNull();
     expect(parseClientMessage('{"t":"raceOpen","settings":{"map":2,"time":"night","weather":"rain"}}')).toEqual({
       t: 'raceOpen',
       settings: { map: 2, time: 'night', weather: 'rain' },

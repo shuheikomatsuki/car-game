@@ -31,7 +31,7 @@
       <div><kbd>T</kbd> タイムアタック　<kbd>Y</kbd> NPCと対戦（<kbd>K</kbd> 強さ・<kbd>N</kbd> コース）</div>
       <div><kbd>B</kbd> ライバルとバトル（相手は <kbd>Esc</kbd> メニューで選ぶ）</div>
       <div><kbd>N</kbd> マップ切替　<kbd>P</kbd> 車の切替　<kbd>R</kbd> リセット</div>
-      <div><kbd>F</kbd> ライト　<kbd>G</kbd> クラクション　<kbd>E</kbd>/<kbd>1</kbd>〜<kbd>8</kbd> セリフ</div>
+      <div><kbd>F</kbd> ライト　<kbd>G</kbd> クラクション　<kbd>E</kbd> セリフ</div>
       <div><kbd>O</kbd> みんなで走る（オンライン・対戦は <kbd>Esc</kbd> メニューから）</div>
       <div><kbd>M</kbd> 効果音 <span id="sound-state"></span>　<kbd>H</kbd> ヘルプ表示</div>
       <div id="gamepad-state" class="hidden">🎮 ゲームパッド: 左スティック / RT / LT・Y カメラ・START リセット・BACK マップ</div>
@@ -80,6 +80,7 @@
       <div class="dialog-panel">
         <h2 id="confirm-title"></h2>
         <div id="confirm-text"></div>
+        <input id="confirm-input" class="hidden" type="text" autocomplete="off" enterkeyhint="done" />
         <div class="dialog-buttons">
           <button id="confirm-cancel" type="button">やめる</button>
           <button id="confirm-ok" type="button" class="danger">消す</button>
@@ -112,7 +113,6 @@
         </div>
       </div>
     </div>
-    <div id="emotes" class="hidden" role="dialog" aria-label="セリフ"></div>
     <ul id="emote-feed" aria-live="polite"></ul>
     <div id="touch" class="hidden">
       <div id="touch-top">
@@ -169,6 +169,7 @@
     <div id="minimap" class="hidden"></div>
     <div id="countdown"></div>
     <div id="race-warning"></div>
+    <div id="race-notice" aria-live="polite"></div>
     <div id="race-result" class="hidden">
       <h2 id="race-result-title">ゴール！</h2>
       <div id="race-result-body"></div>
