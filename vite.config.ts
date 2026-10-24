@@ -8,5 +8,7 @@ export default defineConfig({
   },
   test: {
     environment: 'node',
+    // 重い NPC のシミュレーション（*.sim.test.ts）を CPU の数だけ並列に走らせる（既定は1つ少ない）
+    maxWorkers: '100%',
   },
 });

@@ -7,8 +7,19 @@ function el<T extends HTMLElement = HTMLElement>(id: string): T {
 }
 
 const NAME_KEY = 'car-game:name';
+/** 最後に入った部屋のコード（抜けた後・次に開いたときに、同じ部屋へすぐ入り直せるように） */
+const ROOM_KEY = 'car-game:room';
 
-/** みんなで走るときとランキングで使う名前（このブラウザに保存） */
+function loadLastRoom(): string {
+  try {
+    const code = localStorage.getItem(ROOM_KEY) ?? '';
+    return isRoomCode(code) ? code : '';
+  } catch {
+    return '';
+  }
+}
+
+/** オンラインの部屋とランキングで使う名前（このブラウザに保存） */
 export function loadPlayerName(): string {
   try {
     // 上限を決める前に保存した長い名前は、上限までにする
@@ -32,7 +43,7 @@ export interface OnlinePanelHandlers {
   onOpenChange: (open: boolean) => void;
 }
 
-/** 「みんなで走る」画面: 名前と部屋コードを入れて参加する */
+/** オンラインの部屋に入る画面: 名前と部屋コードを入れて参加する */
 export class OnlinePanel {
   private readonly root = el('online');
   private readonly name = el<HTMLInputElement>('online-name');
@@ -52,7 +63,7 @@ export class OnlinePanel {
     this.name.maxLength = MAX_NAME_LENGTH;
     this.room.maxLength = ROOM_CODE_LENGTH;
     this.name.value = loadPlayerName();
-    this.room.value = randomRoomCode();
+    this.room.value = loadLastRoom() || randomRoomCode();
     this.room.addEventListener('input', () => {
       this.room.value = normalizeRoomCode(this.room.value).slice(0, ROOM_CODE_LENGTH);
       this.refresh();
@@ -143,6 +154,11 @@ export class OnlinePanel {
     if (this.join.disabled) return;
     const name = this.name.value.trim();
     savePlayerName(name);
+    try {
+      localStorage.setItem(ROOM_KEY, this.room.value);
+    } catch {
+      // 保存できない環境
+    }
     this.handlers.onJoin(name, this.room.value);
   }
 

@@ -70,7 +70,7 @@ export interface MenuItem {
   run: () => void;
   visible?: () => boolean;
   detail?: () => DetailView;
-  /** トップ画面でプレイモードと同じ大きさで出す（みんなで走る・オンライン対戦など） */
+  /** トップ画面でプレイモードと同じ大きさで出す（オンラインなど） */
   major?: boolean;
 }
 
@@ -409,7 +409,7 @@ export class GameMenu {
     if (!isMode) {
       const heading: Record<Exclude<Stage, 'title' | 'mode'>, [string, string, string]> = {
         home: ['MAIN MENU', 'TOP', 'プレイモード'],
-        pause: ['PAUSE', 'PAUSE', 'ポーズ'],
+        pause: ['MENU', 'MENU', 'メニュー'],
         settings: ['OPTIONS', 'OPTIONS', '設定'],
       };
       const [crumb, en, title] = heading[stage];

@@ -79,12 +79,21 @@ function updateRace(all: readonly Connection[], store: RoomStore, race: RaceStat
   broadcast(all, null, { t: 'race', race, by, ...(start ? { start } : {}) });
 }
 
-/** その人を対戦から外す（言い出した人がエントリー中に抜けたら対戦ごとやめる） */
-function leaveRace(all: readonly Connection[], store: RoomStore, id: number): void {
+/**
+ * その人を対戦から外す（言い出した人がエントリー中に抜けたら対戦ごとやめる）。
+ * skip: 部屋にはいたまま、エントリー中の対戦を見送る（部屋から抜けたときは false）
+ */
+function leaveRace(all: readonly Connection[], store: RoomStore, id: number, skip = false): void {
   const race = store.getRace();
   if (!race) return;
   if (race.phase === 'entry' && race.host === id) {
     updateRace(all, store, null, id);
+    return;
+  }
+  if (race.phase === 'entry') {
+    const out = race.out.filter((o) => o !== id);
+    if (!skip && out.length === race.out.length && !race.entrants.includes(id)) return;
+    updateRace(all, store, { ...race, entrants: race.entrants.filter((e) => e !== id), out: skip ? [...out, id] : out }, id);
     return;
   }
   if (!race.entrants.includes(id)) return;
@@ -94,10 +103,10 @@ function leaveRace(all: readonly Connection[], store: RoomStore, id: number): vo
   updateRace(all, store, { ...race, entrants: race.entrants.filter((e) => e !== id) }, id);
 }
 
-/** 部屋にいる全員が準備 OK か */
-export function allReady(all: readonly Connection[], race: RaceState): boolean {
+/** 部屋にいる全員が、準備 OK か見送りを選んだか */
+export function allDecided(all: readonly Connection[], race: RaceState): boolean {
   const ids = all.flatMap((c) => (c.info ? [c.info.id] : []));
-  return ids.length > 0 && ids.every((id) => race.entrants.includes(id));
+  return ids.length > 0 && ids.every((id) => race.entrants.includes(id) || race.out.includes(id));
 }
 
 function handleRace(from: Connection, all: readonly Connection[], message: ClientMessage, store: RoomStore, now: number): void {
@@ -105,10 +114,14 @@ function handleRace(from: Connection, all: readonly Connection[], message: Clien
   const race = store.getRace();
   switch (message.t) {
     case 'raceOpen':
-      // 対戦中は言い出せない。エントリー中は言い出した人だけが条件を変えられる
-      if (race && (race.phase === 'racing' || race.host !== info.id)) return;
+      // 対戦中は言い出せない。エントリー中は言い出した人だけが条件を変えられる。
+      // 何人かがほぼ同時に言い出したら、先に届いた人が主催になる（後の人には、いまの対戦を知らせ直す）
+      if (race && (race.phase === 'racing' || race.host !== info.id)) {
+        if (race) from.send({ t: 'race', race, by: race.host });
+        return;
+      }
       store.setMap(message.settings.map);
-      updateRace(all, store, { phase: 'entry', settings: message.settings, host: info.id, entrants: [], finished: [], seq: (race?.seq ?? 0) + 1 }, info.id);
+      updateRace(all, store, { phase: 'entry', settings: message.settings, host: info.id, entrants: [], out: [], finished: [], seq: (race?.seq ?? 0) + 1 }, info.id);
       break;
     case 'raceReady': {
       if (race?.phase !== 'entry') return;
@@ -117,11 +130,12 @@ function handleRace(from: Connection, all: readonly Connection[], message: Clien
         broadcast(all, from, { t: 'profile', player: from.info });
       }
       const others = race.entrants.filter((id) => id !== info.id);
-      updateRace(all, store, { ...race, entrants: message.ready ? [...others, info.id] : others }, info.id);
+      updateRace(all, store, { ...race, entrants: message.ready ? [...others, info.id] : others, out: race.out.filter((id) => id !== info.id) }, info.id);
       break;
     }
     case 'raceStart':
-      if (race?.phase !== 'entry' || race.host !== info.id || !allReady(all, race)) return;
+      // 準備 OK の人が1人もいなければ始められない（まだ選んでいる人は、今回は見ているだけ）
+      if (race?.phase !== 'entry' || race.host !== info.id || race.entrants.length === 0) return;
       updateRace(all, store, { ...race, phase: 'racing', startedAt: now }, info.id, true);
       break;
     case 'raceFinish':
@@ -132,7 +146,7 @@ function handleRace(from: Connection, all: readonly Connection[], message: Clien
     case 'raceCancel':
       if (!race) return;
       if (race.host === info.id) updateRace(all, store, null, info.id);
-      else leaveRace(all, store, info.id);
+      else leaveRace(all, store, info.id, true);
       break;
   }
 }

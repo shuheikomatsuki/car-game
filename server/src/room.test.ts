@@ -227,19 +227,19 @@ describe('room race', () => {
     const { room, a, b, c } = threePlayers();
     room.send(a, { t: 'raceOpen', settings });
     expect(room.store.getMap()).toBe(3);
-    expect(lastRace(b)?.race).toMatchObject({ phase: 'entry', settings, host: 1, entrants: [], seq: 1 });
+    expect(lastRace(b)?.race).toMatchObject({ phase: 'entry', settings, host: 1, entrants: [], out: [], seq: 1 });
+    c.take();
+    // 準備 OK の人がいなければスタートできない
+    room.send(a, { t: 'raceStart' });
+    expect(lastRace(c)).toBeUndefined();
     room.send(b, { t: 'raceReady', ready: true, car: 'fd3s' });
     room.send(a, { t: 'raceReady', ready: true, car: 'ae86' });
     // エントリー中に他の人は条件を変えられず、コースも変えられない
-    room.send(c, { t: 'raceOpen', settings: { ...settings, map: 1 } });
     room.send(c, { t: 'map', map: 5 });
     expect(room.store.getMap()).toBe(3);
     const msgs = c.take();
     expect(msgs.find((m) => m.t === 'profile')).toEqual({ t: 'profile', player: { id: 2, name: 'b', car: 'fd3s', color: 1, lights: false } });
     expect((msgs.filter((m) => m.t === 'race').at(-1) as Extract<ServerMessage, { t: 'race' }>).race?.entrants).toEqual([2, 1]);
-    // 全員が準備 OK になるまではスタートできない
-    room.send(a, { t: 'raceStart' });
-    expect(lastRace(c)).toBeUndefined();
     room.send(c, { t: 'raceReady', ready: true, car: 'ae86' });
     c.take();
     // 言い出した人だけがスタートできる
@@ -248,9 +248,57 @@ describe('room race', () => {
     room.clock.now = 5000;
     room.send(a, { t: 'raceStart' });
     expect(lastRace(c)).toMatchObject({ start: true, race: { phase: 'racing', entrants: [2, 1, 3], startedAt: 5000 } });
-    // 対戦中は新しく言い出せない
+    // 対戦中は新しく言い出せない（言い出した人には、いまの対戦を知らせ直す）
+    a.take();
     room.send(c, { t: 'raceOpen', settings });
-    expect(lastRace(c)).toBeUndefined();
+    expect(room.store.getRace()?.phase).toBe('racing');
+    expect(lastRace(c)).toMatchObject({ race: { phase: 'racing' }, by: 1 });
+    expect(lastRace(a)).toBeUndefined();
+  });
+
+  it('keeps the first host when two players open an entry at the same time', () => {
+    const { room, a, b, c } = threePlayers();
+    room.send(a, { t: 'raceOpen', settings });
+    room.send(b, { t: 'raceOpen', settings: { ...settings, map: 1 } });
+    expect(room.store.getRace()).toMatchObject({ host: 1, settings, seq: 1 });
+    expect(room.store.getMap()).toBe(3);
+    // 後から言い出した人には、先の人の対戦がもう一度届く。他の人には届かない
+    expect(lastRace(b)).toMatchObject({ race: { host: 1, settings }, by: 1 });
+    expect(c.take().filter((m) => m.t === 'race')).toHaveLength(1);
+  });
+
+  it('lets players skip the race, and late comers enter it', () => {
+    const { room, a, b, c } = threePlayers();
+    room.send(a, { t: 'raceOpen', settings });
+    room.send(a, { t: 'raceReady', ready: true, car: 'ae86' });
+    // 主催以外の「見送る」は、部屋に残ったまま今回だけ出ない
+    room.send(b, { t: 'raceReady', ready: true, car: 'ae86' });
+    room.send(b, { t: 'raceCancel' });
+    expect(room.store.getRace()).toMatchObject({ entrants: [1], out: [2] });
+    // 見送った人も、思い直せば出られる
+    room.send(b, { t: 'raceReady', ready: true, car: 'fd3s' });
+    expect(room.store.getRace()).toMatchObject({ entrants: [1, 2], out: [] });
+    room.send(c, { t: 'raceCancel' });
+    // エントリー中に来た人も出られる
+    const d = room.connect();
+    room.hello(d, 'd');
+    expect(d.take()[0]).toMatchObject({ t: 'welcome', race: { phase: 'entry', entrants: [1, 2], out: [3] } });
+    room.send(d, { t: 'raceReady', ready: true, car: 'ek9' });
+    // 見送った人が部屋を抜けたら、見送りの一覧からも消す
+    room.disconnect(c);
+    expect(room.store.getRace()).toMatchObject({ entrants: [1, 2, 4], out: [] });
+    room.send(a, { t: 'raceStart' });
+    expect(room.store.getRace()).toMatchObject({ phase: 'racing', entrants: [1, 2, 4] });
+  });
+
+  it('starts with only the ready players while others are still choosing', () => {
+    const { room, a, b, c } = threePlayers();
+    room.send(a, { t: 'raceOpen', settings });
+    room.send(b, { t: 'raceReady', ready: true, car: 'ae86' });
+    room.send(a, { t: 'raceStart' });
+    // 主催が準備 OK でなくても、準備 OK の人だけで始められる（主催と c は見ているだけ）
+    expect(room.store.getRace()).toMatchObject({ phase: 'racing', entrants: [2] });
+    expect(lastRace(c)).toMatchObject({ start: true });
   });
 
   it('records finishes in order and ends when everyone has finished', () => {

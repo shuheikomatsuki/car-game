@@ -785,6 +785,8 @@ async function main() {
   /** 自分が走っているオンライン対戦の番号と、その最後の様子（全員ゴールして終わった後も結果に使う） */
   let onlineSeq: number | null = null;
   let onlineResult: RaceState | null = null;
+  /** 対戦を言い出して、まだ返事が来ていない（ほぼ同時に他の人が言い出していたら、そちらに参加する） */
+  let raceOpenSent = false;
   /** 対戦の条件に合わせる（コース・時間帯・天気） */
   const applyRaceSettings = (st: RaceSettings) => {
     if (st.map !== mapIndex && st.map >= 0 && st.map < MAPS.length) loadMap(st.map, `対戦のコース「${MAPS[st.map].name}」に移動しました`);
@@ -879,6 +881,9 @@ async function main() {
   function onRoomRace(r: RaceState | null, by: number, start = false) {
     const prev = roomRace;
     roomRace = r;
+    // 言い出したのに、先に他の人が言い出していた: その人の対戦のエントリー画面を開く
+    const beaten = raceOpenSent && r?.phase === 'entry' && r.host !== net.id;
+    raceOpenSent = false;
     if (r && r.seq === onlineSeq) onlineResult = r;
     // 他の人がゴールしたら、まだ走っている自分に知らせる
     if (r && prev?.seq === r.seq && r.seq === onlineSeq && race && raceMode === 'online' && race.phase === 'racing') {
@@ -906,8 +911,9 @@ async function main() {
       }
       applyRaceSettings(r.settings);
       onlineRacePanel.update(onlineRaceView());
-      if (isNew) {
-        if (by !== net.id) hud.toast(`${nameOf(by)} がオンライン対戦を始めました。車を選んで準備OKにしてください`);
+      if (isNew || beaten) {
+        if (beaten && !isNew) hud.toast(`先に ${nameOf(r.host)} がエントリーを始めていました。こちらに参加してください`);
+        else if (by !== net.id) hud.toast(`${nameOf(by)} がオンライン対戦を始めました。車を選んで準備OK（または見送る）にしてください`);
         menu.close();
         rankingPanel.close();
         onlinePanel.close();
@@ -1061,8 +1067,6 @@ async function main() {
       `<div class="ns-head"><span class="ns-label">ROOM</span> <span class="code">${roomCode}</span>${state}${corner}</div>` +
       `<div class="ns-who"><span class="ns-dots">${dots}</span><span class="ns-names">${who}</span></div>`;
   };
-  /** トップメニューの「みんなで走る」「オンライン対戦」から部屋に入ろうとしている（入ったらそのコース選びへ進む） */
-  let afterJoin: 'free' | 'race' | null = null;
   const net: NetClient = new NetClient({
     onStatus: (status, detail) => {
       if (status === 'offline' || status === 'error' || status === 'reconnecting') {
@@ -1101,16 +1105,10 @@ async function main() {
           assignedColor = PLAYER_COLORS[m.color % PLAYER_COLORS.length];
           carMesh.setColor(assignedColor);
           if (m.map !== mapIndex && m.map >= 0 && m.map < MAPS.length) loadMap(m.map, `部屋のマップ「${MAPS[m.map].name}」に移動しました`);
-          hud.toast(`部屋 ${roomCode} に参加しました`);
-          {
-            const next = afterJoin;
-            afterJoin = null;
-            onlinePanel.close();
-            if (m.race) onRoomRace(m.race, m.race.host);
-            // トップメニューから参加した: 部屋で対戦していなければ、コース選びへ（いまの部屋のコースを選んだ状態で）
-            else if (next === 'race') menu.openFlow(onlineRaceMode);
-            else if (next === 'free') menu.openFlow(onlineFreeMode);
-          }
+          hud.toast(`部屋 ${roomCode} に参加しました。対戦はメニューの「対戦のエントリーを始める」から`);
+          onlinePanel.close();
+          // 部屋でエントリー中なら、そのエントリー画面が開く（途中から来ても出られる）
+          if (m.race) onRoomRace(m.race, m.race.host);
           if (m.race?.phase === 'racing') hud.toast('部屋ではオンライン対戦の最中です（終わったら参加できます）');
           break;
         case 'join':
@@ -1160,8 +1158,6 @@ async function main() {
       onOpenChange: (open) => {
         keyboard.enabled = !open;
         touch.enabled = !open;
-        // 参加せずに閉じたら、コース選びに進むのはやめる
-        if (!open && (net.status === 'offline' || net.status === 'error')) afterJoin = null;
       },
     },
     serverUrl !== '',
@@ -1179,10 +1175,23 @@ async function main() {
         }
         net.send({ t: 'raceReady', ready, car });
       },
-      onStart: () => net.send({ t: 'raceStart' }),
+      onStart: (undecided) => {
+        if (undecided === 0) return net.send({ t: 'raceStart' });
+        void confirmDialog
+          .ask({
+            title: '準備OKの人だけでスタート',
+            en: 'START',
+            lines: [`まだ${undecided}人が車を選んでいます。`, 'いまスタートすると、その人は今回は見ているだけになります。'],
+            ok: 'スタート',
+            safe: true,
+          })
+          .then((ok) => ok && net.send({ t: 'raceStart' }));
+      },
       onLeave: () => {
+        const isHost = roomRace?.host === net.id;
         net.send({ t: 'raceCancel' });
         onlineRacePanel.close();
+        if (!isHost) hud.toast('今回の対戦は見送ります。出るときはメニューの「エントリー画面」から');
       },
       onOpenChange: (open) => {
         keyboard.enabled = !open;
@@ -1621,94 +1630,104 @@ async function main() {
     },
   ];
   const openSettings = { label: () => '設定', en: 'OPTIONS', run: () => menu.openSettings(), detail: settingDetail('設定', ['カメラ・サウンド・ハンドルなど。']) };
+  /** オンラインの部屋に入る画面を開く（入った後はその部屋のコースをそのまま走る。対戦はメニューから） */
+  const openJoin = () => {
+    menu.close();
+    onlinePanel.open('友だちと同じ部屋コードを入れて「参加する」。入った後は、メニューの「対戦のエントリーを始める」で部屋のみんなとレースできます。');
+  };
   const onlineItem: MenuItem = {
-    label: () => 'みんなで走る',
+    label: () => 'オンライン',
     en: 'ONLINE',
-    note: () => (net.isOnline ? `部屋 ${roomCode} に参加中` : '部屋のみんなと自由に走る（対戦もできます）'),
+    note: () => (net.isOnline ? `部屋 ${roomCode} に参加中` : '部屋のみんなと走る・対戦する'),
     major: true,
     run: () => {
-      // 部屋に入っていればコース・車選びへ。まだなら部屋に入ってから進む
-      if (net.isOnline) return menu.openFlow(onlineFreeMode);
+      if (!net.isOnline) return openJoin();
       menu.close();
-      onlinePanel.open('友だちと同じ部屋コードを入れて「参加する」を押すと、コース・車選びに進みます。');
-      afterJoin = 'free';
+      if (roomRace?.phase === 'entry') onlineRacePanel.open();
     },
-    detail: modeDetail('みんなで走る', 'ONLINE', [
-      '同じ部屋コードを入れた人と、同じコースを一緒に自由に走れます（最大8人）。',
-      '部屋に入るとコースを選べます。コースを変えると、部屋の全員が同じコースに移動します。',
-      '部屋に入ったまま、トップメニューの「オンライン対戦」で部屋のみんなとレースもできます。',
+    detail: modeDetail('オンライン', 'ONLINE', [
+      '同じ部屋コードを入れた人と、同じコースを一緒に走れます（最大8人）。',
+      '部屋に入ったら、メニュー（Esc・☰）の「対戦のエントリーを始める」でコースと時間帯・天気を決めて、部屋のみんなとレースできます。',
+      'メニューの「コース・車などを変える」でコースを変えると、部屋の全員が同じコースに移動します。',
     ]),
   };
-  /** 部屋のみんなと自由に走る: コースを選ぶと部屋の全員がそのコースへ（車は各自） */
-  const onlineFreeMode: MenuMode = {
-    id: 'onlineFree',
-    label: 'みんなで走る',
-    en: 'ONLINE',
-    note: '部屋のみんなと自由に走る',
-    detail: onlineItem.detail!,
-    begin: () => beginDraft(false),
-    screens: () => [courseScreen(false, undefined, '選んだコースに、部屋の全員が一緒に移動します。'), carScreen],
-    summary: () => `部屋 ${roomCode} ／ ${draftMap().name} ／ ${draftCar().label}`,
-    finish: () => applyDraft('free'),
-    finishLabel: '走る',
-  };
-  /** 自由に走っている間に、コースと車を選び直す（ポーズ画面から。部屋にいれば全員が移動する） */
+  /** 自由に走っている間に、コースと車などを選び直す（メニューから。部屋にいれば全員が移動する） */
   const freeChangeMode: MenuMode = {
-    ...onlineFreeMode,
     id: 'freeChange',
     label: 'コース・車などを変える',
     en: 'CHANGE',
+    note: 'コース・車・時間帯と天気を選び直す',
+    detail: modeDetail('コース・車などを変える', 'CHANGE', ['いまのまま自由に走りながら、コース・車・時間帯・天気を選び直す。']),
+    begin: () => beginDraft(false),
     screens: () => [courseScreen(false, undefined, net.isOnline ? '選んだコースに、部屋の全員が一緒に移動します。' : undefined), carScreen, envScreen],
     summary: () => `${draftMap().name} ／ ${draftCar().label} ／ ${envSummary()}`,
+    finish: () => applyDraft('free'),
+    finishLabel: '走る',
   };
   /** オンライン対戦を言い出す: コースと時間帯・天気を決める（車は各自がエントリー画面で選ぶ） */
   const onlineRaceMode: MenuMode = {
     id: 'onlineRace',
-    label: 'オンライン対戦',
-    en: 'ONLINE RACE',
+    label: '対戦のエントリー',
+    en: 'ENTRY',
     note: '部屋のみんなとレース',
-    detail: modeDetail('オンライン対戦', 'ONLINE RACE', ['コースと時間帯・天気を決めると、部屋の全員にエントリー画面が開きます。', '各自が車を選んで準備OKにしたら、スタートで一斉にカウントダウン。'], 'VERSUS'),
+    detail: modeDetail('対戦のエントリー', 'ONLINE ENTRY', ['コースと時間帯・天気を決めると、部屋の全員にエントリー画面が開きます。', '各自が車を選んで準備OKにしたら、スタートで一斉にカウントダウン。']),
     begin: () => beginDraft(true),
     screens: () => [courseScreen(true), envScreen],
     summary: () => `${draftMap().name} ／ ${envSummary()}`,
     finish: () => {
+      // 選んでいる間に、他の人がエントリーを始めていた・部屋から抜けていた
+      if (!net.isOnline) return hud.toast('部屋から抜けたので、エントリーを始められませんでした');
+      if (roomRace && roomRace.host !== net.id) return openRaceEntry();
       const map = MAPS.findIndex((m) => m.id === draft.map);
+      raceOpenSent = true;
       net.send({ t: 'raceOpen', settings: { map, time: draft.time, weather: draft.weather } });
     },
     finishLabel: 'エントリー開始',
   };
-  const onlineRaceItem: MenuItem = {
-    label: () => (roomRace ? 'エントリー画面' : 'オンライン対戦'),
-    en: 'ONLINE RACE',
-    run: () => {
-      if (!net.isOnline) {
-        // 部屋に入ってから、そのままコース選びへ進む（部屋でエントリー中なら、そのエントリー画面へ）
-        menu.close();
-        onlinePanel.open('対戦する部屋に参加します。友だちと同じ部屋コードを入れて「参加する」を押すと、コース選びに進みます。');
-        afterJoin = 'race';
-      } else if (roomRace?.phase === 'entry') {
-        menu.close();
-        onlineRacePanel.open();
-      } else if (!roomRace) {
-        menu.openFlow(onlineRaceMode);
-      } else {
-        hud.toast('いまは対戦の最中です。終わったら始められます');
-      }
-    },
-    note: () => (net.isOnline ? '部屋のみんなとレース' : '部屋に参加してレース'),
-    major: true,
-    visible: () => !(race && raceMode === 'online'),
-    detail: modeDetail(
-      'オンライン対戦',
-      'ONLINE RACE',
-      [
-        '部屋のみんなと同じコース・同じ条件でレースする。',
-        'まだ部屋に入っていなければ、部屋コードを入れて参加してからコース選びに進みます。',
-        'コースと時間帯・天気を決めた人が主催になり、全員が車を選んで準備OKにしたらスタートします。',
-      ],
-      'VERSUS',
-    ),
+  /** オンライン対戦のエントリーを始める（コースと時間帯・天気を選ぶ画面へ） */
+  const openRaceEntry = () => {
+    if (roomRace?.phase === 'entry') {
+      menu.close();
+      onlineRacePanel.open();
+    } else if (roomRace) hud.toast('いまは対戦の最中です。終わったら始められます');
+    else menu.openFlow(onlineRaceMode);
   };
+  const raceEntryItems: MenuItem[] = [
+    {
+      label: () => '対戦のエントリーを始める',
+      en: 'ENTRY',
+      run: openRaceEntry,
+      visible: () => net.isOnline && !roomRace && !(race && raceMode === 'online'),
+      detail: () =>
+        settingDetail('対戦のエントリーを始める', [
+          `部屋 ${roomCode} のみんなとレースする。コースと時間帯・天気を決めると、あなたが主催になって全員にエントリー画面が開きます。`,
+          '各自が車を選んで準備OK（または今回は見送る）にしたら、主催の「スタート」で一斉にカウントダウン。',
+          '先に誰かがエントリーを始めていたら、その対戦に参加します（同時に始めても、主催は1人だけです）。',
+        ])(),
+    },
+    {
+      label: () => 'エントリー画面',
+      en: 'ENTRY',
+      run: openRaceEntry,
+      visible: () => roomRace?.phase === 'entry',
+      detail: () =>
+        settingDetail('エントリー画面', [
+          roomRace && roomRace.host === net.id ? 'あなたが主催の対戦のエントリー画面を開く。' : `${nameOf(roomRace?.host ?? 0)} さんが始めた対戦のエントリー画面を開く。途中から部屋に来ても参加できます。`,
+          '車を選んで準備OKにするか、今回は見送るかを選べます。',
+        ])(),
+    },
+    {
+      label: () => '部屋に入る',
+      en: 'JOIN ROOM',
+      run: openJoin,
+      visible: () => serverUrl !== '' && !net.isOnline && race === null,
+      detail: () =>
+        settingDetail('部屋に入る', [
+          '部屋コードを入れて、オンラインの部屋に入る。前に入った部屋のコードが入った状態で開きます。',
+          '入った後は、部屋のいまのコースをそのまま走れます。',
+        ])(),
+    },
+  ];
   const rankingItem: MenuItem = {
     label: () => 'ランキング',
     en: 'RANKING',
@@ -1726,7 +1745,7 @@ async function main() {
   const menu = new GameMenu(
     menuModes,
     {
-      home: [onlineItem, onlineRaceItem, rankingItem, openSettings],
+      home: [onlineItem, rankingItem, openSettings],
       pause: [
         {
           label: () => (race && raceMode === 'online' ? 'コースに戻る' : 'やり直す'),
@@ -1750,6 +1769,7 @@ async function main() {
             ])(),
         },
         { label: () => (raceMode === 'online' ? '対戦から抜ける' : 'レースをやめる'), en: 'QUIT RACE', run: () => (menu.close(), stopRace()), visible: () => race !== null, detail: pauseDetail },
+        ...raceEntryItems,
         {
           label: () => '部屋から抜ける',
           en: 'LEAVE ROOM',
@@ -1758,9 +1778,9 @@ async function main() {
             leaveRoom();
           },
           visible: () => net.isOnline,
-          detail: () => settingDetail('部屋から抜ける', [`部屋 ${roomCode} から退出して、ひとりで走る。`, race && raceMode === 'online' ? '走っている対戦も途中でやめます。' : 'また「みんなで走る」から参加できます。'])(),
+          detail: () => settingDetail('部屋から抜ける', [`部屋 ${roomCode} から退出して、ひとりで走る。`, race && raceMode === 'online' ? '走っている対戦も途中でやめます。' : 'このメニューの「部屋に入る」から、また入れます。'])(),
         },
-        { label: () => 'タイトルに戻る', en: 'TITLE', run: () => menu.openTitle(), detail: settingDetail('タイトルに戻る', ['最初のタイトル画面に戻る。何か押すと、プレイモード・コースを選び直せます。オンラインの部屋もそこから。']) },
+        { label: () => 'タイトルに戻る', en: 'TITLE', run: () => menu.openTitle(), detail: settingDetail('タイトルに戻る', ['最初のタイトル画面に戻る。何か押すと、プレイモード・コースを選び直せます。']) },
         { ...rankingItem, visible: () => board !== null && race !== null && raceMode === 'timeAttack' },
         openSettings,
       ],

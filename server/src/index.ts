@@ -31,7 +31,11 @@ export class Room extends DurableObject<Env> {
   private readonly store: RoomStore = {
     getMap: () => this.ctx.storage.kv.get<number>('map') ?? 0,
     setMap: (map) => this.ctx.storage.kv.put('map', map),
-    getRace: () => this.ctx.storage.kv.get<RaceState>('race') ?? null,
+    getRace: () => {
+      const race = this.ctx.storage.kv.get<RaceState>('race');
+      // 見送り（out）を入れる前に保存した対戦にも対応する
+      return race ? { ...race, out: race.out ?? [] } : null;
+    },
     setRace: (race) => (race ? this.ctx.storage.kv.put('race', race) : this.ctx.storage.kv.delete('race')),
   };
 

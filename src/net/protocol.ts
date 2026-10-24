@@ -4,7 +4,7 @@
  * 対戦の進行（エントリー・スタートの合図・ゴールの順）だけを管理する。
  */
 
-export const PROTOCOL_VERSION = 3;
+export const PROTOCOL_VERSION = 4;
 export const MAX_PLAYERS = 8;
 /** 名前の上限（文字数） */
 export const MAX_NAME_LENGTH = 10;
@@ -33,7 +33,8 @@ export interface RaceSettings {
 
 /**
  * 部屋の対戦の様子。
- * entry: エントリー中（各自が車を選んで準備 OK にする）、racing: スタートの合図を出した後
+ * entry: エントリー中（各自が車を選んで準備 OK か見送りにする）、racing: スタートの合図を出した後。
+ * エントリー中に部屋に来た人も、そのまま準備 OK にして出られる
  */
 export interface RaceState {
   phase: 'entry' | 'racing';
@@ -42,6 +43,8 @@ export interface RaceState {
   host: number;
   /** 準備 OK の人（並ぶ順） */
   entrants: number[];
+  /** 今回は見送る人（主催は、全員が準備 OK か見送りになるのを待ってスタートできる） */
+  out: number[];
   /** ゴールした人とタイム [s]（ゴールした順） */
   finished: { id: number; time: number }[];
   /** 何回目の対戦か（古い対戦の知らせを取り違えないため） */
@@ -75,11 +78,11 @@ export type ClientMessage =
   | { t: 'raceOpen'; settings: RaceSettings }
   /** 対戦の準備 OK（その車で出る）・取り消し */
   | { t: 'raceReady'; ready: boolean; car: string }
-  /** 言い出した人がスタートの合図を出す */
+  /** 言い出した人がスタートの合図を出す（まだ選んでいる人がいれば、その人は見ているだけになる） */
   | { t: 'raceStart' }
   /** ゴールした（time [s]） */
   | { t: 'raceFinish'; seq: number; time: number }
-  /** 言い出した人が対戦をやめる（全員）・自分だけ抜ける */
+  /** 言い出した人が対戦をやめる（全員）・自分だけ抜ける（エントリー中なら見送る） */
   | { t: 'raceCancel' }
   | { t: 'ping'; time: number };
 
