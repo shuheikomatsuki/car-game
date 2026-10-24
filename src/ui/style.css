@@ -1427,6 +1427,8 @@ body.touch .title-press .tap {
   position: relative;
   min-height: 100%;
   overflow: hidden;
+  /* 飾りの文字の大きさを、説明の欄の幅に合わせるため */
+  container-type: inline-size;
 }
 
 .d-plain .d-body {
@@ -1435,12 +1437,14 @@ body.touch .title-press .tap {
 
 .d-big {
   position: absolute;
-  right: -10px;
-  bottom: -30px;
+  /* 欄からはみ出さない位置（文字の下のすき間の分だけ下げる） */
+  right: 16px;
+  bottom: -0.12em;
   font-family: var(--display);
   font-style: italic;
   font-weight: 900;
-  font-size: clamp(120px, 16vw, 260px);
+  /* 6文字（BATTLE・VERSUS など）でも欄に収まる大きさ。どのモードも同じ大きさにする */
+  font-size: min(clamp(120px, 16vw, 260px), 21cqw);
   line-height: 1;
   color: transparent;
   -webkit-text-stroke: 1px rgba(255, 255, 255, 0.1);
@@ -1735,8 +1739,8 @@ body.touch .menu-keys {
     line-height: 1.6;
   }
   .d-plain .d-big {
-    bottom: -16px;
-    font-size: 96px;
+    right: 10px;
+    font-size: min(96px, 21cqw);
   }
   .d-hero {
     height: 150px;

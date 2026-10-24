@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { VEHICLE_PRESETS } from '../sim/vehicle';
-import { paramsForWeather } from './environment';
+import { defaultOpponentLights, paramsForWeather } from './environment';
 
 describe('paramsForWeather', () => {
   const params = VEHICLE_PRESETS[0].params;
@@ -16,5 +16,15 @@ describe('paramsForWeather', () => {
     expect(wet.lateralGrip).toBeLessThan(params.lateralGrip);
     expect(wet.brakeDecel).toBeLessThan(params.brakeDecel);
     expect(wet.maxForwardSpeed).toBe(params.maxForwardSpeed);
+  });
+});
+
+describe('defaultOpponentLights', () => {
+  it('turns the lights off on clear mornings and days only', () => {
+    expect(defaultOpponentLights({ time: 'morning', weather: 'clear' })).toBe(false);
+    expect(defaultOpponentLights({ time: 'day', weather: 'clear' })).toBe(false);
+    expect(defaultOpponentLights({ time: 'day', weather: 'rain' })).toBe(true);
+    expect(defaultOpponentLights({ time: 'morning', weather: 'fog' })).toBe(true);
+    expect(defaultOpponentLights({ time: 'night', weather: 'clear' })).toBe(true);
   });
 });

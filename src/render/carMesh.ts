@@ -106,12 +106,15 @@ function strut(
 }
 
 /** 箱を組み合わせた簡易な乗用車モデル。前輪の舵角・タイヤの回転・ハンドルの回転を反映する */
-/** ランプの色（消えているとき・ついているとき） */
-const LIGHT_COLORS = { headOff: 0xcfd2cc, headOn: 0xfffbea, tailOff: 0x8a1a1a, tailOn: 0xff2a1e };
+/**
+ * ランプの色。消えているときはまわりの光で照らされるだけの色（夜は暗く見える）、
+ * ついているときは自分で光る色を足す
+ */
+const LIGHT_COLORS = { headOff: 0x9da19c, headOn: 0xfffbea, tailOff: 0x6e1414, tailOn: 0xff2a1e };
 
 export class CarMesh {
-  private headMat: THREE.MeshBasicMaterial | null = null;
-  private tailMat: THREE.MeshBasicMaterial | null = null;
+  private headMat: THREE.MeshLambertMaterial | null = null;
+  private tailMat: THREE.MeshLambertMaterial | null = null;
   private lightsOn = false;
   readonly root = new THREE.Group();
   private readonly frontPivots: THREE.Group[] = [];
@@ -172,8 +175,8 @@ export class CarMesh {
     const [innerR, outerR] = this.style.tailRadii ?? [0.1, 0.1];
     const roundGeo = (r: number) => new THREE.CylinderGeometry(r, r, 0.05, 16).rotateX(Math.PI / 2);
     const tailGeos = [roundGeo(innerR), roundGeo(outerR)];
-    const headMat = new THREE.MeshBasicMaterial({ color: LIGHT_COLORS.headOff });
-    const tailMat = new THREE.MeshBasicMaterial({ color: LIGHT_COLORS.tailOff });
+    const headMat = new THREE.MeshLambertMaterial({ color: LIGHT_COLORS.headOff });
+    const tailMat = new THREE.MeshLambertMaterial({ color: LIGHT_COLORS.tailOff });
     this.headMat = headMat;
     this.tailMat = tailMat;
     for (const s of [-1, 1]) {
@@ -392,8 +395,8 @@ export class CarMesh {
   setLights(on: boolean): void {
     if (on === this.lightsOn) return;
     this.lightsOn = on;
-    this.headMat?.color.setHex(on ? LIGHT_COLORS.headOn : LIGHT_COLORS.headOff);
-    this.tailMat?.color.setHex(on ? LIGHT_COLORS.tailOn : LIGHT_COLORS.tailOff);
+    this.headMat?.emissive.setHex(on ? LIGHT_COLORS.headOn : 0x000000);
+    this.tailMat?.emissive.setHex(on ? LIGHT_COLORS.tailOn : 0x000000);
   }
 
   setColor(color: number): void {

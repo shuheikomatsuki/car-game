@@ -8,7 +8,7 @@
  * ただしブラウザのデータはその人が書き換えられるので、ずるを確実に防ぐにはサーバーで持つ必要がある。
  */
 
-export const SAVE_VERSION = 1;
+export const SAVE_VERSION = 2;
 const VERSION_KEY = 'car-game:save-version';
 
 type SaveStorage = Pick<Storage, 'length' | 'key' | 'getItem' | 'setItem' | 'removeItem'>;
@@ -17,6 +17,13 @@ type SaveStorage = Pick<Storage, 'length' | 'key' | 'getItem' | 'setItem' | 'rem
 const MIGRATIONS: readonly ((storage: SaveStorage) => void)[] = [
   // 0 → 1: 版を記録し始めただけ。データはそのまま使える
   () => {},
+  // 1 → 2: タイムアタックの記録とランキングを、コースの形の版ごとに分けた（src/map/courseRevision.ts）。
+  // 前の記録はどの形のコースで走ったかわからない（ゴーストが道路の外を走る）ので消す
+  (storage) => {
+    const old = ['car-game:time-attack:v1:', 'car-game:uploaded:v1:', 'car-game:my-entry:v1:'];
+    const keys = Array.from({ length: storage.length }, (_, i) => storage.key(i) ?? '');
+    for (const k of keys) if (old.some((p) => k.startsWith(p))) storage.removeItem(k);
+  },
 ];
 
 /** 保存されている版（記録がなければ 0） */
