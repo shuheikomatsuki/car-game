@@ -18,7 +18,7 @@ import { LeaderboardClient, myEntryId, playerId, uploadedTotal } from './net/lea
 import { type GhostData, type GhostPose, GhostRecorder, ghostPoseAt } from './race/ghost';
 import { NPC_LEVELS } from './race/npcDriver';
 import { RIVALS, type Rival, loadBeatenRivals, markRivalBeaten, rivalLevel } from './race/rivals';
-import { type BattleContext, BattleDialogue, type BattleEvent, OvertakeWatcher, type RivalDialogue, dialogueApplies, sceneLines } from './race/dialogue';
+import { type BattleContext, BattleDialogue, type BattleEvent, EdgeWatcher, OvertakeWatcher, type RivalDialogue, dialogueApplies, insideOf, sceneLines, turnAround, wentWide } from './race/dialogue';
 import { CHARACTERS, RIVAL_DIALOGUES } from './race/dialogueScript';
 import { CHASE_START_GAP, type Runner, SAFE_SECONDS, SuddenDeath } from './race/suddenDeath';
 import { type RaceRecord, loadRecord, mergeRecord, saveRecord } from './race/records';
@@ -210,11 +210,14 @@ async function main() {
   };
   const subtitles = new Subtitles(speakerOf, (name) => sound.effect(name));
   /** いまのバトルのセリフ（セリフの無いライバルや、得意なコース以外では null） */
-  let talk: { script: RivalDialogue; ctx: BattleContext; lines: BattleDialogue; overtakes: OvertakeWatcher } | null = null;
+  let talk: { script: RivalDialogue; ctx: BattleContext; lines: BattleDialogue; overtakes: OvertakeWatcher; wide: EdgeWatcher; inside: boolean } | null = null;
   let lastImpact = 0;
   const debugWhere = params.has('debug') ? document.body.appendChild(Object.assign(document.createElement('div'), { id: 'debug-where' })) : null;
   /** バトルのルール */
   let battleRule: BattleRule = 'side';
+  /** ライバルにラフプレーをさせるか（できるライバルだけ） */
+  let battleRough = false;
+  const roughOn = () => battleRough && !!battleRival().rough;
   /** 先行後追いのバトルの進行（それ以外のレースでは null） */
   let suddenDeath: SuddenDeath | null = null;
   let nextRoundTimer: number | undefined;
@@ -303,7 +306,7 @@ async function main() {
       : raceMode === 'npc'
       ? `NPC対戦（${NPC_LEVELS[npcLevelIndex].label}）`
       : raceMode === 'battle'
-        ? `バトル（${battleRival().name}${battleRule === 'side' ? '' : '・先行後追い'}）`
+        ? `バトル（${battleRival().name}${battleRule === 'side' ? '' : '・先行後追い'}${roughOn() ? '・ラフプレー' : ''}）`
         : 'タイムアタック';
 
   /**
@@ -353,7 +356,7 @@ async function main() {
       const r = battleRival();
       const preset = VEHICLE_PRESETS.find((v) => v.id === r.car) ?? VEHICLE_PRESETS[0];
       const style = carStyle(preset.id);
-      const entry = { name: r.name, color: style.color, level: rivalLevel(r), params: paramsForWeather(preset.params, env.weather), style, variation: 1 };
+      const entry = { name: r.name, color: style.color, level: rivalLevel(r), params: paramsForWeather(preset.params, env.weather), style, variation: 1, rough: roughOn() ? r.rough : null };
       if (suddenDeath) {
         // 先行が前、後追いはその後ろに同じ列で並ぶ
         const lead = course.gridSpot(6);
@@ -398,7 +401,7 @@ async function main() {
       time: env.time,
     };
     if (!dialogueApplies(script, ctx)) return;
-    talk = { script, ctx, lines: new BattleDialogue(script.race ?? [], ctx), overtakes: new OvertakeWatcher() };
+    talk = { script, ctx, lines: new BattleDialogue(script.race ?? [], ctx), overtakes: new OvertakeWatcher(), wide: new EdgeWatcher(), inside: false };
     const intro = nextRound ? (script.intro ?? []).filter((sc) => sc.when?.round !== undefined) : script.intro;
     subtitles.playScene(sceneLines(intro, ctx), () => {});
   }
@@ -422,6 +425,13 @@ async function main() {
     if (pass) events.push(pass);
     if (lastImpact > CRASH_THRESHOLD) events.push('crash');
     const course = race.course;
+    // コーナーでの位置: ライバルが外へはみ出したか・自分がインから抜いたか
+    const rp = course.project(npc.curr.x, npc.curr.z, { s: npc.curr.courseS ?? null });
+    const turn = turnAround(course, rp.s);
+    if (t.wide.update(wentWide(turn, rp.offset, level.offRoadDistance(npc.curr.x, npc.curr.z, npc.curr.courseS) ?? 0))) events.push('rivalWide');
+    // 抜いたと分かるのは少し前に出てからなので、横に並んでいた間にインにいたかを覚えておく
+    if (Math.abs(signedGap) < 4) t.inside = insideOf(turn, course.project(curr.x, curr.z, { s: curr.courseS ?? null }).offset, rp.offset);
+    if (pass === 'overtake' && t.inside) events.push('overtakeInside');
     const lapDistance = course.closed ? mine - (race.lap - 1) * course.length : mine;
     const progress = Math.min(1, Math.max(0, mine / (course.length * (course.closed ? race.totalLaps : 1))));
     subtitles.say(
@@ -1253,6 +1263,7 @@ async function main() {
     npc: NPC_LEVELS[npcLevelIndex].id,
     rival: battleRival().id,
     rule: battleRule as BattleRule,
+    rough: battleRough,
     time: env.time,
     weather: env.weather,
     opponentLights,
@@ -1274,6 +1285,7 @@ async function main() {
     draft.npc = NPC_LEVELS[npcLevelIndex].id;
     draft.rival = battleRival().id;
     draft.rule = battleRule;
+    draft.rough = battleRough;
     draft.time = env.time;
     draft.weather = env.weather;
     draft.opponentLights = opponentLights;
@@ -1299,6 +1311,7 @@ async function main() {
     npcLevelIndex = Math.max(0, NPC_LEVELS.findIndex((l) => l.id === draft.npc));
     battleIndex = Math.max(0, RIVALS.findIndex((r) => r.id === draft.rival));
     battleRule = draft.rule;
+    battleRough = draft.rough;
     opponentLights = draft.opponentLights;
     if (mode === 'free') stopRace();
     const map = MAPS.findIndex((m) => m.id === draft.map);
@@ -1397,30 +1410,52 @@ async function main() {
       return rivalDetail(r, rivalLevel(r), { car: carLabel(r.car), course: [mapLabel(r.course), rivalConditionsLabel(r)].filter(Boolean).join('・'), beaten: loadBeatenRivals().has(r.id) }, carPreview);
     },
   };
+  const ruleGroup: MenuGroup = {
+    title: 'ルール',
+    choices: () => BATTLE_RULES,
+    selected: () => draft.rule,
+    select: (id) => (draft.rule = id as BattleRule),
+  };
+  /** ラフプレー（できるライバルのときだけ出す） */
+  const roughGroup: MenuGroup = {
+    title: 'ラフプレー',
+    choices: () => [
+      { id: 'off', label: 'なし' },
+      { id: 'on', label: 'あり', note: 'ぶつけてくる' },
+    ],
+    selected: () => (draft.rough ? 'on' : 'off'),
+    select: (id) => (draft.rough = id === 'on'),
+  };
   const ruleScreen: MenuScreen = {
     title: 'ルール',
     en: 'RULE',
-    groups: [
-      {
-        choices: () => BATTLE_RULES,
-        selected: () => draft.rule,
-        select: (id) => (draft.rule = id as BattleRule),
-      },
-    ],
+    get groups() {
+      return draftRival().rough ? [ruleGroup, roughGroup] : [ruleGroup];
+    },
     detail: () => {
       const rule = BATTLE_RULES.find((r) => r.id === draft.rule)!;
+      const r = draftRival();
+      const rough = r.rough
+        ? [
+            draft.rough
+              ? `ラフプレーあり: ${r.name}はコーナーの手前で並びかけ、ぶつけてコースの外へ押し出そうとしてくる。並ばれたら気をつけて。`
+              : `ラフプレーなし（「あり」にすると、${r.name}がコーナーの手前でぶつけてくる）。`,
+          ]
+        : [];
       return textDetail({
-        kicker: `VS ${draftRival().name}`,
+        kicker: `VS ${r.name}`,
         title: rule.label,
         big: draft.rule === 'side' ? '1:1' : 'SD',
-        lines:
-          draft.rule === 'side'
+        lines: [
+          ...(draft.rule === 'side'
             ? ['2台が横に並んでスタートし、先にゴールしたほうの勝ち。']
             : [
                 `先行と後追いに分かれて1本ずつ走り、ゴールの時点で判定する（サドンデス）。`,
                 `後追いが抜いて先にゴールすれば後追いの勝ち。後追いが先行から ${SAFE_SECONDS}秒より遅れてゴールすれば先行の勝ち。`,
                 `${SAFE_SECONDS}秒以内に続いてゴールすれば引き分けで、先行と後追いを入れ替えて次の1本へ。`,
-              ],
+              ]),
+          ...rough,
+        ],
       });
     },
   };
@@ -1521,7 +1556,7 @@ async function main() {
         draftRivalDefaults();
       },
       screens: () => [rivalScreen, ruleScreen, courseScreen(true, draftRival().course), carScreen, opponentEnvScreen],
-      summary: () => `VS ${draftRival().name} ／ ${BATTLE_RULES.find((r) => r.id === draft.rule)!.label} ／ ${draftMap().name} ／ ${draftCar().label}`,
+      summary: () => `VS ${draftRival().name} ／ ${BATTLE_RULES.find((r) => r.id === draft.rule)!.label}${draft.rough && draftRival().rough ? '・ラフプレー' : ''} ／ ${draftMap().name} ／ ${draftCar().label}`,
       finish: () => applyDraft('battle'),
     },
   ];
@@ -1853,6 +1888,9 @@ async function main() {
       level.physics.world.timestep = dt;
       level.car.applyInput(input, dt);
       npcField?.applyInputs(dt, race?.canDrive ?? false, [curr]);
+      // ラフプレーのライバルにぶつけられたら、外へ押し出されてスピンしかける
+      const hit = npcField?.takeHit();
+      if (hit && !fall.falling) level.car.bump(hit.push, hit.yawRate);
       level.physics.world.step();
       npcField?.afterStep(dt);
 
