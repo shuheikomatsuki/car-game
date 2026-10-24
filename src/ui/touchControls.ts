@@ -117,9 +117,20 @@ export class TouchControls {
         });
         for (const type of ['pointerup', 'pointercancel', 'lostpointercapture'] as const) button.addEventListener(type, () => hold(false));
       } else {
-        button.addEventListener('click', () => {
+        // click は別の指が画面に触れている（アクセルを踏んでいる・ハンドルを切っている）と届かないことがある（iPhone の Safari など）。
+        // 指を置いたときに反応させる
+        const run = () => {
           action.run();
           this.refresh();
+        };
+        button.addEventListener('pointerdown', (e) => {
+          if (e.pointerType === 'mouse' && e.button !== 0) return;
+          e.preventDefault();
+          run();
+        });
+        // キーボードで押したとき（pointerdown を伴わない click）
+        button.addEventListener('click', (e) => {
+          if (e.detail === 0) run();
         });
       }
       (action.place === 'side' ? sideBar : quickBar).appendChild(button);

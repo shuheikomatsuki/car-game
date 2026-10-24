@@ -681,10 +681,18 @@ async function main() {
       sound.horn(id, false);
       return;
     }
+    sound.horn(id, true, remoteHornVolume(id));
+    remoteHornTimers.set(id, window.setTimeout(() => sound.horn(id, false), HORN_MAX_MS));
+  };
+  /** 他の人のクラクションの大きさ: 遠いほど小さく、HORN_RANGE 以上離れると聞こえない */
+  const remoteHornVolume = (id: number) => {
     const p = remoteCars.positionOf(id, performance.now());
     const d = p ? Math.hypot(p.x - curr.x, p.z - curr.z) : HORN_RANGE;
-    sound.horn(id, true, Math.max(0, 1 - d / HORN_RANGE));
-    remoteHornTimers.set(id, window.setTimeout(() => sound.horn(id, false), HORN_MAX_MS));
+    return Math.max(0, 1 - d / HORN_RANGE);
+  };
+  /** 鳴らしている間に近づいたり離れたりしたら、大きさを変える */
+  const updateRemoteHornVolumes = () => {
+    for (const id of remoteHornTimers.keys()) sound.setHornVolume(id, remoteHornVolume(id));
   };
 
   // --- エモート（短いセリフ）: 自分と部屋のみんなの車の上に吹き出しを出す ---
@@ -982,6 +990,8 @@ async function main() {
       names ? `一緒に走っている人: ${escapeHtml(names)}` : '他の人を待っています'
     }${raceNote}`;
   };
+  /** トップメニューの「オンライン対戦」から部屋に入ろうとしている（入ったらコース選びへ進む） */
+  let raceAfterJoin = false;
   const net: NetClient = new NetClient({
     onStatus: (status, detail) => {
       if (status === 'offline' || status === 'error' || status === 'reconnecting') {
@@ -1021,18 +1031,27 @@ async function main() {
           carMesh.setColor(assignedColor);
           if (m.map !== mapIndex && m.map >= 0 && m.map < MAPS.length) loadMap(m.map, `部屋のマップ「${MAPS[m.map].name}」に移動しました`);
           hud.toast(`部屋 ${roomCode} に参加しました`);
-          onlinePanel.close();
-          if (m.race) onRoomRace(m.race, m.race.host);
+          {
+            const wantsRace = raceAfterJoin;
+            raceAfterJoin = false;
+            onlinePanel.close();
+            if (m.race) onRoomRace(m.race, m.race.host);
+            // トップメニューの「オンライン対戦」から参加した: 部屋で対戦していなければ、コース選びへ
+            else if (wantsRace) menu.openFlow(onlineRaceMode);
+          }
           if (m.race?.phase === 'racing') hud.toast('部屋ではオンライン対戦の最中です（終わったら参加できます）');
           break;
         case 'join':
           remoteCars.add(m.player);
           hud.toast(`${m.player.name} が来ました`);
+          // エントリー中なら、来た人の準備OKも待つ
+          if (roomRace?.phase === 'entry') onlineRacePanel.update(onlineRaceView());
           break;
         case 'leave':
           hud.toast(`${nameOf(m.id)} が抜けました`);
           remoteHorn(m.id, false);
           remoteCars.remove(m.id);
+          if (roomRace?.phase === 'entry') onlineRacePanel.update(onlineRaceView());
           break;
         case 'horn':
           remoteHorn(m.id, m.on);
@@ -1069,6 +1088,8 @@ async function main() {
       onOpenChange: (open) => {
         keyboard.enabled = !open;
         touch.enabled = !open;
+        // 参加せずに閉じたら、対戦に進むのはやめる
+        if (!open && (net.status === 'offline' || net.status === 'error')) raceAfterJoin = false;
       },
     },
     serverUrl !== '',
@@ -1347,12 +1368,8 @@ async function main() {
       kicker: en,
       title,
       big: en.split(' ')[0],
+      // コース・車・時間帯はこの後の画面で選ぶので、ここには出さない
       lines,
-      specs: [
-        ['コース', level.def.name],
-        ['車', vehicle().label],
-        ['時間帯・天気', `${TIMES_OF_DAY.find((t) => t.id === env.time)!.label}・${WEATHERS.find((w) => w.id === env.weather)!.label}`],
-      ],
     });
   const menuModes: MenuMode[] = [
     {
@@ -1426,7 +1443,7 @@ async function main() {
         mirrors.mode = MIRROR_MODES[(i + 1) % MIRROR_MODES.length].id;
         saveMirrorMode(mirrors.mode);
       },
-      detail: settingDetail('ミラー', ['走っているときに出すミラー。押すたびに「なし → バックミラー → バック＋サイド」と切り替わります。', '古いスマホで重いときは「なし」にしてください。']),
+      detail: settingDetail('ミラー', ['走っているときに出すミラー。押すたびに「なし → バックミラー → サイドのみ → バック＋サイド」と切り替わります。', '古いスマホで重いときは「なし」にしてください。']),
     },
     { label: () => '効果音', value: () => (sound.isMuted ? 'OFF' : 'ON'), run: toggleMute, detail: settingDetail('効果音', ['エンジン音・タイヤの音・ぶつかった音。M キーでも切り替えられます。']) },
     {
@@ -1498,13 +1515,16 @@ async function main() {
   const onlineItem: MenuItem = {
     label: () => 'みんなで走る',
     en: 'ONLINE',
-    note: () => (net.isOnline ? `部屋 ${roomCode} に参加中` : '部屋のみんなと同じマップを走る'),
+    note: () => (net.isOnline ? `部屋 ${roomCode} に参加中` : '部屋のみんなと自由に走る（対戦もできます）'),
     major: true,
     run: () => {
       menu.close();
       onlinePanel.open();
     },
-    detail: settingDetail('みんなで走る（オンライン）', ['同じ部屋コードを入れた人と、同じマップを一緒に走れます（最大8人）。']),
+    detail: settingDetail('みんなで走る（オンライン）', [
+      '同じ部屋コードを入れた人と、同じマップを一緒に自由に走れます（最大8人）。',
+      '部屋に入ったまま、トップメニューの「オンライン対戦」で部屋のみんなとレースもできます。',
+    ]),
   };
   /** オンライン対戦を言い出す: コースと時間帯・天気を決める（車は各自がエントリー画面で選ぶ） */
   const onlineRaceMode: MenuMode = {
@@ -1527,9 +1547,10 @@ async function main() {
     en: 'ONLINE RACE',
     run: () => {
       if (!net.isOnline) {
+        // 部屋に入ってから、そのままコース選びへ進む（部屋でエントリー中なら、そのエントリー画面へ）
         menu.close();
-        onlinePanel.open();
-        hud.toast('先に「みんなで走る」で部屋に参加してください');
+        onlinePanel.open('対戦する部屋に参加します。友だちと同じ部屋コードを入れて「参加する」を押すと、コース選びに進みます。');
+        raceAfterJoin = true;
       } else if (roomRace?.phase === 'entry') {
         menu.close();
         onlineRacePanel.open();
@@ -1539,10 +1560,14 @@ async function main() {
         hud.toast('いまは対戦の最中です。終わったら始められます');
       }
     },
-    note: () => (net.isOnline ? '部屋のみんなとレース' : '部屋に参加すると選べます'),
+    note: () => (net.isOnline ? '部屋のみんなとレース' : '部屋に参加してレース'),
     major: true,
     visible: () => !(race && raceMode === 'online'),
-    detail: settingDetail('オンライン対戦', ['部屋のみんなと同じコース・同じ条件でレースする。', 'コースと時間帯・天気を決めた人が主催になり、各自が車を選んでからスタートします。']),
+    detail: settingDetail('オンライン対戦', [
+      '部屋のみんなと同じコース・同じ条件でレースする。',
+      'まだ部屋に入っていなければ、部屋コードを入れて参加してからコース選びに進みます。',
+      'コースと時間帯・天気を決めた人が主催になり、全員が車を選んで準備OKにしたらスタートします。',
+    ]),
   };
   const rankingItem: MenuItem = {
     label: () => 'ランキング',
@@ -1720,6 +1745,9 @@ async function main() {
       carMesh.update(s);
       view.followCar(carMesh.root);
       remoteCars.render(performance.now());
+      // 他の人のヘッドライトで、自分の画面の道も照らす
+      view.setRemoteHeadlights(remoteCars.litCars(s.x, s.z));
+      updateRemoteHornVolumes();
       npcField?.render(alpha);
       if (race) {
         const pose = best ? ghostPoseAt(best.ghost, Math.max(0, race.time)) : null;

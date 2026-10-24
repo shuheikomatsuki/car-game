@@ -237,12 +237,17 @@ describe('room race', () => {
     const msgs = c.take();
     expect(msgs.find((m) => m.t === 'profile')).toEqual({ t: 'profile', player: { id: 2, name: 'b', car: 'fd3s', color: 1, lights: false } });
     expect((msgs.filter((m) => m.t === 'race').at(-1) as Extract<ServerMessage, { t: 'race' }>).race?.entrants).toEqual([2, 1]);
+    // 全員が準備 OK になるまではスタートできない
+    room.send(a, { t: 'raceStart' });
+    expect(lastRace(c)).toBeUndefined();
+    room.send(c, { t: 'raceReady', ready: true, car: 'ae86' });
+    c.take();
     // 言い出した人だけがスタートできる
     room.send(b, { t: 'raceStart' });
     expect(lastRace(c)).toBeUndefined();
     room.clock.now = 5000;
     room.send(a, { t: 'raceStart' });
-    expect(lastRace(c)).toMatchObject({ start: true, race: { phase: 'racing', entrants: [2, 1], startedAt: 5000 } });
+    expect(lastRace(c)).toMatchObject({ start: true, race: { phase: 'racing', entrants: [2, 1, 3], startedAt: 5000 } });
     // 対戦中は新しく言い出せない
     room.send(c, { t: 'raceOpen', settings });
     expect(lastRace(c)).toBeUndefined();
@@ -253,17 +258,22 @@ describe('room race', () => {
     room.send(a, { t: 'raceOpen', settings });
     room.send(a, { t: 'raceReady', ready: true, car: 'ae86' });
     room.send(b, { t: 'raceReady', ready: true, car: 'ae86' });
+    room.send(c, { t: 'raceReady', ready: true, car: 'ae86' });
     room.send(a, { t: 'raceStart' });
+    // スタートの後に来た人は見ているだけ
+    const d = room.connect();
+    room.hello(d, 'd');
     c.take();
     // 走っていない人・古い対戦のゴールは数えない
-    room.send(c, { t: 'raceFinish', seq: 1, time: 50 });
+    room.send(d, { t: 'raceFinish', seq: 1, time: 50 });
     room.send(b, { t: 'raceFinish', seq: 0, time: 50 });
     expect(lastRace(c)).toBeUndefined();
     room.send(b, { t: 'raceFinish', seq: 1, time: 61.5 });
     expect(lastRace(c)?.race?.finished).toEqual([{ id: 2, time: 61.5 }]);
     room.send(a, { t: 'raceFinish', seq: 1, time: 63 });
-    const msgs = c.take().filter((m) => m.t === 'race') as Extract<ServerMessage, { t: 'race' }>[];
-    expect(msgs.map((m) => m.race?.finished.length ?? null)).toEqual([2, null]);
+    room.send(c, { t: 'raceFinish', seq: 1, time: 64 });
+    const msgs = d.take().filter((m) => m.t === 'race') as Extract<ServerMessage, { t: 'race' }>[];
+    expect(msgs.map((m) => m.race?.finished.length ?? null)).toEqual([1, 2, 3, null]);
     expect(room.store.getRace()).toBeNull();
   });
 
@@ -272,8 +282,10 @@ describe('room race', () => {
     room.send(a, { t: 'raceOpen', settings });
     room.send(a, { t: 'raceReady', ready: true, car: 'ae86' });
     room.send(b, { t: 'raceReady', ready: true, car: 'ae86' });
+    room.send(c, { t: 'raceReady', ready: true, car: 'ae86' });
     room.send(a, { t: 'raceStart' });
     room.send(a, { t: 'raceFinish', seq: 1, time: 60 });
+    room.send(c, { t: 'raceFinish', seq: 1, time: 61 });
     c.take();
     // まだ走っている人が抜けたら、残りが全員ゴール済みなので終わる
     room.disconnect(b);
@@ -290,9 +302,9 @@ describe('room race', () => {
   });
 
   it('gives up races that never end', () => {
-    const { room, a, b } = threePlayers();
+    const { room, a, b, c } = threePlayers();
     room.send(a, { t: 'raceOpen', settings });
-    room.send(a, { t: 'raceReady', ready: true, car: 'ae86' });
+    for (const x of [a, b, c]) room.send(x, { t: 'raceReady', ready: true, car: 'ae86' });
     room.send(a, { t: 'raceStart' });
     b.take();
     room.clock.now = RACE_TIMEOUT_MS + 1;

@@ -1,11 +1,12 @@
 import * as THREE from 'three';
 
-/** ミラーの表示: なし・バックミラーだけ・バックミラーとサイドミラー */
-export type MirrorMode = 'off' | 'rear' | 'all';
+/** ミラーの表示: なし・バックミラーだけ・サイドミラーだけ・バックミラーとサイドミラー */
+export type MirrorMode = 'off' | 'rear' | 'side' | 'all';
 
 export const MIRROR_MODES: readonly { id: MirrorMode; label: string }[] = [
   { id: 'off', label: 'なし' },
   { id: 'rear', label: 'バックミラー' },
+  { id: 'side', label: 'サイドのみ' },
   { id: 'all', label: 'バック＋サイド' },
 ];
 
@@ -44,12 +45,27 @@ export interface MirrorRegion {
 }
 
 /**
- * ミラーを置く場所。範囲の真ん中に、バックミラーを挟んで左右にサイドミラーを並べる（車の中から前を見たときの並び）。
- * withSides が false ならバックミラーだけ
+ * ミラーを置く場所。
+ * all: 範囲の真ん中に、バックミラーを挟んで左右にサイドミラーを並べる（車の中から前を見たときの並び）。
+ * rear: バックミラーだけを真ん中に。side: サイドミラーだけを範囲の左右の端に（真ん中は空ける）
  */
-export function mirrorLayout(width: number, region: MirrorRegion, withSides: boolean, portrait = false): { rear: MirrorRect; left: MirrorRect; right: MirrorRect } {
+export function mirrorLayout(
+  width: number,
+  region: MirrorRegion,
+  mode: Exclude<MirrorMode, 'off'>,
+  portrait = false,
+): { rear: MirrorRect; left: MirrorRect; right: MirrorRect } {
   const room = Math.max(0, region.right - region.left);
   const gap = 8;
+  if (mode === 'side') {
+    const sw = Math.round(Math.min((room - gap) / 2, width * (portrait ? 0.32 : 0.15), 200));
+    const h = Math.round(sw / 1.7);
+    const left = { x: Math.round(region.left), y: region.top, w: sw, h };
+    const right = { x: Math.round(region.right - sw), y: region.top, w: sw, h };
+    // バックミラーは出さない（下端を求めるときのために、高さだけ揃えておく）
+    return { rear: { x: left.x + sw, y: region.top, w: 0, h }, left, right };
+  }
+  const withSides = mode === 'all';
   // 縦向きの画面は幅が狭いので、横幅に対して大きめにとる
   const share = withSides ? (portrait ? 0.92 : 0.56) : portrait ? 0.6 : 0.36;
   const total = Math.min(room, width * share, withSides ? 760 : 440);
@@ -132,12 +148,22 @@ export class Mirrors {
 
   private active(): Mirror[] {
     const { rear, left, right } = this.mirrors;
-    return this.modeValue === 'off' ? [] : this.modeValue === 'rear' ? [rear] : [rear, left, right];
+    switch (this.modeValue) {
+      case 'off':
+        return [];
+      case 'rear':
+        return [rear];
+      case 'side':
+        return [left, right];
+      case 'all':
+        return [rear, left, right];
+    }
   }
 
   /** いまの置き方での、ミラーの下端 [CSS px]（走行中の表示をその下に置くため） */
   bottom(region: MirrorRegion): number {
-    return region.top + mirrorLayout(window.innerWidth, region, this.modeValue === 'all', window.innerHeight > window.innerWidth).rear.h;
+    if (this.modeValue === 'off') return region.top;
+    return region.top + mirrorLayout(window.innerWidth, region, this.modeValue, window.innerHeight > window.innerWidth).rear.h;
   }
 
   /**
@@ -147,10 +173,10 @@ export class Mirrors {
   render(renderer: THREE.WebGLRenderer, scene: THREE.Scene, car: THREE.Object3D, show: boolean, region: MirrorRegion): void {
     const active = show ? this.active() : [];
     for (const m of Object.values(this.mirrors)) m.frame.classList.toggle('hidden', !active.includes(m));
-    if (active.length === 0) return;
+    if (active.length === 0 || this.modeValue === 'off') return;
     const width = window.innerWidth;
     const height = window.innerHeight;
-    const layout = mirrorLayout(width, region, this.modeValue === 'all', height > width);
+    const layout = mirrorLayout(width, region, this.modeValue, height > width);
     const pixelRatio = Math.min(renderer.getPixelRatio(), 1.5);
     const update = this.frameCount++ % 2 === 0;
     car.updateMatrixWorld();
