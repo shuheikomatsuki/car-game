@@ -93,7 +93,12 @@ function computeProfile(def: MapDefinition): CourseProfile {
   };
 }
 
-/** メニューに出すコースの短い説明と、おすすめの車（VEHICLE_PRESETS の id） */
+/**
+ * メニューに出すコースの短い説明と、おすすめの車（VEHICLE_PRESETS の id）。
+ * おすすめは、レーシングラインを限界で走ったときの理論タイムが速い車から、コースの性格に合うもの
+ * （高速コースはパワーと最高速、下りやヘアピンの続くコースは軽さとブレーキ）を選ぶ。
+ * どれもそのコースの最速から 4% 以内（courseInfo.sim.test.ts で確かめる。車の性能を変えたら見直す）
+ */
 export interface CourseNote {
   text: string;
   cars: readonly string[];
@@ -103,25 +108,25 @@ export const COURSE_NOTES: Record<string, CourseNote> = {
   town: { text: '最初の練習用の小さな街。交差点と標識のある道を、のんびり走れる', cars: ['standard', 'kei'] },
   school: { text: '教習所のような練習コース。S字・クランク風の連続カーブと交差点', cars: ['kei', 'standard'] },
   'circuit-gp': { text: '1kmのメインストレートの先の低速ヘアピン、高速のS字、複合コーナー。退避帯と壁がある', cars: ['r34', 'gtr'] },
-  'shutoko-loop-2': { text: '高架の3車線。1.3kmの湾岸線、540°の二重ループ、海を渡る吊り橋。両側は壁', cars: ['r34', 'fd3s'] },
-  'technical-circuit': { text: 'クランク、ヘアピン、2つのシケイン。低速コーナーが続く', cars: ['cappuccino', 'ek9'] },
+  'shutoko-loop-2': { text: '高架の3車線。1.3kmの湾岸線、540°の二重ループ、海を渡る吊り橋。両側は壁', cars: ['r34', 'gtr'] },
+  'technical-circuit': { text: 'クランク、ヘアピン、2つのシケイン。低速コーナーが続く', cars: ['ek9', 'fd3s'] },
   'pass-up': { text: '頂上まで150m上る。高速コーナー、S字、3つのヘアピン', cars: ['fd3s', 'evo'] },
-  'pass-down': { text: '同じ峠を頂上から下る。スピードが乗るので早めのブレーキが大事', cars: ['ae86', 'eg6'] },
-  'pass-over-r': { text: '100mあまり上って峠を越え、反対側へ下る。頂上は見通しのよい高速の左右', cars: ['eg6', 's14'] },
-  uturn: { text: '谷沿いに上り、頂上のヘアピンで折り返して横を並んで下る', cars: ['evo', 'evo3'] },
-  hairpin: { text: '斜面をつづら折りで160m上る。180°のヘアピンが12個続く', cars: ['evo', 'ek9'] },
-  'hairpin-down': { text: 'つづら折りを下る。ヘアピンの内側を突っ切って段差から飛び降りる近道がある', cars: ['evo3', 'ae86'] },
-  'steep-up': { text: '平均17%の急坂。パワーのない車は伸びなくなる', cars: ['evo', 'r34'] },
-  'steep-down': { text: '同じ激坂を下る。ブレーキが遅れるとコーナーで止まりきれない', cars: ['ae86', 'cappuccino'] },
-  'long-r': { text: '上りと下りを何度もくり返す。高速コーナーとヘアピンが交互に来る', cars: ['r34', 'gtr'] },
-  marathon: { text: 'いちばん長いコース。集中力を切らさずに走りきる', cars: ['gtr', 'r34'] },
-  'straight-up-r': { text: '800mの直線と、ごく僅かにくねる650mの直線のある峠を上る', cars: ['s14', 'r34'] },
-  'straight-down-r': { text: '同じ峠を下る。長い直線の先のコーナーで速度を落としきれるか', cars: ['gtr', 'fd3s'] },
-  'valley-up': { text: '3回谷を橋で渡り、短いトンネルと長いトンネルを抜けて上る', cars: ['s13', 'evo'] },
-  'valley-down': { text: '橋とトンネルの峠を下る。トンネルの出口の先のコーナーに注意', cars: ['s13', 'fd3s'] },
+  'pass-down': { text: '同じ峠を頂上から下る。スピードが乗るので早めのブレーキが大事', cars: ['fd3s', 'ae86'] },
+  'pass-over-r': { text: '100mあまり上って峠を越え、反対側へ下る。頂上は見通しのよい高速の左右', cars: ['fd3s', 'evo'] },
+  uturn: { text: '谷沿いに上り、頂上のヘアピンで折り返して横を並んで下る', cars: ['fd3s', 'ek9'] },
+  hairpin: { text: '斜面をつづら折りで160m上る。180°のヘアピンが12個続く', cars: ['fd3s', 'evo'] },
+  'hairpin-down': { text: 'つづら折りを下る。ヘアピンの内側を突っ切って段差から飛び降りる近道がある', cars: ['fd3s', 'ae86'] },
+  'steep-up': { text: '平均17%の急坂。パワーのない車は伸びなくなる', cars: ['evo', 'fd3s'] },
+  'steep-down': { text: '同じ激坂を下る。ブレーキが遅れるとコーナーで止まりきれない', cars: ['ae86', 'ek9'] },
+  'long-r': { text: '上りと下りを何度もくり返す。高速コーナーとヘアピンが交互に来る', cars: ['r34', 'fd3s'] },
+  marathon: { text: 'いちばん長いコース。集中力を切らさずに走りきる', cars: ['fd3s', 'r34'] },
+  'straight-up-r': { text: '800mの直線と、ごく僅かにくねる650mの直線のある峠を上る', cars: ['r34', 'gtr'] },
+  'straight-down-r': { text: '同じ峠を下る。長い直線の先のコーナーで速度を落としきれるか', cars: ['r34', 'gtr'] },
+  'valley-up': { text: '3回谷を橋で渡り、短いトンネルと長いトンネルを抜けて上る', cars: ['r34', 'evo'] },
+  'valley-down': { text: '橋とトンネルの峠を下る。トンネルの出口の先のコーナーに注意', cars: ['fd3s', 'evo'] },
   happogahara: {
     text: '狭い古い道、荒れた広い道、谷に架かる橋、ループ橋とトンネルのヒルクライム。頂上の広場でUターンして戻る',
-    cars: ['ek9', 'evo'],
+    cars: ['fd3s', 'ek9'],
   },
 };
 

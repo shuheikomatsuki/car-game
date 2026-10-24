@@ -39,6 +39,19 @@ describe('save data version', () => {
     expect(savedVersion(s)).toBe(3);
   });
 
+  it('drops time attack records saved before courses had shape versions', () => {
+    const s = memoryStorage({
+      'car-game:save-version': '1',
+      'car-game:time-attack:v1:峠（ヒルクライム）:ae86': '{}',
+      'car-game:uploaded:v1:pass-up:ae86': '40',
+      'car-game:my-entry:v1:pass-up:ae86': 'id',
+      'car-game:name': 'shuhei',
+      'car-game:beaten-rivals': '["takumi"]',
+    });
+    migrateSaveData(s);
+    expect([...s.map.keys()].sort()).toEqual(['car-game:beaten-rivals', 'car-game:name', 'car-game:save-version']);
+  });
+
   it('leaves data from a newer game alone', () => {
     const s = memoryStorage({ 'car-game:save-version': '9' });
     expect(migrateSaveData(s)).toBe(9);

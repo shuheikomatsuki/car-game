@@ -5,7 +5,7 @@ import { CIRCUIT_MAP, DOWNHILL_MAP, HILLCLIMB_MAP, TECHNICAL_MAP } from '../map/
 import { parseMap } from '../map/tilemap';
 import { buildCourse } from './course';
 import { GhostRecorder, ghostPoseAt } from './ghost';
-import { mergeRecord, parseRecord } from './records';
+import { mergeRecord, parseRecord, staleRecordKeys } from './records';
 import { COUNTDOWN_SECONDS, TimeAttack, formatTime } from './timeAttack';
 import { rankEntrants } from '../game/npcRace';
 
@@ -243,6 +243,12 @@ describe('ghost', () => {
 });
 
 describe('records', () => {
+  it('finds the records of the same course and car run on an older shape of the course', () => {
+    const p = 'car-game:time-attack:v1:';
+    const keys = [`${p}pass-up-aaaaaaa:ae86`, `${p}pass-up-bbbbbbb:ae86`, `${p}pass-up-aaaaaaa:s13`, `${p}pass-up-r-aaaaaaa:ae86`, 'car-game:name'];
+    expect(staleRecordKeys(keys, 'pass-up-bbbbbbb', 'ae86')).toEqual([`${p}pass-up-aaaaaaa:ae86`]);
+  });
+
   it('keeps the faster total and the fastest lap', () => {
     const first = mergeRecord(null, { total: 90, laps: [32, 29, 29], ghost: [1, 2, 3] });
     expect(first.newTotal).toBe(true);

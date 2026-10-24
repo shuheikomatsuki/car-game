@@ -24,6 +24,14 @@ export const WEATHERS: readonly { id: Weather; label: string; note?: string }[] 
 
 export const DEFAULT_ENVIRONMENT: Environment = { time: 'day', weather: 'clear' };
 
+/**
+ * 相手（NPC・ライバル）のライトを最初につけておくか: 夜と雨・霧はつける、晴れた朝・昼は消す
+ * （時間帯・天気の画面で、どの条件でも選び直せる）
+ */
+export function defaultOpponentLights(env: Environment): boolean {
+  return env.time === 'night' || env.weather !== 'clear';
+}
+
 /** 雨の日のタイヤのグリップ（横に踏ん張る力）とブレーキの効きの割合 */
 export const RAIN_GRIP = 0.78;
 export const RAIN_BRAKE = 0.8;

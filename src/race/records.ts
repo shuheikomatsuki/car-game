@@ -1,7 +1,8 @@
+import { courseIdOfKey } from '../map/courseRevision';
 import type { GhostData } from './ghost';
 
 /**
- * タイムアタックの自己ベスト。コースと車の組み合わせごとに、このブラウザの localStorage に保存する。
+ * タイムアタックの自己ベスト。コース（courseKey: id ＋ 形の版）と車の組み合わせごとに、このブラウザの localStorage に保存する。
  */
 
 export interface RaceRecord {
@@ -20,6 +21,16 @@ function key(course: string, car: string): string {
   return `${PREFIX}${course}:${car}`;
 }
 
+/** 同じコース・同じ車の、前の形のコースで走った記録の key（もう使わないので消す） */
+export function staleRecordKeys(keys: readonly string[], course: string, car: string): string[] {
+  const id = courseIdOfKey(course);
+  return keys.filter((k) => {
+    if (!k.startsWith(PREFIX) || !k.endsWith(`:${car}`) || k === key(course, car)) return false;
+    const c = k.slice(PREFIX.length, -car.length - 1);
+    return c !== id && courseIdOfKey(c) === id;
+  });
+}
+
 export function loadRecord(course: string, car: string): RaceRecord | null {
   try {
     const raw = localStorage.getItem(key(course, car));
@@ -31,6 +42,8 @@ export function loadRecord(course: string, car: string): RaceRecord | null {
 
 export function saveRecord(course: string, car: string, record: RaceRecord): boolean {
   try {
+    const keys = Array.from({ length: localStorage.length }, (_, i) => localStorage.key(i) ?? '');
+    for (const k of staleRecordKeys(keys, course, car)) localStorage.removeItem(k);
     localStorage.setItem(key(course, car), JSON.stringify(record));
     return true;
   } catch {

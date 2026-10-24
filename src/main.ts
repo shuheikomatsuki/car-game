@@ -3,7 +3,7 @@ import { BGM_TRACKS, BgmPlayer } from './audio/bgm';
 import { GamepadInput, KeyboardInput, PAD_BUTTON, mergeInputs } from './core/input';
 import { FixedStepLoop } from './core/loop';
 import { Airborne } from './game/airborne';
-import { TIMES_OF_DAY, type TimeOfDay, WEATHERS, type Weather, loadEnvironment, paramsForWeather, saveEnvironment } from './game/environment';
+import { TIMES_OF_DAY, type TimeOfDay, WEATHERS, type Weather, defaultOpponentLights, loadEnvironment, paramsForWeather, saveEnvironment } from './game/environment';
 import { FallRecovery } from './game/fall';
 import { Level } from './game/level';
 import { clearPlayData } from './game/playData';
@@ -22,6 +22,7 @@ import { type BattleContext, BattleDialogue, type BattleEvent, OvertakeWatcher, 
 import { CHARACTERS, RIVAL_DIALOGUES } from './race/dialogueScript';
 import { CHASE_START_GAP, type Runner, SAFE_SECONDS, SuddenDeath } from './race/suddenDeath';
 import { type RaceRecord, loadRecord, mergeRecord, saveRecord } from './race/records';
+import { courseKey } from './map/courseRevision';
 import { TimeAttack, formatTime } from './race/timeAttack';
 import { type RaceSettings, type RaceState, MAX_PLAYERS, MAX_EMOTE_LENGTH, isRoomCode, normalizeRoomCode } from './net/protocol';
 import { DEFAULT_EMOTE, loadEmote, saveEmote } from './game/emotes';
@@ -168,10 +169,9 @@ async function main() {
   };
   /** ヘッドライト（暗い時間帯・天気では最初からつける。F キー・ボタンで切り替え） */
   let lightsOn = GameScene.needsHeadlights(env);
-  /** 夜に NPC・ライバルがライトをつけて走るか（時間帯・天気の画面で選ぶ） */
-  let opponentLights = true;
-  /** NPC・ライバルのライト: 夜だけ選んだとおりにつける。朝・昼は消して走る */
-  const npcLightsOn = () => env.time === 'night' && opponentLights;
+  /** NPC・ライバルがライトをつけて走るか（時間帯・天気の画面で選ぶ。最初は時間帯・天気に合わせる） */
+  let opponentLights = defaultOpponentLights(env);
+  const npcLightsOn = () => opponentLights;
   const applyLights = () => {
     carMesh.setLights(lightsOn);
     view.setHeadlights(lightsOn);
@@ -341,7 +341,7 @@ async function main() {
     ghostRecorder = new GhostRecorder();
     ghostCourseS.best = ghostCourseS.rival = 0;
     // NPC 対戦ではゴーストを出さず、記録も残さない
-    best = mode === 'timeAttack' ? loadRecord(level.def.name, vehicle().id) : null;
+    best = mode === 'timeAttack' ? loadRecord(courseKey(level.def), vehicle().id) : null;
     // 2列に互い違いに並ぶ。道幅に合わせて左右の間隔を決める
     const side = Math.min(3, course.widthAt(0) / 4);
     const slot = (i: number) => course.gridSpot(6 + 7 * i, i % 2 === 0 ? side : -side);
@@ -557,7 +557,7 @@ async function main() {
           }
           const previousBest = best?.total ?? null;
           const merged = mergeRecord(best, { total: e.total, laps: e.laps, ghost: ghostRecorder.frames });
-          const saved = merged.newTotal || merged.newLap ? saveRecord(level.def.name, vehicle().id, merged.record) : true;
+          const saved = merged.newTotal || merged.newLap ? saveRecord(courseKey(level.def), vehicle().id, merged.record) : true;
           best = merged.record;
           raceHud.showResult({
             total: e.total,
@@ -955,9 +955,10 @@ async function main() {
   /** まだランキングに送っていない自己ベストを送る（名前を入れていなければ送らない） */
   async function uploadBest(def: MapDefinition, car: string): Promise<SubmitResult | null> {
     const name = loadPlayerName().trim();
-    const record = loadRecord(def.name, car);
-    if (!board || !name || !record || record.ghost.length === 0 || uploadedTotal(def.id, car) === record.total) return null;
-    return board.submit(def.id, car, { player: playerId(), name, total: record.total, laps: record.laps, ghost: record.ghost });
+    const key = courseKey(def);
+    const record = loadRecord(key, car);
+    if (!board || !name || !record || record.ghost.length === 0 || uploadedTotal(key, car) === record.total) return null;
+    return board.submit(key, car, { player: playerId(), name, total: record.total, laps: record.laps, ghost: record.ghost });
   }
   /** タイムアタックでゴールしたら、自己ベストをランキングに送って順位を結果に出す */
   function reportToRanking(newBest: boolean) {
@@ -996,19 +997,24 @@ async function main() {
     {
       load: async (course, car) => {
         const def = MAPS.find((m) => m.id === course);
+        if (!def) return { entries: [], mine: new Set<string>() };
+        // ランキングはコースの形の版ごと（コースを直す前の記録は出さない）
+        const key = courseKey(def);
         const cars = car === ALL_CARS ? VEHICLE_PRESETS.map((v) => v.id) : [car];
         const boards = await Promise.all(
           cars.map(async (id) => {
             // 前に走った自己ベストも、名前を入れた後なら送る
-            if (def) await uploadBest(def, id).catch(() => null);
-            return { car: id, entries: await board!.list(course, id) };
+            await uploadBest(def, id).catch(() => null);
+            return { car: id, entries: await board!.list(key, id) };
           }),
         );
-        const mine = new Set(cars.map((id) => myEntryId(course, id)).filter((id): id is string => id !== null));
+        const mine = new Set(cars.map((id) => myEntryId(key, id)).filter((id): id is string => id !== null));
         return { entries: mergeBoards(boards), mine };
       },
       onRace: async (course, entry) => {
-        const ghost = await board!.ghost(course, entry.car, entry.id);
+        const def = MAPS.find((m) => m.id === course);
+        if (!def) return;
+        const ghost = await board!.ghost(courseKey(def), entry.car, entry.id);
         raceAgainst(course, entry.car, { name: entry.name, total: entry.total, ghost });
       },
       onOpenChange: (open) => {
@@ -1271,6 +1277,7 @@ async function main() {
     const c = r.conditions ?? draftBaseEnv;
     draft.time = c.time;
     draft.weather = c.weather;
+    draft.opponentLights = defaultOpponentLights(draft);
   };
   /** ライバルの得意な時間帯・天気の書き方（「夜・雨」。なければ空） */
   const rivalConditionsLabel = (r: Rival) =>
@@ -1412,36 +1419,40 @@ async function main() {
     title: '時間帯',
     choices: () => TIMES_OF_DAY,
     selected: () => draft.time,
-    select: (id) => (draft.time = id as TimeOfDay),
+    select: (id) => {
+      draft.time = id as TimeOfDay;
+      draft.opponentLights = defaultOpponentLights(draft);
+    },
   };
   const weatherGroup: MenuGroup = {
     title: '天気',
     choices: () => WEATHERS,
     selected: () => draft.weather,
-    select: (id) => (draft.weather = id as Weather),
+    select: (id) => {
+      draft.weather = id as Weather;
+      draft.opponentLights = defaultOpponentLights(draft);
+    },
   };
-  /** 夜だけ: 相手（NPC・ライバル）がライトをつけて走るか */
+  /** 相手（NPC・ライバル）がライトをつけて走るか。時間帯・天気を選ぶと、それに合わせた方に戻る */
   const opponentLightsGroup: MenuGroup = {
     title: '相手のライト',
     choices: () => [
       { id: 'on', label: 'つける' },
-      { id: 'off', label: '消す', note: '暗い中で見えにくい' },
+      { id: 'off', label: '消す', note: draft.time === 'night' ? '暗い中で見えにくい' : undefined },
     ],
     selected: () => (draft.opponentLights ? 'on' : 'off'),
     select: (id) => (draft.opponentLights = id === 'on'),
   };
-  /** 時間帯・天気の画面。withOpponents なら、夜を選んだときに相手のライトも選べる */
+  /** 時間帯・天気の画面。withOpponents なら、相手のライトも選べる */
   const conditionsScreen = (withOpponents: boolean): MenuScreen => ({
     title: '時間帯・天気',
     en: 'CONDITIONS',
-    get groups() {
-      return withOpponents && draft.time === 'night' ? [timeGroup, weatherGroup, opponentLightsGroup] : [timeGroup, weatherGroup];
-    },
+    groups: withOpponents ? [timeGroup, weatherGroup, opponentLightsGroup] : [timeGroup, weatherGroup],
     detail: () =>
       conditionsDetail(TIMES_OF_DAY.find((t) => t.id === draft.time)!, WEATHERS.find((w) => w.id === draft.weather)!, [
         ['コース', draftMap().name],
         ['車', draftCar().label],
-        ...(withOpponents && draft.time === 'night' ? [['相手のライト', draft.opponentLights ? 'つける' : '消す'] as [string, string]] : []),
+        ...(withOpponents ? [['相手のライト', draft.opponentLights ? 'つける' : '消す'] as [string, string]] : []),
       ]),
   });
   const envScreen = conditionsScreen(false);
@@ -1505,15 +1516,15 @@ async function main() {
       finish: () => applyDraft('battle'),
     },
   ];
-  /** いまのレースのモードのまま、コースと車だけを選び直す（ポーズ画面・ゴールの画面から） */
+  /**
+   * いまのレースのモードのまま、選ぶ画面をもう一度たどって選び直す（ポーズ画面・ゴールの画面から）。
+   * 最初はいまの相手・ルール・コース・車・時間帯・天気が選ばれていて、変えたいところだけ変えればよい
+   */
   function openChangeFlow() {
     const base = menuModes.find((m) => m.id === raceMode);
     if (!base) return;
-    menu.openFlow({
-      ...base,
-      begin: () => beginDraft(true),
-      screens: () => [raceMode === 'battle' ? courseScreen(true, draftRival().course) : courseScreen(true), carScreen],
-    });
+    // ライバルとバトルでも、相手の得意コースに戻さず、いまのコースから始める
+    menu.openFlow({ ...base, label: 'コース・車などを変える', en: 'CHANGE', begin: () => beginDraft(true) });
   }
   const settingDetail = (title: string, lines: string[]) => () => textDetail({ kicker: 'OPTIONS', title, lines });
   /** 「プレイデータを消す」の確認の画面 */
@@ -1645,10 +1656,10 @@ async function main() {
   const freeChangeMode: MenuMode = {
     ...onlineFreeMode,
     id: 'freeChange',
-    label: 'コース・車を変える',
+    label: 'コース・車などを変える',
     en: 'CHANGE',
-    screens: () => [courseScreen(false, undefined, net.isOnline ? '選んだコースに、部屋の全員が一緒に移動します。' : undefined), carScreen],
-    summary: () => `${draftMap().name} ／ ${draftCar().label}`,
+    screens: () => [courseScreen(false, undefined, net.isOnline ? '選んだコースに、部屋の全員が一緒に移動します。' : undefined), carScreen, envScreen],
+    summary: () => `${draftMap().name} ／ ${draftCar().label} ／ ${envSummary()}`,
   };
   /** オンライン対戦を言い出す: コースと時間帯・天気を決める（車は各自がエントリー画面で選ぶ） */
   const onlineRaceMode: MenuMode = {
@@ -1724,14 +1735,17 @@ async function main() {
           detail: pauseDetail,
         },
         {
-          label: () => 'コース・車を変える',
+          label: () => 'コース・車などを変える',
           en: 'CHANGE',
           run: () => (race ? openChangeFlow() : menu.openFlow(freeChangeMode)),
           // オンライン対戦（エントリー中を含む）の間は、部屋のコースのまま
           visible: () => (race ? raceMode !== 'online' : !roomRace),
           detail: () =>
-            settingDetail('コース・車を変える', [
-              race ? '同じモードのまま、コースと車を選び直してスタートからやり直す。' : 'いまのまま自由に走りながら、コースと車を選び直す。',
+            settingDetail('コース・車などを変える', [
+              race
+                ? `同じモードのまま、${raceMode === 'battle' ? '対戦相手・ルール・' : raceMode === 'npc' ? 'NPCの強さ・' : ''}コース・車・時間帯・天気を選び直してスタートからやり直す。`
+                : 'いまのまま自由に走りながら、コース・車・時間帯・天気を選び直す。',
+              'いまの内容が選ばれた状態で始まるので、変えたいところだけ変えて進めます。',
               ...(!race && net.isOnline ? ['部屋に入っているので、コースを変えると部屋の全員が同じコースに移動します。'] : []),
             ])(),
         },
