@@ -1,3 +1,5 @@
+import type * as THREE from 'three';
+
 /** 他の人の車のうち、前を照らすライトを付ける台数（ライトが増えるほど描画が重くなるので、近い車だけ） */
 export const REMOTE_HEADLIGHTS = 2;
 /** これより遠い車のライトは照らさない [m]（車のライト自体は光って見える） */
@@ -20,4 +22,12 @@ export function nearestLit<T extends { x: number; z: number; lit: boolean }>(
     .sort((a, b) => a.d - b.d)
     .slice(0, max)
     .map((e) => e.c);
+}
+
+/** ヘッドライトで前を照らす候補の車（他の人の車・NPC） */
+export interface LitCar {
+  x: number;
+  z: number;
+  lit: boolean;
+  root: THREE.Object3D;
 }

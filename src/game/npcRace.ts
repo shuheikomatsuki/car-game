@@ -6,6 +6,7 @@ import { CarMesh, type CarStyle } from '../render/carMesh';
 import type { Car, CarSnapshot, Spawn } from '../sim/car';
 import { NEUTRAL_INPUT, type VehicleParams } from '../sim/vehicle';
 import { FallRecovery } from './fall';
+import type { LitCar } from './headlights';
 import type { Level } from './level';
 import { PLAYER_COLORS, createLabel } from './remoteCars';
 
@@ -68,6 +69,8 @@ export function npcEntries(count: number, level: NpcLevel, params: VehicleParams
 /** NPC 対戦で一緒に走る NPC たち。物理ワールドに車を置き、毎ステップ運転させる */
 export class NpcField {
   readonly npcs: Npc[] = [];
+  /** ライトをつけて走るか */
+  private lightsOn = false;
 
   constructor(
     private readonly level: Level,
@@ -136,6 +139,17 @@ export class NpcField {
       const s = this.level.ground(lerpSnap(n.prev, n.curr, alpha));
       n.mesh.update({ ...s, y: s.y - n.fall.drop });
     }
+  }
+
+  /** ライトをつける・消す */
+  setLights(on: boolean): void {
+    this.lightsOn = on;
+    for (const n of this.npcs) n.mesh.setLights(on);
+  }
+
+  /** 車と、そのライトの状態（render の後に呼ぶ） */
+  litCars(): LitCar[] {
+    return this.npcs.map((n) => ({ x: n.mesh.root.position.x, z: n.mesh.root.position.z, lit: this.lightsOn, root: n.mesh.root }));
   }
 
   dispose(): void {

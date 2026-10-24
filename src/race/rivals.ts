@@ -35,7 +35,7 @@ export const RIVALS: readonly Rival[] = [
   { id: 'shingo', name: '庄司慎吾', team: '妙義ナイトキッズ', car: 'eg6', course: 'uturn', level: 'normal' },
   { id: 'nakazato', name: '中里毅', team: '妙義ナイトキッズ', car: 'gtr', course: 'long-r', level: 'hard' },
   { id: 'iwaki', name: '岩城清次', team: 'チームエンペラー', car: 'evo', course: 'hairpin', level: 'hard' },
-  { id: 'sakamoto', name: '坂本', team: 'カプチーノ使い', car: 'cappuccino', course: 'steep-down', conditions: { time: 'night', weather: 'rain' }, level: 'hard' },
+  { id: 'sakamoto', name: '坂本', team: '埼玉北西エリア連合', car: 'cappuccino', course: 'steep-down', conditions: { time: 'night', weather: 'rain' }, level: 'hard' },
   { id: 'keisuke', name: '高橋啓介', team: '赤城レッドサンズ', car: 'fd3s', course: 'valley-up', level: 'pro' },
   { id: 'sudo', name: '須藤京一', team: 'チームエンペラー', car: 'evo3', course: 'hairpin-down', level: 'pro' },
   { id: 'hoshino', name: '星野好造', team: 'パープルシャドウ', car: 'r34', course: 'shutoko-loop-2', level: 'legend' },

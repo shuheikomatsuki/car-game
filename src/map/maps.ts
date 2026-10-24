@@ -744,3 +744,11 @@ export const MAPS: readonly MapDefinition[] = [
   VALLEY_DOWN_MAP,
   HAPPOGAHARA_MAP,
 ];
+
+/**
+ * タイトル画面の後ろに映すコース: 練習用（街・教習所）とサーキットを除いた、峠・首都高。
+ * 起動が遅くならないよう、作るのに特に時間のかかる長いコース（超ロング・八方ヶ原）も除く
+ */
+export const TITLE_MAPS: readonly MapDefinition[] = MAPS.filter(
+  (m) => ![TOWN_MAP, SCHOOL_MAP, CIRCUIT_MAP, TECHNICAL_MAP, MARATHON_MAP, HAPPOGAHARA_MAP].includes(m),
+);
