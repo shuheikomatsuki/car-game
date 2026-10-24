@@ -737,9 +737,10 @@ export const AKINA_DOWN_MAP = roadMap('akina-down', '秋名（ダウンヒル）
   scenery: 'touge',
   width: 8,
   start: 40,
+  startHeight: 330,
   pieces: [
     // スタート（旧料金所跡）: 緩い下り
-    { straight: 200, h: 330 },
+    { straight: 200, h: 320 },
     { arc: { radius: 120, turn: -35 } },
     { straight: 120 },
     { arc: { radius: 70, turn: 60 } },
