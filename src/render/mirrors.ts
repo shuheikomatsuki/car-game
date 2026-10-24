@@ -45,6 +45,16 @@ export interface MirrorRegion {
 }
 
 /**
+ * 画面の左右の真ん中にミラーを置くための範囲。left・right（左右の表示を避けた端）のうち
+ * 真ん中から近いほうに合わせて、左右対称に狭める
+ */
+export function centeredRegion(width: number, left: number, right: number, top: number): MirrorRegion {
+  const center = width / 2;
+  const half = Math.max(0, Math.min(center - left, right - center));
+  return { left: Math.round(center - half), right: Math.round(center + half), top };
+}
+
+/**
  * ミラーを置く場所。
  * all: 範囲の真ん中に、バックミラーを挟んで左右にサイドミラーを並べる（車の中から前を見たときの並び）。
  * rear: バックミラーだけを真ん中に。side: サイドミラーだけを範囲の左右の端に（真ん中は空ける）

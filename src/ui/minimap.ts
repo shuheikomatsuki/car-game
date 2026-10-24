@@ -1,4 +1,5 @@
 import type { Course } from '../race/course';
+import { DIR_OFFSET, type MapDefinition, parseMap } from '../map/tilemap';
 
 export interface MinimapMarker {
   x: number;
@@ -9,7 +10,7 @@ export interface MinimapMarker {
   size?: number;
 }
 
-/** コース全体を上から見た小さな地図。自分・ゴースト・他の車の位置を点で出す */
+/** マップ全体を上から見た小さな地図。自分・ゴースト・他の車の位置を点で出す */
 export class Minimap {
   private readonly canvas: HTMLCanvasElement;
   private readonly ctx: CanvasRenderingContext2D;
@@ -20,23 +21,50 @@ export class Minimap {
   private offsetZ = 0;
   private pixelRatio = 1;
 
-  constructor(private readonly container: HTMLElement) {
+  /** onResize: 地図の高さ [CSS px] が変わったとき（隠したときは 0）。下に並べる表示をずらすのに使う */
+  constructor(
+    private readonly container: HTMLElement,
+    private readonly onResize: (height: number) => void = () => {},
+  ) {
     this.canvas = document.createElement('canvas');
     this.ctx = this.canvas.getContext('2d')!;
     container.appendChild(this.canvas);
   }
 
-  /** 表示するコース（null で隠す） */
-  setCourse(course: Course | null): void {
-    this.container.classList.toggle('hidden', course === null);
+  /** 地図を隠す */
+  hide(): void {
+    this.container.classList.add('hidden');
     this.background = null;
-    if (!course) return;
-    const { def } = course.map;
-    // 中心線をたどった点の範囲に合わせる
-    const step = 4;
-    const points = Array.from({ length: Math.ceil(course.length / step) + 1 }, (_, i) => course.pointAt(Math.min(i * step, course.length)));
-    const xs = points.map((p) => p.x);
-    const zs = points.map((p) => p.z);
+    this.onResize(0);
+  }
+
+  /**
+   * マップの地図を出す。レース用のコースはその中心線とスタート・ゴールの線、
+   * タイルの街は道路のつながりを描く
+   */
+  setMap(def: MapDefinition, course: Course | null): void {
+    this.container.classList.remove('hidden');
+    this.background = null;
+    const paths: { points: { x: number; z: number }[]; closed: boolean }[] = [];
+    if (course) {
+      // 中心線をたどった点の範囲に合わせる
+      const step = 4;
+      paths.push({ points: Array.from({ length: Math.ceil(course.length / step) + 1 }, (_, i) => course.pointAt(Math.min(i * step, course.length))), closed: course.closed });
+    } else {
+      // 道路のタイルの中心どうしを、つながっている向き（東・南）に結ぶ
+      const map = parseMap(def);
+      const ts = def.tileSize;
+      for (const t of map.tiles) {
+        if (t.kind !== 'road') continue;
+        const at = { x: t.col * ts, z: t.row * ts };
+        const ends = t.connections.filter((d) => d === 'E' || d === 'S').map((d) => ({ x: at.x + DIR_OFFSET[d].dc * ts, z: at.z + DIR_OFFSET[d].dr * ts }));
+        if (t.connections.length === 0) paths.push({ points: [at, at], closed: false });
+        for (const e of ends) paths.push({ points: [at, e], closed: false });
+      }
+    }
+    if (paths.length === 0) return this.hide();
+    const xs = paths.flatMap((p) => p.points.map((q) => q.x));
+    const zs = paths.flatMap((p) => p.points.map((q) => q.z));
     const margin = def.roadWidth;
     const minX = Math.min(...xs) - margin;
     const minZ = Math.min(...zs) - margin;
@@ -55,6 +83,7 @@ export class Minimap {
     this.scale = fit * this.pixelRatio;
     this.offsetX = (pad - minX * fit) * this.pixelRatio;
     this.offsetZ = (pad - minZ * fit) * this.pixelRatio;
+    this.onResize(cssH);
 
     const bg = document.createElement('canvas');
     bg.width = this.canvas.width;
@@ -62,26 +91,25 @@ export class Minimap {
     const g = bg.getContext('2d')!;
     g.lineCap = 'round';
     g.lineJoin = 'round';
-    const path = () => {
-      g.beginPath();
-      points.forEach((p, i) => {
-        const [x, z] = this.toCanvas(p.x, p.z);
-        if (i === 0) g.moveTo(x, z);
-        else g.lineTo(x, z);
-      });
-      if (course.closed) g.closePath();
+    const stroke = (color: string, width: number) => {
+      for (const { points, closed } of paths) {
+        g.beginPath();
+        points.forEach((p, i) => {
+          const [x, z] = this.toCanvas(p.x, p.z);
+          if (i === 0) g.moveTo(x, z);
+          else g.lineTo(x, z);
+        });
+        if (closed) g.closePath();
+        g.strokeStyle = color;
+        g.lineWidth = width;
+        g.stroke();
+      }
     };
-    path();
-    g.strokeStyle = 'rgba(255, 255, 255, 0.9)';
-    g.lineWidth = Math.max(4 * this.pixelRatio, def.roadWidth * this.scale + 2 * this.pixelRatio);
-    g.stroke();
-    path();
-    g.strokeStyle = '#4a4e57';
-    g.lineWidth = Math.max(2.5 * this.pixelRatio, def.roadWidth * this.scale);
-    g.stroke();
+    stroke('rgba(255, 255, 255, 0.9)', Math.max(4 * this.pixelRatio, def.roadWidth * this.scale + 2 * this.pixelRatio));
+    stroke('#4a4e57', Math.max(2.5 * this.pixelRatio, def.roadWidth * this.scale));
 
     // スタートラインとゴールライン
-    for (const line of course.closed ? [course.line] : [course.line, course.finishLine]) {
+    for (const line of course ? (course.closed ? [course.line] : [course.line, course.finishLine]) : []) {
       const lx = Math.cos(line.yaw);
       const lz = -Math.sin(line.yaw);
       const w = def.roadWidth / 2 + 2;

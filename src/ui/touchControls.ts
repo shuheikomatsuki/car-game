@@ -72,6 +72,27 @@ export function anyTouchInside(
   return false;
 }
 
+/** pointerdown の後に届く click を、同じ1回の押下として無視する時間 [ms] */
+const TAP_CLICK_WINDOW_MS = 1000;
+
+/**
+ * 押したら1回動くボタン。click は別の指が画面に触れている（アクセルを踏んでいる・ハンドルを切っている）と
+ * 届かないことがある（iPhone の Safari など）ので、指を置いたときに反応させる。
+ * pointerdown を伴わない click（キーボード・読み上げ機能）でも動き、pointerdown の直後の click では二重に動かない
+ */
+function bindTap(button: HTMLElement, run: () => void): void {
+  let lastDown = -Infinity;
+  button.addEventListener('pointerdown', (e) => {
+    if (e.pointerType === 'mouse' && e.button !== 0) return;
+    e.preventDefault();
+    lastDown = e.timeStamp;
+    run();
+  });
+  button.addEventListener('click', (e) => {
+    if (e.timeStamp - lastDown > TAP_CLICK_WINDOW_MS) run();
+  });
+}
+
 /** タッチ操作できる端末か（スマホ・タブレット） */
 export function prefersTouch(): boolean {
   return window.matchMedia?.('(pointer: coarse)').matches ?? false;
@@ -117,26 +138,15 @@ export class TouchControls {
         });
         for (const type of ['pointerup', 'pointercancel', 'lostpointercapture'] as const) button.addEventListener(type, () => hold(false));
       } else {
-        // click は別の指が画面に触れている（アクセルを踏んでいる・ハンドルを切っている）と届かないことがある（iPhone の Safari など）。
-        // 指を置いたときに反応させる
-        const run = () => {
+        bindTap(button, () => {
           action.run();
           this.refresh();
-        };
-        button.addEventListener('pointerdown', (e) => {
-          if (e.pointerType === 'mouse' && e.button !== 0) return;
-          e.preventDefault();
-          run();
-        });
-        // キーボードで押したとき（pointerdown を伴わない click）
-        button.addEventListener('click', (e) => {
-          if (e.detail === 0) run();
         });
       }
       (action.place === 'side' ? sideBar : quickBar).appendChild(button);
       this.quickButtons.push({ action, button });
     }
-    el('touch-menu-button').addEventListener('click', () => {
+    bindTap(el('touch-menu-button'), () => {
       this.releaseAll();
       onMenu();
     });
