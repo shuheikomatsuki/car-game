@@ -60,12 +60,13 @@ export class OnlinePanel {
       this.room.value = randomRoomCode();
       this.refresh();
     });
+    el('online-copy-code').addEventListener('click', () => {
+      this.room.select();
+      this.copy(this.room.value, '部屋コードをコピーしました', '部屋コード');
+    });
     el('online-copy').addEventListener('click', () => {
       this.link.select();
-      void navigator.clipboard?.writeText(this.link.value).then(
-        () => this.setStatus('招待リンクをコピーしました'),
-        () => this.setStatus('コピーできませんでした。リンクを選択してコピーしてください'),
-      );
+      this.copy(this.link.value, '招待リンクをコピーしました', 'リンク');
     });
     this.join.addEventListener('click', () => this.submit());
     this.root.addEventListener('keydown', (e) => {
@@ -84,6 +85,13 @@ export class OnlinePanel {
       this.setStatus('このサイトにはオンライン用のサーバーがまだ設定されていません');
     }
     this.refresh();
+  }
+
+  /** クリップボードに写す。what はうまくいかなかったときの案内に使う */
+  private copy(text: string, done: string, what: string): void {
+    const fail = () => this.setStatus(`コピーできませんでした。${what}を選択してコピーしてください`);
+    if (!navigator.clipboard) return fail();
+    navigator.clipboard.writeText(text).then(() => this.setStatus(done), fail);
   }
 
   get isOpen(): boolean {

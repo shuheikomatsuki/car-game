@@ -3531,3 +3531,97 @@ body:not(.touch) #race-result {
     letter-spacing: 0.02em;
   }
 }
+
+/* ---- 走行中のお知らせ（コースアウト・スタートの案内・警告）: 画面を横切る帯 ----
+   アーケードのレースゲームの表示のように、真ん中が濃く両端に向かって消える帯にする。
+   差し色の線は上下に入れ、左右対称にする */
+#toast,
+#countdown.ready,
+#race-warning {
+  --band: rgba(10, 11, 14, 0.82);
+  --band-line: var(--accent);
+  border: 0;
+  border-radius: 0;
+  clip-path: none;
+  background:
+    linear-gradient(90deg, transparent, var(--band-line) 22%, var(--band-line) 78%, transparent) top / 100% 2px no-repeat,
+    linear-gradient(90deg, transparent, var(--band-line) 22%, var(--band-line) 78%, transparent) bottom / 100% 2px no-repeat,
+    linear-gradient(90deg, transparent, var(--band) 16%, var(--band) 84%, transparent);
+  color: #fff;
+  font-style: italic;
+  font-weight: 800;
+  letter-spacing: 0.06em;
+  text-align: center;
+  text-shadow: 0 2px 6px rgba(0, 0, 0, 0.7);
+  white-space: nowrap;
+}
+
+#toast {
+  padding: 7px 56px 8px;
+  font-size: 15px;
+  max-width: calc(100vw - 16px);
+  white-space: normal;
+  width: max-content;
+}
+
+#countdown.ready {
+  padding: 12px 84px 13px;
+  font-size: 24px;
+  /* 点滅は控えめに */
+  animation: ready-pulse 1.8s ease-in-out infinite;
+}
+
+/* 逆走などの警告は赤い帯 */
+#race-warning {
+  --band: rgba(170, 18, 18, 0.88);
+  --band-line: #ffd0c8;
+  padding: 8px 64px 9px;
+  font-size: 18px;
+  max-width: calc(100vw - 16px);
+  white-space: normal;
+  width: max-content;
+}
+
+@media (max-width: 760px), (max-height: 480px) {
+  #countdown.ready {
+    padding: 9px 56px 10px;
+    font-size: 18px;
+  }
+  #toast {
+    padding: 6px 40px 7px;
+    font-size: 13px;
+  }
+  #race-warning {
+    padding: 7px 44px 8px;
+    font-size: 15px;
+  }
+}
+
+/* 部屋の表示と操作の説明: 片側だけの線をやめ、周回の表示と同じく上に差し色を入れる */
+#net-status,
+#help {
+  border-left: 0;
+  border-top: 2px solid var(--accent);
+}
+
+#net-status .ns-label {
+  font-family: var(--display);
+  font-style: italic;
+  font-weight: 700;
+  font-size: 10px;
+  letter-spacing: 0.14em;
+  color: var(--muted);
+}
+
+/* 縦向きの案内（タイトル画面）とセリフの枠も、片側だけの線をやめる */
+.title-rotate {
+  border-left: 0;
+  border-top: 2px solid var(--accent-2);
+  border-bottom: 2px solid var(--accent-2);
+}
+
+#scene .scene-box {
+  border-left: 1px solid var(--line-strong);
+  border-top: 3px solid var(--accent);
+  border-radius: 0;
+}

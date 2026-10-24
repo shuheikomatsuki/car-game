@@ -9,7 +9,7 @@ import { Level } from './game/level';
 import { clearPlayData } from './game/playData';
 import { NpcField, npcEntries, rankEntrants, velocityOf } from './game/npcRace';
 import { PLAYER_COLORS, RemoteCars, carStateOf, createLabel } from './game/remoteCars';
-import { MAPS } from './map/maps';
+import { MAPS, TITLE_MAPS } from './map/maps';
 import type { MapDefinition } from './map/tilemap';
 import { NetClient } from './net/client';
 import { type SubmitResult, mergeBoards } from './net/leaderboard';
@@ -31,6 +31,7 @@ import { CameraRig } from './render/camera';
 import { CarMesh, carStyle } from './render/carMesh';
 import { createGhostMesh } from './render/raceMesh';
 import { GameScene } from './render/scene';
+import { nearestLit } from './game/headlights';
 import { MIRROR_MODES, Mirrors, centeredRegion, loadMirrorMode, saveMirrorMode } from './render/mirrors';
 import type { CarSnapshot, Spawn } from './sim/car';
 import { loadRapier } from './sim/physics';
@@ -39,7 +40,7 @@ import { Hud, hideLoading, showError } from './ui/hud';
 import { OnlinePanel, loadPlayerName } from './ui/onlinePanel';
 import { ALL_CARS, RankingPanel } from './ui/rankingPanel';
 import { Minimap, type MinimapMarker } from './ui/minimap';
-import { GameMenu, type MenuItem, type MenuMode, type MenuScreen } from './ui/menu';
+import { GameMenu, type MenuGroup, type MenuItem, type MenuMode, type MenuScreen } from './ui/menu';
 import { carDetail, conditionsDetail, courseDetail, npcDetail, rivalDetail, textDetail } from './ui/menuDetails';
 import { courseProfile } from './ui/courseInfo';
 import { driveOf } from './ui/carStats';
@@ -129,7 +130,9 @@ async function main() {
   };
   // ?map=1 のように開始マップを指定できる
   const requested = Number(params.get('map'));
-  let mapIndex = Number.isInteger(requested) && requested >= 0 && requested < MAPS.length ? requested : 0;
+  // 指定がなければ、タイトル画面の後ろに映す峠・首都高のどれかから始める（毎回変わる）
+  const titleMap = TITLE_MAPS[Math.floor(Math.random() * TITLE_MAPS.length)];
+  let mapIndex = params.has('map') && Number.isInteger(requested) && requested >= 0 && requested < MAPS.length ? requested : MAPS.indexOf(titleMap);
   // ?car=fd3s のように開始時の車を指定できる
   let carIndex = Math.max(0, VEHICLE_PRESETS.findIndex((v) => v.id === params.get('car')));
   const vehicle = () => VEHICLE_PRESETS[carIndex];
@@ -157,6 +160,10 @@ async function main() {
   };
   /** ヘッドライト（暗い時間帯・天気では最初からつける。F キー・ボタンで切り替え） */
   let lightsOn = GameScene.needsHeadlights(env);
+  /** 夜に NPC・ライバルがライトをつけて走るか（時間帯・天気の画面で選ぶ） */
+  let opponentLights = true;
+  /** NPC・ライバルのライト: 夜は選んだとおり。朝や天気の悪いときは自分と同じく自動でつける */
+  const npcLightsOn = () => GameScene.needsHeadlights(env) && (env.time !== 'night' || opponentLights);
   const applyLights = () => {
     carMesh.setLights(lightsOn);
     view.setHeadlights(lightsOn);
@@ -352,6 +359,7 @@ async function main() {
     } else {
       placeCar(course.gridSpot(6));
     }
+    npcField?.setLights(npcLightsOn());
     raceHud.show(true);
     const go = touch.isShown ? 'アクセルを押すとスタート' : 'アクセル（W / ↑）でスタート';
     raceHud.showReady(suddenDeath ? `${suddenDeath.round}本目・あなたが${suddenDeath.playerLeads ? '先行' : '後追い'}　${go}` : go);
@@ -876,6 +884,7 @@ async function main() {
     view.setEnvironment(env);
     // 時間帯・天気が変わったら、ライトもそれに合わせる（後から切り替えられる）
     if (changed) setLights(GameScene.needsHeadlights(env));
+    npcField?.setLights(npcLightsOn());
     if (!weatherChanged) return;
     level.car.params = carParams();
     if (race && restart) startRace(raceMode);
@@ -980,7 +989,7 @@ async function main() {
     const state = net.status === 'online' ? '' : '（接続中…）';
     const names = remoteCars.list.map((p) => p.name).join('、');
     const raceNote = roomRace ? `<br>${roomRace.phase === 'entry' ? '対戦のエントリー中' : '対戦中'}` : '';
-    netStatus.innerHTML = `🌐 部屋 <span class="code">${roomCode}</span>${state}<br>${
+    netStatus.innerHTML = `<span class="ns-label">ROOM</span> <span class="code">${roomCode}</span>${state}<br>${
       names ? `一緒に走っている人: ${escapeHtml(names)}` : '他の人を待っています'
     }${raceNote}`;
   };
@@ -1171,6 +1180,7 @@ async function main() {
     rule: battleRule as BattleRule,
     time: env.time,
     weather: env.weather,
+    opponentLights,
   };
   const draftMap = () => MAPS.find((m) => m.id === draft.map) ?? MAPS[0];
   const draftCar = () => VEHICLE_PRESETS.find((v) => v.id === draft.car) ?? VEHICLE_PRESETS[0];
@@ -1191,6 +1201,7 @@ async function main() {
     draft.rule = battleRule;
     draft.time = env.time;
     draft.weather = env.weather;
+    draft.opponentLights = opponentLights;
     draftBaseEnv = { time: env.time, weather: env.weather };
   };
   /** 対戦相手を選んだとき: コースと時間帯・天気を、まずライバルの得意なものにしておく（後の画面で変えられる） */
@@ -1212,6 +1223,7 @@ async function main() {
     npcLevelIndex = Math.max(0, NPC_LEVELS.findIndex((l) => l.id === draft.npc));
     battleIndex = Math.max(0, RIVALS.findIndex((r) => r.id === draft.rival));
     battleRule = draft.rule;
+    opponentLights = draft.opponentLights;
     if (mode === 'free') stopRace();
     const map = MAPS.findIndex((m) => m.id === draft.map);
     if (map >= 0 && map !== mapIndex && !mapLocked()) {
@@ -1336,29 +1348,44 @@ async function main() {
       });
     },
   };
-  const envScreen: MenuScreen = {
+  const timeGroup: MenuGroup = {
+    title: '時間帯',
+    choices: () => TIMES_OF_DAY,
+    selected: () => draft.time,
+    select: (id) => (draft.time = id as TimeOfDay),
+  };
+  const weatherGroup: MenuGroup = {
+    title: '天気',
+    choices: () => WEATHERS,
+    selected: () => draft.weather,
+    select: (id) => (draft.weather = id as Weather),
+  };
+  /** 夜だけ: 相手（NPC・ライバル）がライトをつけて走るか */
+  const opponentLightsGroup: MenuGroup = {
+    title: '相手のライト',
+    choices: () => [
+      { id: 'on', label: 'つける' },
+      { id: 'off', label: '消す', note: '暗い中で見えにくい' },
+    ],
+    selected: () => (draft.opponentLights ? 'on' : 'off'),
+    select: (id) => (draft.opponentLights = id === 'on'),
+  };
+  /** 時間帯・天気の画面。withOpponents なら、夜を選んだときに相手のライトも選べる */
+  const conditionsScreen = (withOpponents: boolean): MenuScreen => ({
     title: '時間帯・天気',
     en: 'CONDITIONS',
-    groups: [
-      {
-        title: '時間帯',
-        choices: () => TIMES_OF_DAY,
-        selected: () => draft.time,
-        select: (id) => (draft.time = id as TimeOfDay),
-      },
-      {
-        title: '天気',
-        choices: () => WEATHERS,
-        selected: () => draft.weather,
-        select: (id) => (draft.weather = id as Weather),
-      },
-    ],
+    get groups() {
+      return withOpponents && draft.time === 'night' ? [timeGroup, weatherGroup, opponentLightsGroup] : [timeGroup, weatherGroup];
+    },
     detail: () =>
       conditionsDetail(TIMES_OF_DAY.find((t) => t.id === draft.time)!, WEATHERS.find((w) => w.id === draft.weather)!, [
         ['コース', draftMap().name],
         ['車', draftCar().label],
+        ...(withOpponents && draft.time === 'night' ? [['相手のライト', draft.opponentLights ? 'つける' : '消す'] as [string, string]] : []),
       ]),
-  };
+  });
+  const envScreen = conditionsScreen(false);
+  const opponentEnvScreen = conditionsScreen(true);
   const envSummary = () => `${TIMES_OF_DAY.find((t) => t.id === draft.time)!.label}・${WEATHERS.find((w) => w.id === draft.weather)!.label}`;
   const modeDetail = (title: string, en: string, lines: string[]) => () =>
     textDetail({
@@ -1398,7 +1425,7 @@ async function main() {
       note: `${NPC_COUNT}台のNPCとレース`,
       detail: modeDetail('NPCと対戦', 'RACE', [`${NPC_COUNT}台のNPCが前に並び、最後尾からスタートして順位を競う。`, '強さは5段階から選べます。']),
       begin: () => beginDraft(true),
-      screens: () => [courseScreen(true), npcScreen, carScreen, envScreen],
+      screens: () => [courseScreen(true), npcScreen, carScreen, opponentEnvScreen],
       summary: () => `${draftMap().name} ／ NPC ${draftNpc().label} ／ ${draftCar().label} ／ ${envSummary()}`,
       finish: () => applyDraft('npc'),
     },
@@ -1412,7 +1439,7 @@ async function main() {
         beginDraft(true);
         draftRivalDefaults();
       },
-      screens: () => [rivalScreen, ruleScreen, courseScreen(true, draftRival().course), carScreen, envScreen],
+      screens: () => [rivalScreen, ruleScreen, courseScreen(true, draftRival().course), carScreen, opponentEnvScreen],
       summary: () => `VS ${draftRival().name} ／ ${BATTLE_RULES.find((r) => r.id === draft.rule)!.label} ／ ${draftMap().name} ／ ${draftCar().label}`,
       finish: () => applyDraft('battle'),
     },
@@ -1640,7 +1667,7 @@ async function main() {
           visible: () => net.isOnline,
           detail: () => settingDetail('部屋から抜ける', [`部屋 ${roomCode} から退出して、ひとりで走る。`, race && raceMode === 'online' ? '走っている対戦も途中でやめます。' : 'また「みんなで走る」から参加できます。'])(),
         },
-        { label: () => 'トップメニュー', en: 'MAIN MENU', run: () => menu.openHome(), detail: settingDetail('トップメニュー', ['プレイモード・コースを選び直す。オンラインの部屋もここから。']) },
+        { label: () => 'タイトルに戻る', en: 'TITLE', run: () => menu.openTitle(), detail: settingDetail('タイトルに戻る', ['最初のタイトル画面に戻る。何か押すと、プレイモード・コースを選び直せます。オンラインの部屋もそこから。']) },
         { ...rankingItem, visible: () => board !== null && race !== null && raceMode === 'timeAttack' },
         openSettings,
       ],
@@ -1778,10 +1805,11 @@ async function main() {
       carMesh.update(s);
       view.followCar(carMesh.root);
       remoteCars.render(performance.now());
-      // 他の人のヘッドライトで、自分の画面の道も照らす
-      view.setRemoteHeadlights(remoteCars.litCars(s.x, s.z));
       updateRemoteHornVolumes();
       npcField?.render(alpha);
+      // 他の人や NPC のヘッドライトで、自分の画面の道も照らす（近い車だけ）
+      const litCars = [...remoteCars.litCars(), ...(npcField?.litCars() ?? [])];
+      view.setRemoteHeadlights(nearestLit(litCars, s.x, s.z).map((c) => c.root));
       let minimapRace: MinimapMarker[] = [];
       if (race) {
         const pose = best ? ghostPoseAt(best.ghost, Math.max(0, race.time)) : null;
