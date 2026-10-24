@@ -100,7 +100,7 @@ export function prefersTouch(): boolean {
 
 /**
  * スマホ向けの操作画面。左下をなぞってハンドル、右下のボタンでアクセル・ブレーキ、
- * 上のボタンでカメラ・リセット、☰ でメニュー（GameMenu）を開く。
+ * 上のボタンでカメラ、☰ でメニュー（GameMenu）を開く（やり直しはポーズ画面から）。
  */
 export class TouchControls {
   private readonly root = el('touch');

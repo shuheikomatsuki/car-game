@@ -28,7 +28,7 @@ import { attachBubble } from './render/bubble';
 import { lapsDone, rankOnline, standingsWindow } from './race/onlineRace';
 import { OnlineRacePanel } from './ui/onlineRacePanel';
 import { CameraRig } from './render/camera';
-import { CarMesh, carStyle } from './render/carMesh';
+import { CarMesh, carStyle, driverEyeFor } from './render/carMesh';
 import { createGhostMesh } from './render/raceMesh';
 import { GameScene } from './render/scene';
 import { nearestLit } from './game/headlights';
@@ -39,6 +39,7 @@ import { NEUTRAL_INPUT, VEHICLE_PRESETS, topSpeedOf } from './sim/vehicle';
 import { Hud, hideLoading, showError } from './ui/hud';
 import { OnlinePanel, loadPlayerName } from './ui/onlinePanel';
 import { ALL_CARS, RankingPanel } from './ui/rankingPanel';
+import { ConfirmDialog } from './ui/confirmDialog';
 import { Minimap, type MinimapMarker } from './ui/minimap';
 import { GameMenu, type MenuGroup, type MenuItem, type MenuMode, type MenuScreen } from './ui/menu';
 import { carDetail, conditionsDetail, courseDetail, npcDetail, rivalDetail, textDetail } from './ui/menuDetails';
@@ -150,6 +151,7 @@ async function main() {
   let carMesh = new CarMesh(undefined, carStyle(vehicle().id));
   view.scene.add(carMesh.root);
   cameraRig.setCarScale(carStyle(vehicle().id).scale ?? 1);
+  cameraRig.setDriverEye(driverEyeFor(carStyle(vehicle().id)));
   /** 車を替えたら、その車の形の車体に作り直す */
   const rebuildCarMesh = () => {
     carMesh.dispose();
@@ -157,6 +159,7 @@ async function main() {
     carMesh.setLights(lightsOn);
     view.scene.add(carMesh.root);
     cameraRig.setCarScale(carStyle(vehicle().id).scale ?? 1);
+    cameraRig.setDriverEye(driverEyeFor(carStyle(vehicle().id)));
   };
   /** ヘッドライト（暗い時間帯・天気では最初からつける。F キー・ボタンで切り替え） */
   let lightsOn = GameScene.needsHeadlights(env);
@@ -1160,7 +1163,6 @@ async function main() {
           hud.toast(`カメラ: ${cameraRig.modeName}`);
         },
       },
-      { label: () => (race && raceMode !== 'online' ? 'やり直す' : 'リセット'), run: resetCar },
       { label: () => (lightsOn ? 'ライト ON' : 'ライト OFF'), run: toggleLights, place: 'side' },
       { label: () => 'ホーン', run: () => {}, hold: (down) => (hornInput.touch = down), place: 'side' },
       { label: () => 'セリフ', run: () => toggleEmotes(), place: 'side' },
@@ -1455,8 +1457,8 @@ async function main() {
     });
   }
   const settingDetail = (title: string, lines: string[]) => () => textDetail({ kicker: 'OPTIONS', title, lines });
-  /** プレイデータを消すボタンを1回押してから、この時刻 [ms] までにもう一度押すと消す */
-  let clearArmedUntil = 0;
+  /** 「プレイデータを消す」の確認の画面 */
+  const confirmDialog = new ConfirmDialog();
   const settingItems: MenuItem[] = [
     { label: () => 'カメラ', value: () => cameraRig.modeName, run: () => cycleCamera(), detail: settingDetail('カメラ', ['走っているときの視点。走行中は C キーでも切り替えられます。']) },
     {
@@ -1513,25 +1515,28 @@ async function main() {
     },
     {
       label: () => 'プレイデータを消す',
-      // まちがって消さないよう、続けてもう一度押したときだけ消す
-      value: () => (clearArmedUntil > performance.now() ? 'もう一度押すと消す' : '消す'),
+      value: () => '消す',
+      // まちがって消さないよう、確認の画面で「消す」を選んだときだけ消す
       run: () => {
-        if (clearArmedUntil <= performance.now()) {
-          clearArmedUntil = performance.now() + 4000;
-          menu.refresh();
-          window.setTimeout(() => menu.refresh(), 4100);
-          return;
-        }
-        clearArmedUntil = 0;
-        clearPlayData();
-        best = null;
-        hud.toast('プレイデータを消しました');
-        menu.refresh();
+        void confirmDialog
+          .ask({
+            title: 'プレイデータを消す',
+            en: 'DELETE DATA',
+            lines: ['自己ベスト・ゴースト・勝ったライバルの記録を消します。', '消した記録は元に戻せません。'],
+            ok: '消す',
+          })
+          .then((ok) => {
+            if (!ok) return;
+            clearPlayData();
+            best = null;
+            hud.toast('プレイデータを消しました');
+            menu.refresh();
+          });
       },
       detail: settingDetail('プレイデータを消す', [
         'このブラウザに残っている、タイムアタックの自己ベストとゴースト・勝ったライバルの記録を消します。',
         '名前・サウンド・ハンドルなどの設定は残ります。ランキングに送った記録は消えません。',
-        '押したあと、もう一度押すと消します。元には戻せません。',
+        '押すと確認の画面が出ます。消した記録は元に戻せません。',
       ]),
     },
   ];

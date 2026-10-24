@@ -11,7 +11,8 @@
 export const BOARD_SIZE = 20;
 /** サーバーに残す数（ランキングから外れた人が記録を縮めたとき、順位を正しく出すため少し多めに） */
 export const STORED_ENTRIES = 50;
-export const MAX_ENTRY_NAME_LENGTH = 12;
+/** ランキングに出す名前の上限（文字数。みんなで走るときの名前と同じ） */
+export const MAX_ENTRY_NAME_LENGTH = 10;
 /** ゴーストの数値の上限（10Hz × [x, z, yaw] で 15 分ぶん） */
 export const MAX_GHOST_VALUES = 10 * 3 * 60 * 15;
 export const MAX_LAPS = 20;
@@ -75,7 +76,7 @@ export function parseSubmission(body: unknown): Submission | null {
   if (typeof body !== 'object' || body === null) return null;
   const o = body as Partial<Submission>;
   if (typeof o.player !== 'string' || !/^[A-Za-z0-9-]{8,64}$/.test(o.player)) return null;
-  const name = typeof o.name === 'string' ? o.name.trim().slice(0, MAX_ENTRY_NAME_LENGTH) : '';
+  const name = typeof o.name === 'string' ? [...o.name.trim()].slice(0, MAX_ENTRY_NAME_LENGTH).join('').trim() : '';
   if (!name) return null;
   if (!finite(o.total) || o.total <= 0 || o.total > 3600) return null;
   if (!Array.isArray(o.laps) || o.laps.length === 0 || o.laps.length > MAX_LAPS || !o.laps.every((t) => finite(t) && t > 0)) return null;

@@ -68,7 +68,7 @@ export function mirrorLayout(
   const room = Math.max(0, region.right - region.left);
   const gap = 8;
   if (mode === 'side') {
-    const sw = Math.round(Math.min((room - gap) / 2, width * (portrait ? 0.32 : 0.15), 200));
+    const sw = Math.round(Math.min((room - gap) / 2, width * (portrait ? 0.4 : 0.18), 230));
     const h = Math.round(sw / 1.7);
     const left = { x: Math.round(region.left), y: region.top, w: sw, h };
     const right = { x: Math.round(region.right - sw), y: region.top, w: sw, h };
@@ -77,7 +77,7 @@ export function mirrorLayout(
   }
   const withSides = mode === 'all';
   // 縦向きの画面は幅が狭いので、横幅に対して大きめにとる
-  const share = withSides ? (portrait ? 0.92 : 0.56) : portrait ? 0.6 : 0.36;
+  const share = withSides ? (portrait ? 0.94 : 0.6) : portrait ? 0.72 : 0.42;
   const total = Math.min(room, width * share, withSides ? 760 : 440);
   const sw = withSides ? Math.round(total * 0.22) : 0;
   const rw = Math.round(withSides ? total - 2 * (sw + gap) : total);

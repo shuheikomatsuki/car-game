@@ -6,7 +6,8 @@
 
 export const PROTOCOL_VERSION = 2;
 export const MAX_PLAYERS = 8;
-export const MAX_NAME_LENGTH = 12;
+/** 名前の上限（文字数） */
+export const MAX_NAME_LENGTH = 10;
 /** 部屋コードに使う文字（読み間違えやすい 0/O・1/I/L を除く） */
 export const ROOM_CODE_CHARS = 'ABCDEFGHJKMNPQRSTUVWXYZ23456789';
 export const ROOM_CODE_LENGTH = 4;

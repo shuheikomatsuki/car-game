@@ -10,6 +10,10 @@ describe('parseSubmission', () => {
     expect(parseSubmission({ ...sub(PLAYER_A, 90), name: '  しゅうへい  ' })?.name).toBe('しゅうへい');
   });
 
+  it('cuts the name to 10 characters', () => {
+    expect(parseSubmission({ ...sub(PLAYER_A, 90), name: 'あいうえおかきくけこさしすせそ' })?.name).toBe('あいうえおかきくけこ');
+  });
+
   it('rejects broken records', () => {
     expect(parseSubmission(null)).toBeNull();
     expect(parseSubmission({ ...sub(PLAYER_A, 90), name: '   ' })).toBeNull();

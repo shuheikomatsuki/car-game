@@ -162,12 +162,17 @@ export class RankingPanel {
 
   private render(mine: ReadonlySet<string>): void {
     const top = this.entries[0]?.total;
-    this.table.innerHTML = this.entries
+    // 列の名前（記録がないときは出さない）
+    const head = this.entries.length
+      ? '<thead><tr><th>順位</th><th>名前</th><th>車</th><th>タイム</th><th class="date">日付</th><th></th></tr></thead>'
+      : '';
+    const rows = this.entries
       .map((e, i) => {
         const gap = i === 0 || top === undefined ? '' : `<span class="note">+${(e.total - top).toFixed(2)}</span>`;
-        const date = new Date(e.date).toLocaleDateString('ja-JP', { month: 'numeric', day: 'numeric' });
+        const date = new Date(e.date).toLocaleDateString('ja-JP', { year: 'numeric', month: 'numeric', day: 'numeric' });
         return `<tr class="${mine.has(e.id) ? 'me' : ''}"><td>${i + 1}</td><td class="name">${escapeHtml(e.name)}</td><td class="car">${escapeHtml(this.carLabels.get(e.car) ?? e.car)}</td><td>${formatTime(e.total)} ${gap}</td><td class="note date">${date}</td><td><button type="button" data-index="${i}">対戦</button></td></tr>`;
       })
       .join('');
+    this.table.innerHTML = `${head}<tbody>${rows}</tbody>`;
   }
 }
