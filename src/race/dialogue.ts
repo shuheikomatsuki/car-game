@@ -19,6 +19,8 @@ export interface DialogueLine {
   text: string;
   /** このセリフを出すときに鳴らす効果音（public/sounds/<名前>.mp3。無ければ用意してある音: 'slap'） */
   sound?: string;
+  /** 走っている途中のセリフを、長くても区切らずに1つの字幕で出す（書かなければ、長いセリフは文の切れ目で区切って順に出す） */
+  whole?: boolean;
 }
 
 /** 数の範囲（min 以上・max 以下。片方だけでもよい） */
@@ -48,9 +50,10 @@ export interface SceneCondition {
 /**
  * 走っている途中の出来事:
  * 'overtake'（自分がライバルを抜いた）、'overtakeInside'（コーナーでライバルをインから抜いた。'overtake' も同時に起きる）、
- * 'overtaken'（ライバルに抜かれた）、'crash'（自分が壁に強くぶつかった）、'rivalWide'（ライバルがコーナーで外へはみ出した）
+ * 'overtaken'（ライバルに抜かれた）、'crash'（自分が壁に強くぶつかった）、'rivalWide'（ライバルがコーナーで外へはみ出した）、
+ * 'rivalBump'（ラフプレーでライバルにぶつけられた）
  */
-export type BattleEvent = 'overtake' | 'overtakeInside' | 'overtaken' | 'crash' | 'rivalWide';
+export type BattleEvent = 'overtake' | 'overtakeInside' | 'overtaken' | 'crash' | 'rivalWide' | 'rivalBump';
 
 export interface RaceCondition extends SceneCondition {
   /** この出来事が起きたとき（配列なら、どれかが起きたとき） */

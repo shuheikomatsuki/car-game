@@ -264,10 +264,11 @@ export function rivalDetail(rival: Rival, level: NpcLevel, info: { car: string; 
         <p class="d-team">${escapeHtml(rival.team)}${!SHOW_PORTRAITS && info.beaten ? '<span class="d-win">WIN</span>' : ''}</p>
         <h2 class="d-name">${escapeHtml(rival.name)}</h2>
         <p class="d-level">${stars(level)}<span>${escapeHtml(level.label)}</span></p>
+        <p class="d-text">${escapeHtml(rival.bio)}</p>
         ${specs([
           ['マシン', info.car],
           ['得意コース', info.course],
-          ...(rival.rough ? ([['ラフプレー', '選べる（ぶつけてくる）']] as [string, string][]) : []),
+          ...(rival.rough ? ([['ラフプレー', `選べる（${rival.roughNote ?? 'ぶつけてくる'}）`]] as [string, string][]) : []),
         ])}
         ${levelRows(level)}
         <div class="d-garage"><div class="preview-slot"></div></div>

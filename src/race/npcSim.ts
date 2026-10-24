@@ -108,7 +108,7 @@ export function simulateBattle(def: MapDefinition, a: SimRacer, b: SimRacer, sec
     const hit = racers[0].driver.takeHit();
     if (hit) {
       hits++;
-      racers[1].car.bump(hit.push, hit.yawRate);
+      racers[1].car.bump(hit.push, hit.yawRate, hit.time);
     }
     physics.world.timestep = DT;
     physics.world.step();

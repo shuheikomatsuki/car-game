@@ -63,7 +63,7 @@ export class Subtitles {
   /** 走っている間のセリフ（前のセリフが出ている間は順番を待つ。長いセリフは区切って順に出す） */
   say(lines: readonly DialogueLine[]): void {
     for (const l of lines) {
-      splitLine(l.text).forEach((text, i) => this.queue.push({ ...this.item(l), text, sound: i === 0 ? l.sound : undefined }));
+      (l.whole ? [l.text] : splitLine(l.text)).forEach((text, i) => this.queue.push({ ...this.item(l), text, sound: i === 0 ? l.sound : undefined }));
     }
     if (this.lineTimer <= 0) this.next();
   }

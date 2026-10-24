@@ -30,7 +30,7 @@ describe('rough play', () => {
   const player = { level: NPC_LEVELS[0], params };
 
   it('only the rivals that play rough can choose it', () => {
-    expect(RIVALS.filter((r) => r.rough).map((r) => r.id)).toEqual(['shingo', 'rin']);
+    expect(RIVALS.filter((r) => r.rough).map((r) => r.id)).toEqual(['shingo', 'tachi', 'rin']);
   });
 
   it('rams the player in the corners, and keeps itself on the road', () => {
@@ -39,6 +39,22 @@ describe('rough play', () => {
     expect(hits).toBeGreaterThan(0);
     expect(racers[0].timer.phase).toBe('finished');
     expect(racers[0].fell).toBe(false);
+  }, 120000);
+
+  it('Tachi only nudges: a light, short hit from behind on the inside', () => {
+    const tachi = RIVALS.find((r) => r.id === 'tachi')!;
+    const style = tachi.rough!;
+    expect(style.push).toBeLessThan(shingo.rough!.push / 2);
+    expect(style.spin).toBeLessThan(shingo.rough!.spin / 2);
+    const tmap = MAPS.find((m) => m.id === tachi.course)!;
+    const tparams = VEHICLE_PRESETS.find((v) => v.id === tachi.car)!.params;
+    const { hits, racers } = simulateBattle(tmap, { level: rivalLevel(tachi), params: tparams, rough: style }, { level: NPC_LEVELS[0], params: tparams }, 300, 10);
+    console.log('tachi hits', hits, racers.map((r) => `${r.timer.phase} ${r.timer.time.toFixed(1)} off ${r.maxOffset.toFixed(1)} fell ${r.fell}`).join(' | '));
+    expect(hits).toBeGreaterThan(0);
+    expect(racers[0].timer.phase).toBe('finished');
+    expect(racers[0].fell).toBe(false);
+    // 姿勢を崩すだけで、相手は落ちずに走りきる
+    expect(racers[1].fell).toBe(false);
   }, 120000);
 
   it('does not ram without rough play', () => {

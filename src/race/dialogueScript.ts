@@ -110,6 +110,14 @@ export const RIVAL_DIALOGUES: Readonly<Record<string, RivalDialogue>> = {
           },
         ],
       },
+      // ラフプレーで軽く当てたとき（長いので2回に分けて出す）
+      {
+        when: { event: 'rivalBump' },
+        say: [
+          { who: 'tachi', text: 'スピンさせるほど強くは押してない。相手の姿勢を一瞬崩してやるだけだ。', whole: true },
+          { who: 'tachi', text: '悪く思うなよ。これぐらいあっちの世界では日常茶飯事だぜ。', whole: true },
+        ],
+      },
     ],
   },
 };

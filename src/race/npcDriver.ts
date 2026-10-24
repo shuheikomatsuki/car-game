@@ -42,12 +42,20 @@ export interface RoughStyle {
   push: number;
   /** 当てたときに相手の向きを回す速さ [rad/s]（スピンしかける） */
   spin: number;
+  /** 当てられた相手のタイヤが滑る時間 [s]（書かなければ 0.8） */
+  upset?: number;
+  /** 近づくときに、相手よりコーナーの内側へ寄る距離 [m]（書かなければ 2.2） */
+  side?: number;
+  /** 相手との前後の差がこれ [m] 以下になったら寄せて当てる（書かなければ 2.5 = 横に並んでから。大きくすると後ろから相手の後ろの角に当てる） */
+  reach?: number;
 }
 
 /** ラフプレーで当てたとき、相手に与える力（Car.bump に渡す） */
 export interface RoughHit {
   push: { x: number; z: number };
   yawRate: number;
+  /** タイヤが滑る時間 [s] */
+  time: number;
 }
 
 /** 狙い始めるのは、この先 [m] にこれ以上 [rad] 曲がるコーナーがあるとき */
@@ -199,15 +207,15 @@ export class NpcDriver {
       this.pushTime = 0.2;
       const yaw = course.pointAt(this.clampS(tp.s)).yaw;
       const out = -inside;
-      this.hit = { push: { x: Math.cos(yaw) * out * style.push, z: -Math.sin(yaw) * out * style.push }, yawRate: inside * style.spin };
+      this.hit = { push: { x: Math.cos(yaw) * out * style.push, z: -Math.sin(yaw) * out * style.push }, yawRate: inside * style.spin, time: style.upset ?? 0.8 };
     }
     const limit = course.widthAt(here.s) / 2 - 1.6;
     const clamp = (o: number) => Math.max(-limit, Math.min(limit, o));
     const planned = this.targetSpeed(here.s, Math.max(4, v * 0.25));
     // 横に並ぶまでは相手より速く（ただしコーナーを曲がりきれる速さの少し上まで）
-    if (gap > 2.5) {
+    if (gap > (style.reach ?? 2.5)) {
       const ahead = here.s + Math.max(6, v * 0.4);
-      return { s: ahead, offset: clamp(tp.offset + inside * 2.2), speed: planned };
+      return { s: ahead, offset: clamp(tp.offset + inside * (style.side ?? 2.2)), speed: planned };
     }
     // 並んだら、相手のいる所より外へ寄せてぶつける（近い点を狙って鋭く寄せる）
     const ahead = here.s + Math.max(4, v * 0.2);
