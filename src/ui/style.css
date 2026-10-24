@@ -2738,13 +2738,18 @@ body.in-scene #countdown {
 }
 
 .rk-head h2 .en,
-.rk-board .en {
+.rk-board .en,
+#online h2 .en {
   font-family: var(--display);
   font-style: italic;
   font-size: 12px;
   font-weight: 700;
   letter-spacing: 0.2em;
   color: var(--muted);
+}
+
+#online h2 .en {
+  margin-left: 0.6em;
 }
 
 #ranking .rk-head .field {
@@ -3114,6 +3119,10 @@ body.in-scene #countdown {
 
 .or-entrants li.ready .mark {
   color: #6ee08a;
+}
+
+.or-entrants li.out {
+  opacity: 0.55;
 }
 
 @media (max-height: 540px) and (orientation: landscape) {

@@ -30,8 +30,9 @@ export interface OnlineRaceView {
 export interface OnlineRacePanelHandlers {
   /** 準備 OK（その車で出る）・取り消し */
   onReady: (ready: boolean, car: string) => void;
-  onStart: () => void;
-  /** 抜ける（言い出した人なら対戦をやめる） */
+  /** スタートの合図。undecided: まだ準備 OK も見送りも選んでいない人の数（その人は今回は見ているだけになる） */
+  onStart: (undecided: number) => void;
+  /** 今回は見送る（言い出した人なら対戦をやめる） */
   onLeave: () => void;
   onOpenChange: (open: boolean) => void;
 }
@@ -39,8 +40,8 @@ export interface OnlineRacePanelHandlers {
 const hexColor = (c: number) => `#${c.toString(16).padStart(6, '0')}`;
 
 /**
- * オンライン対戦のエントリー画面: 言い出した人がコース・時間帯・天気を決めた後、各自が車を選んで「準備OK」にする。
- * 全員が準備 OK になったら、言い出した人がスタートの合図を出す
+ * オンライン対戦のエントリー画面: 言い出した人がコース・時間帯・天気を決めた後、各自が車を選んで「準備OK」か「今回は見送る」にする。
+ * 言い出した人は、全員が選び終えたら（待ちきれなければ準備 OK の人だけで）スタートの合図を出す
  */
 export class OnlineRacePanel {
   private readonly root = el('online-race');
@@ -74,7 +75,7 @@ export class OnlineRacePanel {
       this.render();
     });
     this.readyButton.addEventListener('click', () => this.handlers.onReady(!this.isReady, this.car));
-    this.startButton.addEventListener('click', () => this.handlers.onStart());
+    this.startButton.addEventListener('click', () => this.handlers.onStart(this.undecided));
     this.leaveButton.addEventListener('click', () => this.handlers.onLeave());
     el('or-hide').addEventListener('click', () => this.close());
   }
@@ -89,6 +90,12 @@ export class OnlineRacePanel {
 
   private get isReady(): boolean {
     return !!this.view && this.view.race.entrants.includes(this.view.selfId);
+  }
+
+  /** まだ準備 OK も見送りも選んでいない人の数 */
+  private get undecided(): number {
+    const v = this.view;
+    return v ? v.members.filter((m) => !v.race.entrants.includes(m.id) && !v.race.out.includes(m.id)).length : 0;
   }
 
   /** 対戦の様子が変わったとき（開いていなければ中身だけ変える） */
@@ -126,21 +133,24 @@ export class OnlineRacePanel {
     const { race, selfId } = v;
     const isHost = race.host === selfId;
     const ready = this.isReady;
+    const out = race.out.includes(selfId);
     const hostName = v.members.find((m) => m.id === race.host)?.name ?? '誰か';
-    const waiting = v.members.filter((m) => !race.entrants.includes(m.id)).length;
-    const everyoneReady = waiting === 0;
+    const waiting = this.undecided;
+    const count = race.entrants.length;
     this.cond.textContent = v.conditions;
     this.status.textContent = isHost
-      ? everyoneReady
-        ? '全員が準備OKです。「スタート」で一斉にカウントダウンが始まります。'
+      ? count === 0
+        ? '車を選んで「準備OK」。全員が準備OKか見送りを選んだら「スタート」を押してください。'
+        : waiting === 0
+          ? `全員が選び終えました。「スタート」で、準備OKの${count}人でカウントダウンを始めます。`
+          : `あと${waiting}人が選んでいます。待ちきれなければ、準備OKの人だけでスタートできます。`
+      : out
+        ? '今回は見送ります（対戦は見ているだけ）。出るなら車を選んで「準備OK」を押してください。'
         : ready
-          ? `あと${waiting}人の準備OKを待っています。全員そろうと「スタート」を押せます。`
-          : '車を選んで「準備OK」。全員が準備OKになると「スタート」を押せます。'
-      : ready && everyoneReady
-        ? `全員が準備OKです。${hostName} さんのスタートの合図を待っています…`
-        : ready
-          ? `あと${waiting}人の準備OKを待っています…`
-          : '車を選んで「準備OK」を押してください。';
+          ? waiting === 0
+            ? `全員が選び終えました。${hostName} さんのスタートの合図を待っています…`
+            : `あと${waiting}人が選んでいます。${hostName} さんのスタートの合図を待っています…`
+          : '車を選んで「準備OK」を押してください。出ないときは「今回は見送る」。';
     for (const b of this.cars.querySelectorAll<HTMLButtonElement>('button[data-id]')) {
       const on = b.dataset.id === this.car;
       b.classList.toggle('selected', on);
@@ -150,16 +160,19 @@ export class OnlineRacePanel {
     this.entrants.innerHTML = v.members
       .map((m) => {
         const order = race.entrants.indexOf(m.id);
+        const skipped = race.out.includes(m.id);
         const car = m.id === selfId ? this.car : m.car;
-        return `<li class="${order >= 0 ? 'ready' : ''}${m.id === selfId ? ' me' : ''}"><span class="dot" style="background:${hexColor(m.color)}"></span><span class="name">${escapeHtml(m.name)}${
+        return `<li class="${order >= 0 ? 'ready' : skipped ? 'out' : ''}${m.id === selfId ? ' me' : ''}"><span class="dot" style="background:${hexColor(m.color)}"></span><span class="name">${escapeHtml(m.name)}${
           m.id === race.host ? '<i>主催</i>' : ''
-        }</span><span class="car">${escapeHtml(this.carLabel(car))}</span><span class="mark">${order >= 0 ? '準備OK' : '選択中'}</span></li>`;
+        }</span><span class="car">${escapeHtml(this.carLabel(car))}</span><span class="mark">${order >= 0 ? '準備OK' : skipped ? '見送り' : '選択中'}</span></li>`;
       })
       .join('');
     this.readyButton.textContent = ready ? '準備OKを取り消す' : '準備OK';
     this.readyButton.classList.toggle('primary', !ready);
     this.startButton.classList.toggle('hidden', !isHost);
-    this.startButton.disabled = !everyoneReady;
-    this.leaveButton.textContent = isHost ? '対戦をやめる' : '抜ける';
+    this.startButton.disabled = count === 0;
+    this.startButton.textContent = waiting === 0 || count === 0 ? 'スタート' : `準備OKの${count}人でスタート`;
+    this.leaveButton.textContent = isHost ? '対戦をやめる' : '今回は見送る';
+    this.leaveButton.classList.toggle('hidden', out);
   }
 }

@@ -11,7 +11,7 @@
 export const BOARD_SIZE = 20;
 /** サーバーに残す数（ランキングから外れた人が記録を縮めたとき、順位を正しく出すため少し多めに） */
 export const STORED_ENTRIES = 50;
-/** ランキングに出す名前の上限（文字数。みんなで走るときの名前と同じ） */
+/** ランキングに出す名前の上限（文字数。オンラインの部屋での名前と同じ） */
 export const MAX_ENTRY_NAME_LENGTH = 10;
 /** ゴーストの数値の上限（10Hz × [x, z, yaw] で 15 分ぶん） */
 export const MAX_GHOST_VALUES = 10 * 3 * 60 * 15;
