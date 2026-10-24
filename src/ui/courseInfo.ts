@@ -124,6 +124,10 @@ export const COURSE_NOTES: Record<string, CourseNote> = {
   'straight-down-r': { text: '同じ峠を下る。長い直線の先のコーナーで速度を落としきれるか', cars: ['r34', 'gtr'] },
   'valley-up': { text: '3回谷を橋で渡り、短いトンネルと長いトンネルを抜けて上る', cars: ['r34', 'evo'] },
   'valley-down': { text: '橋とトンネルの峠を下る。トンネルの出口の先のコーナーに注意', cars: ['fd3s', 'evo'] },
+  'akina-down': {
+    text: '秋名のダウンヒル。長いストレート、スケートセンター前の直線、5連続ヘアピン。ヘアピンの内側の側溝にタイヤを落とせば溝落とし',
+    cars: ['fd3s', 'ek9'],
+  },
   happogahara: {
     text: '狭い古い道、荒れた広い道、谷に架かる橋、ループ橋とトンネルのヒルクライム。頂上の広場でUターンして戻る',
     cars: ['fd3s', 'ek9'],

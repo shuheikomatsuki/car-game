@@ -62,6 +62,8 @@ const GRASS_GRIP = 0.55;
 /** 草地の転がり抵抗: 減速度 = GRASS_DRAG_BASE + GRASS_DRAG_PER_SPEED * v [m/s^2]（普通車は 40km/h くらいまでしか出ない） */
 const GRASS_DRAG_BASE = 1.5;
 const GRASS_DRAG_PER_SPEED = 0.45;
+/** 内側のタイヤを側溝に落としている間（溝落とし）、横に滑らずに曲がれる力がこの割合だけ増える */
+const GUTTER_GRIP = 0.4;
 
 /**
  * 物理ワールド内の1台の車。
@@ -80,6 +82,11 @@ export class Car {
    * 草地ではグリップが落ち、転がり抵抗で速度が出なくなる
    */
   offRoad: ((x: number, z: number) => number) | null = null;
+  /**
+   * 内側のタイヤがカーブの内側の側溝に落ちているか（溝落とし）。落ちている間は、溝の壁に引っかかって
+   * 外へ逃げずに速く曲がれる（草地にもならない）
+   */
+  gutter: ((x: number, z: number) => boolean) | null = null;
   /** 段差で宙に浮いている間は true にする。タイヤが効かず、そのままの速さと向きで飛ぶ */
   airborne = false;
   /** 直前のステップで剛体に指示した水平速度（衝突の強さを測るため） */
@@ -171,9 +178,12 @@ export class Car {
     }
 
     const t = this.body.translation();
-    const grass = this.offRoad ? this.offRoad(t.x, t.z) : 0;
+    const hooked = this.gutter?.(t.x, t.z) ?? false;
+    const grass = this.offRoad && !hooked ? this.offRoad(t.x, t.z) : 0;
     let params =
-      grass > 0
+      hooked
+        ? { ...this.params, maxLateralAccel: this.params.maxLateralAccel * (1 + GUTTER_GRIP), lateralGrip: this.params.lateralGrip * (1 + GUTTER_GRIP) }
+        : grass > 0
         ? {
             ...this.params,
             maxLateralAccel: this.params.maxLateralAccel * (1 - (1 - GRASS_GRIP) * grass),

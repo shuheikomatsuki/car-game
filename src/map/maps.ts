@@ -722,6 +722,76 @@ export const HAPPOGAHARA_MAP: MapDefinition = {
   },
 };
 
+/**
+ * 秋名（榛名山）のダウンヒル（約 5km・高低差 330m）。頂上の旧料金所跡から、湖を背に伊香保側へ下る。
+ * 実際の道の形のデータは使っておらず、原作・アニメ・アーケードで知られる区間の並びを再現している:
+ *
+ * - スタート直後: 緩い下りの直線から、中速の左右が続く
+ * - 長い下りのストレートの先に、最初のヘアピン
+ * - 中速〜低速の連続コーナー
+ * - スケートセンター前のストレート（いちばん長い直線。パワーのある車はここで抜きにかかる）
+ * - 5連続ヘアピン（左右交互）。どのヘアピンも内側の路肩に側溝があり、内側のタイヤを落とすと速く曲がれる（溝落とし）
+ * - ヘアピンを抜けた後の中速区間と S 字、最後の直線でゴール
+ */
+export const AKINA_DOWN_MAP = roadMap('akina-down', '秋名（ダウンヒル）', {
+  scenery: 'touge',
+  width: 8,
+  start: 40,
+  pieces: [
+    // スタート（旧料金所跡）: 緩い下り
+    { straight: 200, h: 330 },
+    { arc: { radius: 120, turn: -35 } },
+    { straight: 120 },
+    { arc: { radius: 70, turn: 60 } },
+    { straight: 90 },
+    { arc: { radius: 55, turn: -80 } },
+    { straight: 150 },
+    { arc: { radius: 150, turn: 40 } },
+    // 長い下りのストレートの先の、最初のヘアピン
+    { straight: 260 },
+    { arc: { radius: 18, turn: -175 }, gutter: true },
+    { straight: 110 },
+    // 中速〜低速の連続コーナー
+    { arc: { radius: 40, turn: 100 }, gutter: true },
+    { straight: 80 },
+    { arc: { radius: 30, turn: -120 }, gutter: true },
+    { straight: 60 },
+    { arc: { radius: 60, turn: 70 } },
+    { straight: 70 },
+    { arc: { radius: 25, turn: 140 }, gutter: true },
+    { straight: 90 },
+    { arc: { radius: 45, turn: -90 } },
+    // スケートセンター前のストレート
+    { straight: 450 },
+    { arc: { radius: 220, turn: 20 } },
+    { straight: 140 },
+    // 5連続ヘアピン（左右交互・内側に側溝）
+    { arc: { radius: 16, turn: -178 }, gutter: true },
+    { straight: 70 },
+    { arc: { radius: 15, turn: 178 }, gutter: true },
+    { straight: 60 },
+    { arc: { radius: 17, turn: -178 }, gutter: true },
+    { straight: 65 },
+    { arc: { radius: 15, turn: 178 }, gutter: true },
+    { straight: 70 },
+    { arc: { radius: 18, turn: -170 }, gutter: true },
+    { straight: 120 },
+    // ヘアピンを抜けた後の中速区間と S 字
+    { arc: { radius: 80, turn: 60 } },
+    { straight: 140 },
+    { arc: { radius: 35, turn: -110 }, gutter: true },
+    { straight: 100 },
+    { arc: { radius: 50, turn: 80 } },
+    { arc: { radius: 50, turn: -80 } },
+    { straight: 120 },
+    { arc: { radius: 28, turn: 130 }, gutter: true },
+    { straight: 150 },
+    { arc: { radius: 90, turn: -50 } },
+    // 最後の直線でゴール
+    { straight: 200, h: 0 },
+  ],
+});
+
 export const MAPS: readonly MapDefinition[] = [
   TOWN_MAP,
   SCHOOL_MAP,
@@ -743,6 +813,7 @@ export const MAPS: readonly MapDefinition[] = [
   VALLEY_UP_MAP,
   VALLEY_DOWN_MAP,
   HAPPOGAHARA_MAP,
+  AKINA_DOWN_MAP,
 ];
 
 /**

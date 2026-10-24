@@ -46,10 +46,10 @@ export const RIVALS: readonly Rival[] = [
   { id: 'sakamoto', name: '坂本', team: '埼玉北西エリア連合', car: 'cappuccino', course: 'steep-down', conditions: { time: 'night', weather: 'rain' }, level: 'hard', bio: '埼玉北西エリア連合のカプチーノ使い。軽さを武器にした下りの速さは、軽自動車だと侮ると痛い目を見る。' },
   { id: 'keisuke', name: '高橋啓介', team: '赤城レッドサンズ', car: 'fd3s', course: 'valley-up', level: 'pro', bio: '黄色いFDを駆る赤城レッドサンズのナンバー2で、のちのプロジェクトDのヒルクライム担当。何かにつけて口にするのは「アニキ」。' },
   { id: 'sudo', name: '須藤京一', team: 'チームエンペラー', car: 'evo3', course: 'hairpin-down', level: 'pro', bio: '群馬の走り屋を見下すチームエンペラーのリーダー。拓海のハチロクのエンジンをブローさせた男で、負けた部下にはビンタ。' },
-  { id: 'hoshino', name: '星野好造', team: 'パープルシャドウ', car: 'r34', course: 'shutoko-loop-2', level: 'legend', bio: '「ゴッドアーム」の異名を持つパープルシャドウのGT-R使い。豪快なハンドルさばきで、年季の違いを見せつける。' },
+  { id: 'hoshino', name: '星野好造', team: 'パープルシャドウ', car: 'r34', course: 'shutoko-loop-2', level: 'legend', bio: '「ゴッドフット」の異名を持つパープルシャドウのGT-R使い。「ゴッドアーム」城島と並ぶ伝説で、年季の違うアクセルワークを見せつける。' },
   { id: 'tachi', name: '舘智幸', team: 'プロレーサー', car: 'ek9', course: 'happogahara', level: 'legend', rough: { duration: 2.5, cooldown: 10, push: 2.5, spin: 0.7, upset: 0.4, side: 1.4, reach: 3.6 }, roughNote: '軽く当ててくる', roughHow: '後ろからコーナーの内側へ入り、軽く当てて姿勢を崩してくる。スピンするほどではないが、乱されたら立て直して', bio: '元走り屋のプロレーサーで、EK9シビックを操る。「プロとアマの差」を見せつけるためなら、軽く当てて相手を崩すこともためらわない。' },
   { id: 'rin', name: '北条凛', team: '死神', car: 'gtr', course: 'marathon', level: 'legend', rough: { duration: 3, cooldown: 9, push: 6, spin: 1.6 }, bio: '最愛の人を失い「死神」と呼ばれるようになった黒いGT-Rの男。相手を道連れにするような危険な走りで迫ってくる。' },
-  { id: 'takumi', name: '藤原拓海', team: '藤原とうふ店', car: 'ae86', course: 'valley-down', level: 'legend', bio: '豆腐の配達で毎朝秋名を下るうちに腕を磨いた、とうふ屋のハチロク。紙コップの水をこぼさない走りと溝落としが代名詞。' },
+  { id: 'takumi', name: '藤原拓海', team: '藤原とうふ店', car: 'ae86', course: 'akina-down', level: 'legend', bio: '豆腐の配達で毎朝秋名を下るうちに腕を磨いた、とうふ屋のハチロク。紙コップの水をこぼさない走りと溝落としが代名詞。' },
 ];
 
 export function rivalLevel(rival: Rival): NpcLevel {
