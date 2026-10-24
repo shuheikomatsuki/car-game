@@ -11,7 +11,7 @@ export interface ConfirmOptions {
   lines: readonly string[];
   /** 実行するボタンの文字（「消す」など） */
   ok: string;
-  /** 決めるボタンを赤くしない（消すのではなく、決めるだけのとき） */
+  /** 実行するボタンを赤くしない（消すのではなく、保存するだけのとき） */
   safe?: boolean;
 }
 
@@ -23,7 +23,7 @@ export interface TextOptions extends ConfirmOptions {
 
 /**
  * 「本当に消しますか？」のような確認の画面。選ぶまで後ろのメニューは操作できない。
- * 最初は「やめる」にカーソルがある（Enter を続けて押しても消えないように）
+ * 最初は「キャンセル」にカーソルがある（Enter を続けて押しても消えないように）
  */
 export class ConfirmDialog {
   private readonly root = el('confirm');

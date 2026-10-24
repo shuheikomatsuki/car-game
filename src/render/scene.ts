@@ -84,6 +84,7 @@ export class GameScene {
   private hemiLevel = LIGHTING.day.hemi;
   private sunLevel = LIGHTING.day.sun;
   private night = false;
+  private readonly canvasSize = new THREE.Vector2();
   /** 他の人の車の前を照らすライト（近い車から順に使う。数を変えるとシェーダーを作り直すので、使わない分は暗くしておく） */
   private readonly remoteHeadlights = Array.from({ length: REMOTE_HEADLIGHTS }, () => new THREE.SpotLight(0xfff0d0, 0, 120, 0.55, 0.5, 1));
   private readonly rain: THREE.LineSegments;
@@ -236,6 +237,12 @@ export class GameScene {
     camera.aspect = window.innerWidth / window.innerHeight;
     camera.updateProjectionMatrix();
     this.renderer.setSize(window.innerWidth, window.innerHeight);
+  }
+
+  /** 描画先の大きさが画面とずれていたら合わせる（スマホの向きやアドレスバーが変わったのに resize が来ないときのため） */
+  fitToWindow(camera: THREE.PerspectiveCamera): void {
+    const size = this.renderer.getSize(this.canvasSize);
+    if (size.x !== window.innerWidth || size.y !== window.innerHeight) this.resize(camera);
   }
 
   render(camera: THREE.Camera): void {

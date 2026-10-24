@@ -8,6 +8,7 @@ import { FallRecovery } from './game/fall';
 import { Level } from './game/level';
 import { clearPlayData } from './game/playData';
 import { NpcField, npcEntries, rankEntrants, velocityOf } from './game/npcRace';
+import { migrateSaveData } from './game/saveVersion';
 import { PLAYER_COLORS, RemoteCars, carStateOf, createLabel } from './game/remoteCars';
 import { MAPS, TITLE_MAPS } from './map/maps';
 import type { MapDefinition } from './map/tilemap';
@@ -100,6 +101,8 @@ const REJOIN_DELAY = 1.2;
 const EMOTE_COOLDOWN_MS = 1500;
 
 async function main() {
+  // 古い版のゲームで保存したデータを、いまの版の形に直してから読み込む
+  migrateSaveData();
   const rapier = await loadRapier();
   const params = new URLSearchParams(location.search);
   // オンライン用のサーバー（みんなで走る・ランキング）
@@ -167,8 +170,8 @@ async function main() {
   let lightsOn = GameScene.needsHeadlights(env);
   /** 夜に NPC・ライバルがライトをつけて走るか（時間帯・天気の画面で選ぶ） */
   let opponentLights = true;
-  /** NPC・ライバルのライト: 夜は選んだとおり。朝や天気の悪いときは自分と同じく自動でつける */
-  const npcLightsOn = () => GameScene.needsHeadlights(env) && (env.time !== 'night' || opponentLights);
+  /** NPC・ライバルのライト: 夜だけ選んだとおりにつける。朝・昼は消して走る */
+  const npcLightsOn = () => env.time === 'night' && opponentLights;
   const applyLights = () => {
     carMesh.setLights(lightsOn);
     view.setHeadlights(lightsOn);
@@ -763,7 +766,7 @@ async function main() {
         title: 'セリフ',
         en: 'MESSAGE',
         lines: [`「セリフ」ボタン（キーボードは E）で言うセリフ。${MAX_EMOTE_LENGTH}文字まで。`],
-        ok: '決める',
+        ok: '保存',
         safe: true,
         value: emote,
         maxLength: MAX_EMOTE_LENGTH,
@@ -1444,11 +1447,12 @@ async function main() {
   const envScreen = conditionsScreen(false);
   const opponentEnvScreen = conditionsScreen(true);
   const envSummary = () => `${TIMES_OF_DAY.find((t) => t.id === draft.time)!.label}・${WEATHERS.find((w) => w.id === draft.weather)!.label}`;
-  const modeDetail = (title: string, en: string, lines: string[]) => () =>
+  /** プレイモードの説明。後ろに薄く大きく、英語の最初の語（big で変えられる）を出す */
+  const modeDetail = (title: string, en: string, lines: string[], big = en.split(' ')[0]) => () =>
     textDetail({
       kicker: en,
       title,
-      big: en.split(' ')[0],
+      big,
       // コース・車・時間帯はこの後の画面で選ぶので、ここには出さない
       lines,
     });
@@ -1618,7 +1622,7 @@ async function main() {
       onlinePanel.open('友だちと同じ部屋コードを入れて「参加する」を押すと、コース・車選びに進みます。');
       afterJoin = 'free';
     },
-    detail: settingDetail('みんなで走る（オンライン）', [
+    detail: modeDetail('みんなで走る', 'ONLINE', [
       '同じ部屋コードを入れた人と、同じコースを一緒に自由に走れます（最大8人）。',
       '部屋に入るとコースを選べます。コースを変えると、部屋の全員が同じコースに移動します。',
       '部屋に入ったまま、トップメニューの「オンライン対戦」で部屋のみんなとレースもできます。',
@@ -1652,7 +1656,7 @@ async function main() {
     label: 'オンライン対戦',
     en: 'ONLINE RACE',
     note: '部屋のみんなとレース',
-    detail: modeDetail('オンライン対戦', 'ONLINE RACE', ['コースと時間帯・天気を決めると、部屋の全員にエントリー画面が開きます。', '各自が車を選んで準備OKにしたら、スタートで一斉にカウントダウン。']),
+    detail: modeDetail('オンライン対戦', 'ONLINE RACE', ['コースと時間帯・天気を決めると、部屋の全員にエントリー画面が開きます。', '各自が車を選んで準備OKにしたら、スタートで一斉にカウントダウン。'], 'VERSUS'),
     begin: () => beginDraft(true),
     screens: () => [courseScreen(true), envScreen],
     summary: () => `${draftMap().name} ／ ${envSummary()}`,
@@ -1683,11 +1687,16 @@ async function main() {
     note: () => (net.isOnline ? '部屋のみんなとレース' : '部屋に参加してレース'),
     major: true,
     visible: () => !(race && raceMode === 'online'),
-    detail: settingDetail('オンライン対戦', [
-      '部屋のみんなと同じコース・同じ条件でレースする。',
-      'まだ部屋に入っていなければ、部屋コードを入れて参加してからコース選びに進みます。',
-      'コースと時間帯・天気を決めた人が主催になり、全員が車を選んで準備OKにしたらスタートします。',
-    ]),
+    detail: modeDetail(
+      'オンライン対戦',
+      'ONLINE RACE',
+      [
+        '部屋のみんなと同じコース・同じ条件でレースする。',
+        'まだ部屋に入っていなければ、部屋コードを入れて参加してからコース選びに進みます。',
+        'コースと時間帯・天気を決めた人が主催になり、全員が車を選んで準備OKにしたらスタートします。',
+      ],
+      'VERSUS',
+    ),
   };
   const rankingItem: MenuItem = {
     label: () => 'ランキング',
@@ -1933,6 +1942,7 @@ async function main() {
       view.update(frameDt, cameraRig.camera);
       hud.update(s);
       sound.update(s.forwardSpeed, input.throttle, s.lateralSpeed, input.brake > 0 && s.forwardSpeed > 0);
+      view.fitToWindow(cameraRig.camera);
       view.render(cameraRig.camera);
       const showMirrors = mirrors.mode !== 'off' && !menu.showcase && !document.body.classList.contains('menu-open');
       if (showMirrors && mirrorRegionAge-- <= 0) {

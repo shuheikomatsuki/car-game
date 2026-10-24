@@ -3260,6 +3260,10 @@ body.online-race #race-change {
     top: calc(env(safe-area-inset-top) + 62px);
     transform: none;
   }
+  /* 周回・順位の枠は左のサイドミラーにかかるくらい横に広いので、ミラーの下端より下に */
+  body.touch.mirrors-on #race {
+    top: calc(env(safe-area-inset-top) + max(62px, var(--mirror-bottom, 0px)));
+  }
 }
 
 /* スマホの横向き: 結果の枠は、左上のボタン・周回の表示の右に出す（やり直すボタンに重ならない） */

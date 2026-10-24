@@ -115,6 +115,7 @@ export class Mirrors {
   private readonly quadCamera = new THREE.OrthographicCamera(-1, 1, 1, -1, 0, 1);
   private readonly quad: THREE.Mesh<THREE.PlaneGeometry, THREE.MeshBasicMaterial>;
   private frameCount = 0;
+  private readonly size = new THREE.Vector2();
   private modeValue: MirrorMode;
 
   constructor(container: HTMLElement, mode: MirrorMode) {
@@ -184,8 +185,8 @@ export class Mirrors {
     const active = show ? this.active() : [];
     for (const m of Object.values(this.mirrors)) m.frame.classList.toggle('hidden', !active.includes(m));
     if (active.length === 0 || this.modeValue === 'off') return;
-    const width = window.innerWidth;
-    const height = window.innerHeight;
+    // 画面の大きさは描画先の大きさで測る（スマホでアドレスバーが出入りした直後など、window.innerHeight とずれていると枠と中身がずれる）
+    const { x: width, y: height } = renderer.getSize(this.size);
     const layout = mirrorLayout(width, region, this.modeValue, height > width);
     const pixelRatio = Math.min(renderer.getPixelRatio(), 1.5);
     const update = this.frameCount++ % 2 === 0;

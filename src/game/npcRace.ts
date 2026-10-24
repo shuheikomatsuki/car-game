@@ -54,9 +54,12 @@ export interface NpcEntry {
   variation: number;
 }
 
-/** NPC 対戦の NPC たち（同じ強さ・同じ車で、名前と色だけ違う） */
-export function npcEntries(count: number, level: NpcLevel, params: VehicleParams, style?: CarStyle): NpcEntry[] {
-  return Array.from({ length: count }, (_, i) => ({
+/**
+ * NPC 対戦の NPC たち（同じ強さ・同じ車で、名前と色だけ違う）。
+ * 並び順がスタートの位置になるので、毎回ばらばらに混ぜる（random は 0 以上 1 未満を返す関数）
+ */
+export function npcEntries(count: number, level: NpcLevel, params: VehicleParams, style?: CarStyle, random = Math.random): NpcEntry[] {
+  const entries = Array.from({ length: count }, (_, i) => ({
     name: NPC_NAMES[i % NPC_NAMES.length],
     color: PLAYER_COLORS[(i + 1) % PLAYER_COLORS.length],
     level,
@@ -64,6 +67,12 @@ export function npcEntries(count: number, level: NpcLevel, params: VehicleParams
     style,
     variation: VARIATIONS[i % VARIATIONS.length],
   }));
+  // Fisher–Yates
+  for (let i = entries.length - 1; i > 0; i--) {
+    const j = Math.floor(random() * (i + 1));
+    [entries[i], entries[j]] = [entries[j], entries[i]];
+  }
+  return entries;
 }
 
 /** NPC 対戦で一緒に走る NPC たち。物理ワールドに車を置き、毎ステップ運転させる */

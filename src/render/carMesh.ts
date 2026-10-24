@@ -75,11 +75,18 @@ export function carStyle(carId: string): CarStyle {
 
 /**
  * その車の運転席の目の位置（車体ローカル、大きさの倍率をかける前）。
- * 屋根の前の縁が視界の上をふさがないよう、縁より 0.3m 後ろ・0.18m 下に収める（屋根の低い車では目を下げる）
+ * 屋根の前の縁が視界の上をふさがないよう、縁より 0.3m 後ろ・0.18m 下に収める（屋根の低い車では目を下げる）。
+ * それだとフロントガラスから大きく離れてしまう車（窓の小さいカプチーノ）は、ダッシュボードと車内の床が
+ * 画面の下を大きくふさぐので、ガラスの 0.15m 内側まで前に出す（屋根の縁は目より後ろになって見えない）
  */
 export function driverEyeFor(style: CarStyle): THREE.Vector3 {
-  const frontHigh = style.window[2];
-  return new THREE.Vector3(CABIN.driverEye.x, Math.min(CABIN.driverEye.y, style.roof - 0.18), Math.min(0.05, frontHigh - 0.3));
+  const [, frontLow, frontHigh] = style.window;
+  const y = Math.min(CABIN.driverEye.y, style.roof - 0.18);
+  // 目の高さでのフロントガラスの前後の位置
+  const glassZ = frontLow + ((y - BELT_Y) / (style.roof - BELT_Y)) * (frontHigh - frontLow);
+  const nearGlass = Math.min(0.05, glassZ - 0.15);
+  const belowEdge = Math.min(0.05, frontHigh - 0.3);
+  return new THREE.Vector3(CABIN.driverEye.x, y, nearGlass - belowEdge > 0.3 ? nearGlass : belowEdge);
 }
 
 /** 2点を結ぶ細い棒（ピラーなど） */
