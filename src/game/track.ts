@@ -1,5 +1,5 @@
 import { type MapObstacles, buildObstacles } from '../map/obstacles';
-import { type RoadModel, buildRoad, bumpHeight, roadValleys } from '../map/road';
+import { FLAG_GUTTER, GUTTER_WIDTH, type RoadModel, buildRoad, bumpHeight, roadValleys } from '../map/road';
 import { buildRoadObstacles } from '../map/roadObstacles';
 import { type RoadShortcut, findRoadShortcuts, roadShortcutHeight } from '../map/roadShortcuts';
 import { type RoadGround, buildRoadGround } from '../map/roadTerrain';
@@ -87,6 +87,7 @@ export class Track {
       const half = CAR_DIMENSIONS.width / 2;
       car.offRoad = (x, z) => (this.onShortcut(x, z) ? 0 : Math.min(1, Math.max(0, (this.offRoadDistance(x, z, car.courseS)! + half) / (2 * half))));
     }
+    if (this.road?.flags.some((f) => f & FLAG_GUTTER)) car.gutter = (x, z) => this.gutterAt(x, z, car.courseS) !== 0;
     return car;
   }
 
@@ -175,6 +176,24 @@ export class Track {
     const rc = this.roadCourse;
     if (!rc || !this.road) return 0;
     return this.road.bump[this.road.indexAt(rc.roadS(rc.project(x, z, { s }).s))];
+  }
+
+  /**
+   * 内側のタイヤがカーブの内側の側溝に落ちているか（溝落とし）。落ちていれば溝のある側（左 = 1、右 = -1）、
+   * 落ちていなければ 0。側溝は道路の端から外へ GUTTER_WIDTH [m] の幅
+   */
+  gutterAt(x: number, z: number, s?: number | null): number {
+    const rc = this.roadCourse;
+    const road = this.road;
+    if (!rc || !road) return 0;
+    const p = rc.project(x, z, { s });
+    const i = road.indexAt(rc.roadS(p.s));
+    if (!(road.flags[i] & FLAG_GUTTER) || road.curvature[i] === 0) return 0;
+    // コースの向きと道路の向きが逆（往復の帰り）なら、左右も逆になる
+    const inside = Math.sign(road.curvature[i]) * Math.sign(Math.cos(rc.pointAt(p.s).yaw - road.yaw[i]));
+    const wheel = p.offset * inside + CAR_DIMENSIONS.track;
+    const edge = rc.widthAt(p.s) / 2;
+    return wheel >= edge && wheel <= edge + GUTTER_WIDTH + 0.1 ? inside : 0;
   }
 
   /** ヘアピンの内側の近道の帯の上か */

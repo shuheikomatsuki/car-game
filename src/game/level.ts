@@ -7,6 +7,10 @@ import type { Car, CarSnapshot } from '../sim/car';
 import type { Rapier } from '../sim/physics';
 import { Track } from './track';
 
+/** 内側のタイヤを側溝に落としているときの、車体の沈み [m] と傾き [rad] */
+const GUTTER_SINK = 0.05;
+const GUTTER_ROLL = 0.06;
+
 /** 1つのマップの物理ワールド・車・描画物をまとめたもの。マップ切り替え時に作り直す */
 export class Level extends Track {
   readonly car: Car;
@@ -40,12 +44,14 @@ export class Level extends Track {
     const g = this.gradientAt(s.x, s.z, s.courseS, s.yaw);
     const sin = Math.sin(s.yaw);
     const cos = Math.cos(s.yaw);
+    // 内側のタイヤを側溝に落としている間は、その側へ少し傾いて沈む
+    const gutter = this.road ? this.gutterAt(s.x, s.z, s.courseS) : 0;
     return {
       ...s,
-      y: s.y + this.heightAt(s.x, s.z, s.courseS, s.yaw),
+      y: s.y + this.heightAt(s.x, s.z, s.courseS, s.yaw) - Math.abs(gutter) * GUTTER_SINK,
       // 前方 (sin, cos)・左 (cos, -sin) の向きの勾配
       pitch: Math.atan(g.x * sin + g.z * cos),
-      roll: Math.atan(g.x * cos - g.z * sin),
+      roll: Math.atan(g.x * cos - g.z * sin) - gutter * GUTTER_ROLL,
     };
   }
 

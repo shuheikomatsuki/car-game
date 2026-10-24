@@ -3,10 +3,12 @@ import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js
 import { BARRIER_HEIGHT, type MapObstacles, tileHash } from '../map/obstacles';
 import {
   FLAG_BRIDGE,
+  FLAG_GUTTER,
   FLAG_NEW,
   FLAG_OLD,
   FLAG_SUSPENSION,
   FLAG_TUNNEL,
+  GUTTER_WIDTH,
   PointGrid,
   type RoadModel,
   bumpHeight,
@@ -355,6 +357,8 @@ export function buildRoadMesh(road: RoadModel, obstacles: MapObstacles, ground: 
 
   // --- サーキットのカーブの縁石（赤と白） ---
   if (circuit) group.add(buildCurbs(road));
+  // --- 峠のカーブの内側の側溝（溝落とし） ---
+  if (road.flags.some((f) => f & FLAG_GUTTER)) group.add(buildGutters(road));
 
   // --- トンネル・吊り橋・街灯 ---
   for (const [i0, i1] of ranges(road, (i) => (road.flags[i] & FLAG_TUNNEL) !== 0)) group.add(buildTunnel(road, i0, i1));
@@ -482,6 +486,44 @@ function buildCurbs(road: RoadModel): THREE.Group {
   ] as const) {
     if (!positions.length) continue;
     const m = new THREE.Mesh(geometry(positions), new THREE.MeshLambertMaterial({ color, polygonOffset: true, polygonOffsetFactor: -1, polygonOffsetUnits: -1 }));
+    m.receiveShadow = true;
+    group.add(m);
+  }
+  return group;
+}
+
+/** カーブの内側の路肩の側溝: コンクリートのふちと、暗い溝の底 */
+function buildGutters(road: RoadModel): THREE.Group {
+  const lip: number[] = [];
+  const pit: number[] = [];
+  const LIP = 0.08;
+  // [内側の端, 外側の端, 高さ, 面]（溝の底は少し低く描く）
+  const bands: [number, number, number, number[]][] = [
+    [0, LIP, 0.03, lip],
+    [LIP, GUTTER_WIDTH - LIP, -0.06, pit],
+    [GUTTER_WIDTH - LIP, GUTTER_WIDTH, 0.03, lip],
+  ];
+  for (let i = 0; i + 1 < road.count; i++) {
+    if (!(road.flags[i] & FLAG_GUTTER) || !(road.flags[i + 1] & FLAG_GUTTER)) continue;
+    const side = Math.sign(road.curvature[i]) || 1;
+    for (const [u0, u1, v, out] of bands) {
+      const ring = (k: number): V[] => {
+        const f = frame(road, k);
+        return [f.w / 2 + u0, f.w / 2 + u1].map((u): V => [f.x + f.lx * u * side, f.y + v, f.z + f.lz * u * side]);
+      };
+      const p = ring(i);
+      const q = ring(i + 1);
+      pushUp(out, p[0], p[1], q[1]);
+      pushUp(out, p[0], q[1], q[0]);
+    }
+  }
+  const group = new THREE.Group();
+  for (const [positions, color] of [
+    [lip, 0xb9b6ad],
+    [pit, 0x2b2a27],
+  ] as const) {
+    if (!positions.length) continue;
+    const m = new THREE.Mesh(geometry(positions), new THREE.MeshLambertMaterial({ color, polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -2 }));
     m.receiveShadow = true;
     group.add(m);
   }

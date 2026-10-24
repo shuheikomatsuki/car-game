@@ -31,6 +31,11 @@ export interface RoadPiece {
   tunnel?: boolean;
   /** 路面が荒れていて、細かく波打つ（車が少し跳ねる） */
   bumpy?: boolean;
+  /**
+   * カーブの内側の路肩に側溝がある（円弧の区間に付ける）。内側のタイヤを溝に落とすと、溝の壁に引っかかって
+   * 外へ逃げずに速く曲がれる（溝落とし。src/game/track.ts の gutterAt）
+   */
+  gutter?: boolean;
   /** 見た目: 拡幅工事を終えた新しい舗装（黒く、白線がくっきり）か、古い狭い道（灰色で白線なし） */
   surface?: 'new' | 'old';
 }
@@ -85,6 +90,9 @@ export const FLAG_BUMPY = 4;
 export const FLAG_SUSPENSION = 8;
 export const FLAG_NEW = 16;
 export const FLAG_OLD = 32;
+export const FLAG_GUTTER = 64;
+/** カーブの内側の側溝の幅 [m]（道路の端から外へ） */
+export const GUTTER_WIDTH = 0.5;
 
 /** 立体交差の層。NONE は交差のない所（どちらの層の壁ともぶつかる） */
 export const LAYER_NONE = 0;
@@ -390,7 +398,8 @@ export function buildRoad(spec: RoadSpec): RoadModel {
       (p.tunnel ? FLAG_TUNNEL : 0) |
       (p.bumpy ? FLAG_BUMPY : 0) |
       (p.suspension ? FLAG_SUSPENSION | FLAG_BRIDGE : 0) |
-      (p.surface === 'new' ? FLAG_NEW : p.surface === 'old' ? FLAG_OLD : 0);
+      (p.surface === 'new' ? FLAG_NEW : p.surface === 'old' ? FLAG_OLD : 0) |
+      (p.gutter && p.arc ? FLAG_GUTTER : 0);
   }
   if (closed) {
     const gap = Math.hypot(st.x - origin.x, st.z - origin.z);

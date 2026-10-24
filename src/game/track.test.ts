@@ -1,5 +1,5 @@
 import { beforeAll, describe, expect, it } from 'vitest';
-import { HAPPOGAHARA_MAP, SHUTOKO_MAP } from '../map/maps';
+import { AKINA_DOWN_MAP, HAPPOGAHARA_MAP, SHUTOKO_MAP } from '../map/maps';
 import { LAYER_LOWER, LAYER_UPPER } from '../map/road';
 import { type Rapier, loadRapier } from '../sim/physics';
 import { Track } from './track';
@@ -72,5 +72,54 @@ describe('grade-separated crossings in the physics world', () => {
     // 真下の道路ではなく、橋の上の高さ
     const below = track.roadCourse!.heightAt(road.layer.indexOf(LAYER_LOWER) * road.step - road.spec.start);
     expect(track.heightAt(t.x, t.z, car.courseS, undefined, false)).toBeGreaterThan(below + 8);
+  });
+});
+
+describe('gutters (溝落とし)', () => {
+  it('finds the inside wheels in the gutter on the inside of the Akina hairpins only', () => {
+    const track = new Track(rapier, AKINA_DOWN_MAP);
+    const course = track.course!;
+    const road = track.road!;
+    // 5連続ヘアピンの最初の円弧の真ん中
+    const pieces = road.spec.pieces;
+    const hairpin = pieces.findIndex((p, i) => i > 20 && p.arc?.radius === 16);
+    expect(hairpin).toBeGreaterThan(0);
+    const s = (road.pieceStart[hairpin] + road.pieceStart[hairpin + 1]) / 2 - road.spec.start;
+    const p = course.pointAt(s);
+    const inside = Math.sign(road.curvature[road.indexAt(road.pieceStart[hairpin] + 5)]);
+    const at = (offset: number) => track.gutterAt(p.x + Math.cos(p.yaw) * offset, p.z - Math.sin(p.yaw) * offset, s);
+    const edge = course.widthAt(s) / 2;
+    // 内側のタイヤ（車体の中心から 0.82m）が溝の中
+    expect(at(inside * (edge - 0.6))).toBe(inside);
+    expect(at(0)).toBe(0);
+    expect(at(-inside * (edge - 0.6))).toBe(0);
+    expect(at(inside * (edge + 1))).toBe(0);
+    // 直線には溝がない
+    const straight = road.pieceStart[hairpin + 1] + 30 - road.spec.start;
+    const q = course.pointAt(straight);
+    expect(track.gutterAt(q.x + Math.cos(q.yaw) * inside * (edge - 0.6), q.z - Math.sin(q.yaw) * inside * (edge - 0.6), straight)).toBe(0);
+  });
+});
+
+describe('Car in a gutter', () => {
+  it('turns harder at the same speed while the inside wheels are in the gutter', () => {
+    const track = new Track(rapier, AKINA_DOWN_MAP);
+    const turn = (hooked: boolean) => {
+      const car = track.createCar({ x: 0, z: 0, yaw: 0 });
+      car.slope = null;
+      car.offRoad = null;
+      car.gutter = () => hooked;
+      let yawRate = 0;
+      for (let i = 0; i < 60; i++) {
+        car.body.setLinvel({ x: Math.sin(car.snapshot().yaw) * 20, y: 0, z: Math.cos(car.snapshot().yaw) * 20 }, true);
+        car.applyInput({ throttle: 0.5, brake: 0, steer: 1 }, 1 / 60);
+        yawRate = car.body.angvel().y;
+        track.physics.world.timestep = 1 / 60;
+        track.physics.world.step();
+      }
+      car.dispose();
+      return yawRate;
+    };
+    expect(turn(true)).toBeGreaterThan(turn(false) * 1.2);
   });
 });

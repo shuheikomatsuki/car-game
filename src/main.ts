@@ -1932,6 +1932,8 @@ async function main() {
       // 草地を走るとガタガタ揺れる
       const grass = level.car.offRoad?.(curr.x, curr.z) ?? 0;
       if (grass > 0 && !fall.falling) cameraRig.addShake(grass * Math.min(1, Math.abs(curr.forwardSpeed) / 15) * 0.6);
+      // 溝落とし: 内側のタイヤが側溝に落ちている間は、ゴトゴト揺れる
+      if (level.car.gutter?.(curr.x, curr.z) && !fall.falling) cameraRig.addShake(Math.min(1, Math.abs(curr.forwardSpeed) / 15) * 0.25);
       // 荒れた路面でも小刻みに揺れる
       const rough = level.roughnessAt(curr.x, curr.z, curr.courseS);
       if (rough > 0 && !fall.falling) cameraRig.addShake(rough * Math.min(1, Math.abs(curr.forwardSpeed) / 25) * 0.3);
